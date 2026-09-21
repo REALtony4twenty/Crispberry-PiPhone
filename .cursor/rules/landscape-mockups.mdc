@@ -1,0 +1,12 @@
+---
+description: Wait for per-app landscape mockups before more F3 layout work
+alwaysApply: true
+---
+
+# Landscape layouts need mockups
+
+F3 landscape is not done. Do **not** keep making global landscape layout guesses.
+
+Andrew will supply mockups for each built-in app. When he mentions landscape, F3, or phone rotation, **remind him to send those mockups**.
+
+Each app needs its own landscape layout that scales with the phone size. Wait for the mockup for that app before changing its landscape UI.
