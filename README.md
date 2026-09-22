@@ -6,7 +6,7 @@ Default open key is **Alt+P**. That key, and the camera and call keys, can be ch
 
 ## Credits and licenses
 
-The phone, its apps, and the berry logo (`Icons/logo.png`) are original work. Copyright 2026 tony4twenty. Those are not covered by the asset licenses below.
+The bitten crispberry logo (`Icons/logo.png`) are original work by tony4twenty and is not AI made.
 
 ### Material Symbols (Apache 2.0)
 
@@ -32,7 +32,3 @@ Graphics from https://github.com/jdecked/twemoji
 Solitaire cards in `Icons/cards` are from Kenney's Playing Cards Pack, released under CC0 1.0.
 https://kenney.nl/assets/playing-cards-pack
 https://creativecommons.org/publicdomain/zero/1.0/
-
-## Thunderstore package
-
-Put this README in the package zip so the credits ship with the mod. The zip also needs `manifest.json`, a 256×256 `icon.png` (the berry logo is 512×512), and the plugin DLL under `plugins/`. BepInEx is the only hard dependency. More Customizations and Skin Color Sliders are optional.
