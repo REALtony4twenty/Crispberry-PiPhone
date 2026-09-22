@@ -1,3 +1,4 @@
+using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -39,6 +40,9 @@ namespace Crispberry_PiPhone
             private string _toneAppId;
             private string _toneContactId;
             private bool _toneContactRing = true;
+            private int _lookIndex;
+            private int _buttonIndex;
+            private TextMeshProUGUI _chooserName;
 
             public Session(IPiPhoneHost host)
             {
@@ -107,10 +111,10 @@ namespace Crispberry_PiPhone
                 RectTransform extra;
                 PhoneUi.SplitIfLandscape(_host.Content, out col, out extra);
 
-                Row(col, PiPhoneApi.OsName, Plugin.PluginVersion);
+                OsRow(col);
                 Row(col, "You are", _host.IsMasterClient ? "Expedition leader" : "Scout");
 
-                PhoneUi.CreateButton(col, "Controls", ShowControls, new Vector2(280f, 48f));
+                PhoneUi.MaterialChip(col, "keyboard", "Controls", ShowControls, new Vector2(40f, 40f));
                 PhoneUi.CreateButton(col, "Customize", ShowCustomize, new Vector2(280f, 48f));
                 PhoneUi.CreateButton(col, "Home screen", ShowDock, new Vector2(280f, 44f));
                 PhoneUi.CreateButton(col, "Notifications", ShowNotifications, new Vector2(280f, 44f));
@@ -129,7 +133,7 @@ namespace Crispberry_PiPhone
                 _page = "customize";
                 Clear();
                 _host.SetTitle("Customize");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowHome, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowHome, new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_host.Content, PhoneLang.T("look", "Look"), ShowLook, new Vector2(280f, 44f));
                 PhoneUi.CreateButton(_host.Content, PhoneLang.T("language", "Language"), ShowLanguage, new Vector2(280f, 44f));
                 PhoneUi.CreateButton(_host.Content, "Case", ShowCase, new Vector2(280f, 44f));
@@ -146,7 +150,7 @@ namespace Crispberry_PiPhone
                 PhoneSounds.StopPreview();
                 Clear();
                 _host.SetTitle("Notifications");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowHome, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowHome, new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_host.Content, PhoneTones.DuckMusic ? "Fade music on alerts  On" : "Fade music on alerts  Off", () =>
                 {
                     PhoneTones.SetDuckMusic(!PhoneTones.DuckMusic);
@@ -186,7 +190,7 @@ namespace Crispberry_PiPhone
                         if (tmp != null)
                             tmp.text = next ? "On" : "Off";
                     });
-                    PhoneUi.CreateButton(row.transform, "♪", () => ShowTones("app", id, null, true), new Vector2(40f, 32f));
+                    PhoneUi.CreateIconChip(row.transform, "Tone", PhoneIcons.Material("library_music"), () => ShowTones("app", id, null, true), false, new Vector2(40f, 32f));
                 }
             }
 
@@ -199,7 +203,7 @@ namespace Crispberry_PiPhone
                 _toneContactRing = contactRing;
                 Clear();
                 _host.SetTitle("Choose sound");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowNotifications, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowNotifications, new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_host.Content, "Default", () =>
                 {
                     ApplyTone(string.Empty);
@@ -248,12 +252,32 @@ namespace Crispberry_PiPhone
                 _page = "dock";
                 Clear();
                 _host.SetTitle("Home screen");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowHome, new Vector2(120f, 36f));
-                PhoneUi.CreateButton(_host.Content, PhoneTheme.HideDock ? "Show dock" : "Hide dock", () =>
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowHome, new Vector2(36f, 32f));
+                Button hideDock = PhoneUi.CreateButton(_host.Content, PhoneTheme.HideDock ? "Show dock" : "Hide dock", null, new Vector2(240f, 40f));
+                hideDock.onClick.AddListener(() =>
                 {
                     PhoneTheme.SetHideDock(!PhoneTheme.HideDock);
-                    ShowDock();
-                }, new Vector2(240f, 40f));
+                    var tmp = hideDock.GetComponentInChildren<TextMeshProUGUI>(true);
+                    if (tmp != null)
+                        tmp.text = PhoneTheme.HideDock ? "Show dock" : "Hide dock";
+                });
+                Button rotateBtn = PhoneUi.CreateButton(_host.Content, PhoneTheme.NavRotateButton ? "Rotate button  On" : "Rotate button  Off", null, new Vector2(240f, 40f));
+                rotateBtn.onClick.AddListener(() =>
+                {
+                    PhoneTheme.SetNavRotateButton(!PhoneTheme.NavRotateButton);
+                    var tmp = rotateBtn.GetComponentInChildren<TextMeshProUGUI>(true);
+                    if (tmp != null)
+                        tmp.text = PhoneTheme.NavRotateButton ? "Rotate button  On" : "Rotate button  Off";
+                });
+                if (!string.IsNullOrEmpty(PhoneTheme.WallpaperFile))
+                {
+                    PhoneUi.CreateButton(_host.Content, "Use default background", () =>
+                    {
+                        PhoneTheme.SetWallpaper(string.Empty);
+                        _host.ShowToast("Default background restored.");
+                        ShowDock();
+                    }, new Vector2(240f, 40f));
+                }
                 var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Pick up to four apps for the home dock. You can also hold an app on the home screen.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 hint.color = PhoneUi.TextDim;
                 PhoneUi.Wrap(hint);
@@ -269,53 +293,78 @@ namespace Crispberry_PiPhone
                     if (app == null)
                         continue;
                     string id = app.Id;
-                    bool on = PhoneStore.IsOnDock(id);
                     var row = new GameObject("D", typeof(RectTransform));
                     row.transform.SetParent(content, false);
                     PhoneUi.Size(row, 40f);
                     PhoneUi.AddHorizontal(row, 6f);
                     var name = PhoneUi.CreateLabel(row.transform, "N", PhoneLang.AppName(app), 14f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
                     name.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-                    PhoneUi.CreateButton(row.transform, on ? "Docked" : "Dock", () =>
+                    Button dockBtn = PhoneUi.CreateButton(row.transform, PhoneStore.IsOnDock(id) ? "Docked" : "Dock", null, new Vector2(80f, 32f));
+                    string appId = id;
+                    dockBtn.onClick.AddListener(() =>
                     {
-                        if (on)
-                            PhoneStore.RemoveDock(id);
-                        else if (!PhoneStore.AddDock(id))
+                        if (PhoneStore.IsOnDock(appId))
+                            PhoneStore.RemoveDock(appId);
+                        else if (!PhoneStore.AddDock(appId))
+                        {
                             _host.ShowToast("Dock is full (4 apps).");
+                            return;
+                        }
                         PhoneMenu.OnAppsChanged();
-                        ShowDock();
-                    }, new Vector2(80f, 32f));
+                        var tmp = dockBtn.GetComponentInChildren<TextMeshProUGUI>(true);
+                        if (tmp != null)
+                            tmp.text = PhoneStore.IsOnDock(appId) ? "Docked" : "Dock";
+                    });
                 }
             }
 
             private void ShowLook()
             {
                 _page = "look";
+                ColorChoice[] choices = LookChoices();
+                if (_lookIndex < 0 || _lookIndex >= choices.Length)
+                    _lookIndex = 0;
                 ScrollPage("Look", content =>
                 {
-                    var hint = PhoneUi.CreateLabel(content, "Hint", "Each color and size is independent. Other mods can set these through PiPhoneApi (SetLook / SetScreenColor / SetButtonRadius).", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
+                    var hint = PhoneUi.CreateLabel(content, "Hint", "Pick what to color, then use the wheel. Brightness and opacity apply to that one color.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                     hint.color = PhoneUi.TextDim;
                     PhoneUi.Wrap(hint);
-                    PhoneUi.Size(hint.gameObject, 48f);
-                    Label(content, "Screen");
-                    PhoneColorPicker.Create(content, PhoneTheme.ScreenColor, PhoneTheme.SetScreenColor);
-                    Label(content, "Cards / surfaces");
-                    PhoneColorPicker.Create(content, PhoneTheme.SurfaceColor, PhoneTheme.SetSurfaceColor);
-                    Label(content, "Nav bar");
-                    PhoneColorPicker.Create(content, PhoneTheme.NavColor, PhoneTheme.SetNavColor);
-                    Label(content, "Text");
-                    PhoneColorPicker.Create(content, PhoneTheme.TextColor, PhoneTheme.SetTextColor);
-                    Label(content, "Accent");
-                    PhoneColorPicker.Create(content, PhoneTheme.AccentColor, PhoneTheme.SetAccentColor);
-                    Label(content, "App icon glyphs");
-                    PhoneColorPicker.Create(content, PhoneTheme.IconColor, PhoneTheme.SetIconColor);
+                    PhoneUi.Size(hint.gameObject, 40f);
+                    PhoneColorPicker picker = AddColorChooser(content, choices, () => _lookIndex, i => _lookIndex = i);
                     PhoneUi.CreateSliderRow(content, "Font", 0.7f, 1.6f, PhoneTheme.FontScale, v => PhoneTheme.SetFontScale(v), v => Mathf.RoundToInt(v * 100f) + "%");
+                    var iconStyle = PhoneUi.CreateButton(content, PhoneTheme.FilledIcons ? "Icons  Filled" : "Icons  Outline", null, new Vector2(240f, 40f));
+                    iconStyle.onClick.AddListener(() =>
+                    {
+                        PhoneTheme.SetFilledIcons(!PhoneTheme.FilledIcons);
+                        var tmp = iconStyle.GetComponentInChildren<TextMeshProUGUI>();
+                        if (tmp != null)
+                            tmp.text = PhoneTheme.FilledIcons ? "Icons  Filled" : "Icons  Outline";
+                    });
                     PhoneUi.CreateButton(content, PhoneLang.T("reset_look", "Reset look to defaults"), () =>
                     {
                         PhoneTheme.ResetLook();
-                        ShowLook();
+                        _lookIndex = 0;
+                        if (_chooserName != null)
+                            _chooserName.text = choices[0].Name;
+                        if (picker != null)
+                            picker.SetColor(choices[0].Get(), false);
                     }, new Vector2(280f, 40f));
                 });
+            }
+
+            private static ColorChoice[] LookChoices()
+            {
+                return new[]
+                {
+                    new ColorChoice("Screen", () => PhoneTheme.ScreenColor, PhoneTheme.SetScreenColor),
+                    new ColorChoice("Cards", () => PhoneTheme.SurfaceColor, PhoneTheme.SetSurfaceColor),
+                    new ColorChoice("Nav bar", () => PhoneTheme.NavColor, PhoneTheme.SetNavColor),
+                    new ColorChoice("Nav buttons", () => PhoneTheme.NavButtonColor, PhoneTheme.SetNavButtonColor),
+                    new ColorChoice("Nav icons", () => PhoneTheme.NavIconColor, PhoneTheme.SetNavIconColor),
+                    new ColorChoice("Text", () => PhoneTheme.TextColor, PhoneTheme.SetTextColor),
+                    new ColorChoice("Accent", () => PhoneTheme.AccentColor, PhoneTheme.SetAccentColor),
+                    new ColorChoice("App icon glyphs", () => PhoneTheme.IconColor, PhoneTheme.SetIconColor)
+                };
             }
 
             private void ShowLanguage()
@@ -349,12 +398,6 @@ namespace Crispberry_PiPhone
                         }, new Vector2(280f, 40f));
                     }
                 });
-            }
-
-            private static void Label(Transform parent, string text)
-            {
-                var lab = PhoneUi.CreateLabel(parent, "L", text, 15f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(lab.gameObject, 24f);
             }
 
             private void ShowCase()
@@ -402,14 +445,12 @@ namespace Crispberry_PiPhone
             private void ShowButtons()
             {
                 _page = "buttons";
+                ColorChoice[] choices = ButtonChoices();
+                if (_buttonIndex < 0 || _buttonIndex >= choices.Length)
+                    _buttonIndex = 0;
                 ScrollPage("Buttons", content =>
                 {
-                    var fill = PhoneUi.CreateLabel(content, "Fill", "Button color", 15f, FontStyles.Normal, TextAlignmentOptions.Center);
-                    PhoneUi.Size(fill.gameObject, 24f);
-                    PhoneColorPicker.Create(content, PhoneTheme.ButtonFillColor, PhoneTheme.SetButtonFill);
-                    var font = PhoneUi.CreateLabel(content, "Font", "Button font color", 15f, FontStyles.Normal, TextAlignmentOptions.Center);
-                    PhoneUi.Size(font.gameObject, 24f);
-                    PhoneColorPicker.Create(content, PhoneTheme.ButtonFontColor, PhoneTheme.SetButtonFont);
+                    PhoneColorPicker picker = AddColorChooser(content, choices, () => _buttonIndex, i => _buttonIndex = i);
                     PhoneUi.CreateSliderRow(content, "Button corners", 0f, 28f, PhoneTheme.ButtonRadius, v => PhoneTheme.SetButtonRadius(Mathf.RoundToInt(v)), v => Mathf.RoundToInt(v) == 0 ? "Square" : Mathf.RoundToInt(v) + "px");
                     PhoneUi.CreateSliderRow(content, "App icon corners", 0f, 28f, PhoneTheme.IconRadius, v => PhoneTheme.SetIconRadius(Mathf.RoundToInt(v)), v => Mathf.RoundToInt(v) == 0 ? "Square" : Mathf.RoundToInt(v) + "px");
                     var shapeHint = PhoneUi.CreateLabel(content, "SH", "0 is a square. Button corners and app-icon wells are separate.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
@@ -419,9 +460,84 @@ namespace Crispberry_PiPhone
                     PhoneUi.CreateButton(content, PhoneLang.T("reset_buttons", "Reset buttons to defaults"), () =>
                     {
                         PhoneTheme.ResetButtons();
-                        ShowButtons();
+                        _buttonIndex = 0;
+                        if (_chooserName != null)
+                            _chooserName.text = choices[0].Name;
+                        if (picker != null)
+                            picker.SetColor(choices[0].Get(), false);
                     }, new Vector2(280f, 40f));
                 });
+            }
+
+            private static ColorChoice[] ButtonChoices()
+            {
+                return new[]
+                {
+                    new ColorChoice("Button color", () => PhoneTheme.ButtonFillColor, PhoneTheme.SetButtonFill),
+                    new ColorChoice("Button font", () => PhoneTheme.ButtonFontColor, PhoneTheme.SetButtonFont)
+                };
+            }
+
+            private PhoneColorPicker AddColorChooser(Transform parent, ColorChoice[] choices, Func<int> getIndex, Action<int> setIndex)
+            {
+                int index = getIndex();
+                if (choices == null || choices.Length == 0)
+                    return null;
+                if (index < 0 || index >= choices.Length)
+                    index = 0;
+                TextMeshProUGUI name = null;
+                PhoneColorPicker picker = null;
+                if (choices.Length > 1)
+                {
+                    var row = new GameObject("Chooser", typeof(RectTransform));
+                    row.transform.SetParent(parent, false);
+                    PhoneUi.Size(row, 40f);
+                    var layout = PhoneUi.AddHorizontal(row, 8f);
+                    layout.childForceExpandWidth = false;
+                    layout.childAlignment = TextAnchor.MiddleCenter;
+                    PhoneUi.CreateButton(row.transform, "<", () => Step(-1), new Vector2(36f, 32f));
+                    name = PhoneUi.CreateLabel(row.transform, "Name", choices[index].Name, 15f, FontStyles.Normal, TextAlignmentOptions.Center);
+                    PhoneUi.Size(name.gameObject, 32f, 180f);
+                    _chooserName = name;
+                    PhoneUi.CreateButton(row.transform, ">", () => Step(1), new Vector2(36f, 32f));
+                }
+                picker = PhoneColorPicker.Create(parent, choices[index].Get(), c =>
+                {
+                    int current = getIndex();
+                    if (current < 0 || current >= choices.Length)
+                        return;
+                    choices[current].Set(c);
+                });
+                return picker;
+
+                void Step(int delta)
+                {
+                    if (picker == null || choices.Length < 2)
+                        return;
+                    int next = getIndex() + delta;
+                    if (next < 0)
+                        next = choices.Length - 1;
+                    if (next >= choices.Length)
+                        next = 0;
+                    setIndex(next);
+                    if (name != null)
+                        name.text = choices[next].Name;
+                    picker.SetColor(choices[next].Get(), false);
+                }
+            }
+
+            private sealed class ColorChoice
+            {
+                public readonly string Name;
+                public readonly Func<Color> Get;
+                public readonly Action<Color> Set;
+
+                public ColorChoice(string name, Func<Color> get, Action<Color> set)
+                {
+                    Name = name;
+                    Get = get;
+                    Set = set;
+                }
             }
 
             private void ShowToolbar()
@@ -429,7 +545,7 @@ namespace Crispberry_PiPhone
                 _page = "toolbar";
                 Clear();
                 _host.SetTitle("Toolbar");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowCustomize, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowCustomize, new Vector2(36f, 32f));
                 ScrollRect scroll = PhoneUi.CreateScrollView(_host.Content, out RectTransform content);
                 scroll.gameObject.AddComponent<LayoutElement>().flexibleHeight = 1f;
                 PhoneUi.AddVertical(content.gameObject, 8f, new RectOffset(4, 4, 4, 4));
@@ -442,7 +558,7 @@ namespace Crispberry_PiPhone
                 for (int i = 0; i < buttons.Length; i++)
                 {
                     PiPhoneShadeButton button = buttons[i];
-                    if (button == null)
+                    if (button == null || !button.CanHide)
                         continue;
                     string id = button.Id;
                     bool on = PhoneTheme.ShadeButtonOn(id, button.DefaultVisible);
@@ -489,7 +605,7 @@ namespace Crispberry_PiPhone
                 _page = "size";
                 Clear();
                 _host.SetTitle("Phone size");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowHome, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowHome, new Vector2(36f, 32f));
                 ScrollRect scroll = PhoneUi.CreateScrollView(_host.Content, out RectTransform content);
                 var le = scroll.gameObject.AddComponent<LayoutElement>();
                 le.flexibleHeight = 1f;
@@ -518,7 +634,7 @@ namespace Crispberry_PiPhone
                 _page = "logs";
                 Clear();
                 _host.SetTitle("Logs");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowHome, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowHome, new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_host.Content, PhoneTheme.WriteLogs ? "Write logs  On" : "Write logs  Off", () =>
                 {
                     PhoneTheme.SetWriteLogs(!PhoneTheme.WriteLogs);
@@ -535,7 +651,7 @@ namespace Crispberry_PiPhone
                 _page = "controls";
                 Clear();
                 _host.SetTitle("Controls");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowHome, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowHome, new Vector2(36f, 32f));
                 ScrollRect scroll = PhoneUi.CreateScrollView(_host.Content, out RectTransform content);
                 var le = scroll.gameObject.AddComponent<LayoutElement>();
                 le.flexibleHeight = 1f;
@@ -607,13 +723,44 @@ namespace Crispberry_PiPhone
             {
                 Clear();
                 _host.SetTitle(title);
-                PhoneUi.CreateButton(_host.Content, "Back", ShowCustomize, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowCustomize, new Vector2(36f, 32f));
                 ScrollRect scroll = PhoneUi.CreateScrollView(_host.Content, out RectTransform content);
                 var le = scroll.gameObject.AddComponent<LayoutElement>();
                 le.flexibleHeight = 1f;
                 PhoneUi.AddVertical(content.gameObject, 8f, new RectOffset(4, 4, 4, 4));
                 PhoneUi.FitVertical(content.gameObject);
                 fill(content);
+            }
+
+            private void OsRow(Transform parent)
+            {
+                var row = PhoneUi.CreateImage(parent, "Row_Os", PhoneUi.Rounded(14), PhoneUi.Surface);
+                PhoneUi.Size(row.gameObject, 40f);
+                Sprite logo = PhoneIcons.Logo();
+                float left = 12f;
+                if (logo != null)
+                {
+                    var mark = PhoneUi.CreateImage(row, "Logo", logo, Color.white);
+                    mark.anchorMin = mark.anchorMax = new Vector2(0f, 0.5f);
+                    mark.pivot = new Vector2(0f, 0.5f);
+                    mark.sizeDelta = new Vector2(32f, 32f);
+                    mark.anchoredPosition = new Vector2(6f, 0f);
+                    var graphic = mark.GetComponent<Image>();
+                    graphic.preserveAspect = true;
+                    graphic.raycastTarget = false;
+                    left = 42f;
+                }
+                var label = PhoneUi.CreateLabel(row, "Key", PiPhoneApi.OsName, 15f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+                label.rectTransform.anchorMin = new Vector2(0f, 0f);
+                label.rectTransform.anchorMax = new Vector2(0.62f, 1f);
+                label.rectTransform.offsetMin = new Vector2(left, 0f);
+                label.rectTransform.offsetMax = Vector2.zero;
+                var val = PhoneUi.CreateLabel(row, "Val", Plugin.PluginVersion, 15f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
+                val.color = PhoneUi.TextDim;
+                val.rectTransform.anchorMin = new Vector2(0.55f, 0f);
+                val.rectTransform.anchorMax = new Vector2(1f, 1f);
+                val.rectTransform.offsetMin = Vector2.zero;
+                val.rectTransform.offsetMax = new Vector2(-12f, 0f);
             }
 
             private void Row(Transform parent, string key, string value)
@@ -639,11 +786,11 @@ namespace Crispberry_PiPhone
                 PhoneUi.Size(row.gameObject, 48f);
                 PhoneUi.AddHorizontal(row.gameObject, 6f);
                 row.GetComponent<HorizontalLayoutGroup>().padding = new RectOffset(8, 8, 6, 6);
-                PhoneUi.CreateButton(row, "<", () => nudge(-1), new Vector2(36f, 32f));
+                PhoneUi.CreateIconChip(row, "<", PhoneIcons.Material("chevron_left"), () => nudge(-1), false, new Vector2(36f, 32f));
                 var mid = PhoneUi.CreateLabel(row, "Mid", key + ": " + value, 14f, FontStyles.Normal, TextAlignmentOptions.Center);
                 var midLe = mid.gameObject.AddComponent<LayoutElement>();
                 midLe.flexibleWidth = 1f;
-                PhoneUi.CreateButton(row, ">", () => nudge(1), new Vector2(36f, 32f));
+                PhoneUi.CreateIconChip(row, ">", PhoneIcons.Material("chevron_right"), () => nudge(1), false, new Vector2(36f, 32f));
             }
 
             private void Toggle(Transform parent, string key, bool on, System.Action click)

@@ -14,6 +14,7 @@ namespace Crispberry_PiPhone
         private static readonly MethodInfo LoadImageMethod = FindLoad();
 
         private static readonly Type UwrType = Type.GetType("UnityEngine.Networking.UnityWebRequest, UnityEngine.UnityWebRequestModule");
+        private static readonly Dictionary<string, Texture2D> FileCache = new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase);
 
         private static MethodInfo FindEncode()
         {
@@ -136,16 +137,40 @@ namespace Crispberry_PiPhone
         public static Texture2D LoadFile(string path)
         {
             if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+            {
+                DropFile(path);
                 return null;
+            }
+            Texture2D cached;
+            if (FileCache.TryGetValue(path, out cached) && cached != null)
+                return cached;
             try
             {
-                return LoadTexture(System.IO.File.ReadAllBytes(path));
+                cached = LoadTexture(System.IO.File.ReadAllBytes(path));
             }
             catch (Exception ex)
             {
                 Plugin.LogError("LoadFile failed: " + ex.Message);
                 return null;
             }
+            if (cached != null)
+            {
+                cached.hideFlags = HideFlags.HideAndDontSave;
+                FileCache[path] = cached;
+            }
+            return cached;
+        }
+
+        private static void DropFile(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return;
+            Texture2D cached;
+            if (!FileCache.TryGetValue(path, out cached))
+                return;
+            FileCache.Remove(path);
+            if (cached != null)
+                UnityEngine.Object.Destroy(cached);
         }
 
         public static IEnumerator Download(string url, Action<byte[], string, string> done)

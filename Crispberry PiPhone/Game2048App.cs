@@ -75,7 +75,7 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.2048", "2048"));
-                PhoneUi.CreateButton(_host.Content, "Play", StartGame, new Vector2(220f, 48f));
+                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
                 var high = PhoneUi.CreateLabel(_host.Content, "High", "High score  " + PhoneTheme.High2048, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Size(high.gameObject, 28f);
                 var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Slide tiles with WASD, arrows, or the pad. Combine matching numbers.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);

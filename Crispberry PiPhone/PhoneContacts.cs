@@ -65,17 +65,47 @@ namespace Crispberry_PiPhone
             return list.ToArray();
         }
 
+        public static bool IsSaved(string id)
+        {
+            PiPhoneContact c = Get(id);
+            return c != null && (!string.IsNullOrEmpty(c.CustomName) || !string.IsNullOrEmpty(c.PhotoFile));
+        }
+
+        public static bool BlocksCalls(string id)
+        {
+            PiPhoneContact c = Get(id);
+            return c != null && c.BlockCalls;
+        }
+
+        public static bool BlocksTexts(string id)
+        {
+            PiPhoneContact c = Get(id);
+            return c != null && c.BlockTexts;
+        }
+
+        public static void SetBlockCalls(string id, bool blocked)
+        {
+            PiPhoneContact c = EnsureContact(id);
+            if (c == null)
+                return;
+            c.BlockCalls = blocked;
+            Save();
+        }
+
+        public static void SetBlockTexts(string id, bool blocked)
+        {
+            PiPhoneContact c = EnsureContact(id);
+            if (c == null)
+                return;
+            c.BlockTexts = blocked;
+            Save();
+        }
+
         public static void See(string id, string realName)
         {
-            if (string.IsNullOrEmpty(id))
+            PiPhoneContact c = EnsureContact(id);
+            if (c == null)
                 return;
-            Load();
-            PiPhoneContact c;
-            if (!Map.TryGetValue(id, out c) || c == null)
-            {
-                c = new PiPhoneContact { Id = id };
-                Map[id] = c;
-            }
             if (!string.IsNullOrEmpty(realName) && c.RealName != realName)
             {
                 c.RealName = realName;
@@ -85,36 +115,40 @@ namespace Crispberry_PiPhone
 
         public static void SetCustomName(string id, string name)
         {
-            if (string.IsNullOrEmpty(id))
+            PiPhoneContact c = EnsureContact(id);
+            if (c == null)
                 return;
-            Load();
-            PiPhoneContact c;
-            if (!Map.TryGetValue(id, out c) || c == null)
-            {
-                c = new PiPhoneContact { Id = id };
-                Map[id] = c;
-            }
             c.CustomName = name ?? string.Empty;
             Save();
         }
 
         public static bool SetPhoto(string id, byte[] pngOrJpg)
         {
-            if (string.IsNullOrEmpty(id) || pngOrJpg == null || pngOrJpg.Length < 24)
+            if (pngOrJpg == null || pngOrJpg.Length < 24)
                 return false;
-            Load();
+            PiPhoneContact c = EnsureContact(id);
+            if (c == null)
+                return false;
             Directory.CreateDirectory(Dir);
             string file = SafeId(id) + ".png";
             File.WriteAllBytes(Path.Combine(Dir, file), pngOrJpg);
+            c.PhotoFile = file;
+            Save();
+            return true;
+        }
+
+        private static PiPhoneContact EnsureContact(string id)
+        {
+            if (string.IsNullOrEmpty(id))
+                return null;
+            Load();
             PiPhoneContact c;
             if (!Map.TryGetValue(id, out c) || c == null)
             {
                 c = new PiPhoneContact { Id = id };
                 Map[id] = c;
             }
-            c.PhotoFile = file;
-            Save();
-            return true;
+            return c;
         }
 
         public static Sprite Photo(string id)
@@ -194,7 +228,9 @@ namespace Crispberry_PiPhone
                         Id = p[0],
                         CustomName = p.Length > 1 ? p[1] : string.Empty,
                         RealName = p.Length > 2 ? p[2] : string.Empty,
-                        PhotoFile = p.Length > 3 ? p[3] : string.Empty
+                        PhotoFile = p.Length > 3 ? p[3] : string.Empty,
+                        BlockCalls = p.Length > 4 && p[4] == "1",
+                        BlockTexts = p.Length > 5 && p[5] == "1"
                     };
                 }
             }
@@ -218,7 +254,9 @@ namespace Crispberry_PiPhone
                     sb.Append(c.Id).Append('\t')
                         .Append(c.CustomName ?? string.Empty).Append('\t')
                         .Append(c.RealName ?? string.Empty).Append('\t')
-                        .Append(c.PhotoFile ?? string.Empty).Append('\n');
+                        .Append(c.PhotoFile ?? string.Empty).Append('\t')
+                        .Append(c.BlockCalls ? "1" : "0").Append('\t')
+                        .Append(c.BlockTexts ? "1" : "0").Append('\n');
                 }
                 File.WriteAllText(Path.Combine(Dir, "contacts.txt"), sb.ToString());
             }

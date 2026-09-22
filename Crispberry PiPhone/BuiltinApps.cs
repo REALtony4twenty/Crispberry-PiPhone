@@ -54,6 +54,7 @@ namespace Crispberry_PiPhone
             SettingsApp.Register();
             PhoneNumbers.RegisterBuiltins();
             ApplyBuiltinFlags();
+            ApplyStoreCatalog();
             PhoneIcons.BindBuiltins();
             PhoneStore.DefaultsReady = true;
             PhoneStore.EnsureInstalledDefaults();
@@ -67,6 +68,7 @@ namespace Crispberry_PiPhone
             string[] extra = { Game2048Id, MinesId, SimonId, TetrisId, BreakoutId };
             string[] games = { SnakeId, Game2048Id, MinesId, SimonId, TetrisId, BreakoutId, Connect4Id, SudokuId, SolitaireId };
             string[] sticky = { PhoneId, MessagesId, SettingsId, StoreId };
+            string[] notInStore = { PhoneId, MessagesId, VoicemailId, PhotosId, CameraId, SettingsId };
             var apps = PiPhoneApi.Apps;
             for (int i = 0; i < apps.Count; i++)
             {
@@ -89,7 +91,58 @@ namespace Crispberry_PiPhone
                     if (app.Id != StoreId)
                         app.ListedInStore = true;
                 }
+                if (ContainsId(notInStore, app.Id))
+                    app.ListedInStore = false;
             }
+        }
+
+        private static void ApplyStoreCatalog()
+        {
+            PiPhoneApi.RegisterCategory("games", "Games", 10);
+            PiPhoneApi.RegisterCategory("entertainment", "Entertainment", 20);
+            PiPhoneApi.RegisterCategory("photography", "Photography", 30);
+            PiPhoneApi.RegisterCategory("music", "Music and audio", 40);
+            PiPhoneApi.RegisterCategory("communication", "Communication", 50);
+            var apps = PiPhoneApi.Apps;
+            for (int i = 0; i < apps.Count; i++)
+            {
+                PiPhoneApp app = apps[i];
+                if (app == null)
+                    continue;
+                string cat;
+                string desc;
+                if (!StoreBlurb(app.Id, out cat, out desc))
+                    continue;
+                app.Category = cat;
+                app.Description = desc;
+            }
+        }
+
+        private static bool StoreBlurb(string id, out string category, out string description)
+        {
+            category = string.Empty;
+            description = string.Empty;
+            if (id == PhoneId) { category = "communication"; description = "Call scouts in your lobby, with video, recents, and saved contacts."; return true; }
+            if (id == MessagesId) { category = "communication"; description = "Texts, photos, and voice messages for scouts in your lobby."; return true; }
+            if (id == VoicemailId) { category = "communication"; description = "Listen to voicemails left when you miss a call."; return true; }
+            if (id == NotesId) { category = "entertainment"; description = "Keep track of your thoughts, lists, and ideas."; return true; }
+            if (id == ClosetId) { category = "entertainment"; description = "Change your appearance. Works with SkinColorSliders and Custom outfits that use More_Customizations!"; return true; }
+            if (id == CameraId) { category = "photography"; description = "Take photos and videos out on the mountain."; return true; }
+            if (id == PhotosId) { category = "photography"; description = "Pictures, videos, and files saved on this phone."; return true; }
+            if (id == SoundsId) { category = "music"; description = "Play your songs and build playlists. With toolbar controls to access anytime on any app."; return true; }
+            if (id == VoiceMemosId) { category = "music"; description = "Record your voice, save it and listen to it at anytime."; return true; }
+            if (id == MakeNotiId) { category = "music"; description = "Trim audio files into ring and alert tones."; return true; }
+            if (id == SnakeId) { category = "games"; description = "Steer the snake and don't bite yourself."; return true; }
+            if (id == Game2048Id) { category = "games"; description = "Slide tiles and build 2048."; return true; }
+            if (id == MinesId) { category = "games"; description = "Clear the field without hitting a mine."; return true; }
+            if (id == SimonId) { category = "games"; description = "Repeat the color pattern."; return true; }
+            if (id == TetrisId) { category = "games"; description = "Place the falling shapes in full rows to break lines and avoid the ceiling."; return true; }
+            if (id == BreakoutId) { category = "games"; description = "Bounce the ball and clear the bricks."; return true; }
+            if (id == Connect4Id) { category = "games"; description = "Drop your colored disc and connect 4 in a row vertically, horizontally or diagonally."; return true; }
+            if (id == SudokuId) { category = "games"; description = "Make each box column and row have all numbers 1-9 without duplicates."; return true; }
+            if (id == SolitaireId) { category = "games"; description = "The classic game but on your phone."; return true; }
+            if (id == SettingsId) { category = string.Empty; description = "Look, sounds, size, and controls for this phone."; return true; }
+            return false;
         }
 
         private static bool ContainsId(string[] ids, string id)

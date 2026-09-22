@@ -24,15 +24,15 @@ namespace Crispberry_PiPhone
         private static RenderTexture _localRt;
         private static RawImage _remote;
         private static RawImage _local;
-        private static TextMeshProUGUI _videoLabel;
+        private static Button _videoBtn;
         private static Character _chaseHunter;
         private static Character _chasePrey;
 
-        public static void Bind(RawImage remote, RawImage local, TextMeshProUGUI videoLabel)
+        public static void Bind(RawImage remote, RawImage local, Button videoBtn)
         {
             _remote = remote;
             _local = local;
-            _videoLabel = videoLabel;
+            _videoBtn = videoBtn;
             ApplyUi();
         }
 
@@ -64,6 +64,15 @@ namespace Crispberry_PiPhone
         {
             StopChase();
             StopSending();
+            ApplyUi();
+        }
+
+        internal static void DropToVoice()
+        {
+            if (!Sending)
+                return;
+            StopSending();
+            PhoneNet.SendVideoState(CallService.OtherActors(), CallService.CallId, false);
             ApplyUi();
         }
 
@@ -209,8 +218,8 @@ namespace Crispberry_PiPhone
                 _local.enabled = show;
                 _local.gameObject.SetActive(show);
             }
-            if (_videoLabel != null)
-                _videoLabel.text = Sending ? "Stop video" : "Video";
+            if (_videoBtn != null)
+                PhoneUi.SetChipIcon(_videoBtn, PhoneIcons.Material(Sending ? "stop" : "videocam"), Sending ? "Stop" : "Video");
         }
 
         private static void EnsureCams()

@@ -81,8 +81,8 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 Clear();
                 _host.SetTitle(PhoneLang.T("app.pip.snake", "Snake"));
-                PhoneUi.CreateButton(_host.Content, PhoneLang.T("play", "Play"), StartGame, new Vector2(220f, 48f));
-                PhoneUi.CreateButton(_host.Content, PhoneLang.T("controls", "Controls"), BuildControls, new Vector2(220f, 44f));
+                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
+                PhoneUi.MaterialChip(_host.Content, "keyboard", "Controls", BuildControls, new Vector2(40f, 40f));
                 var high = PhoneUi.CreateLabel(_host.Content, "High", "High score  " + PhoneTheme.SnakeHigh, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Size(high.gameObject, 28f);
                 var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Eat the dots. Fill the whole board to reach the next level. Each level is faster.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
@@ -96,7 +96,7 @@ namespace Crispberry_PiPhone
                 _page = "controls";
                 Clear();
                 _host.SetTitle("Snake controls");
-                PhoneUi.CreateButton(_host.Content, "Back", BuildMenu, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", BuildMenu, new Vector2(36f, 32f));
                 Bind("Up", PhoneKeys.GameUp);
                 Bind("Down", PhoneKeys.GameDown);
                 Bind("Left", PhoneKeys.GameLeft);

@@ -79,14 +79,14 @@ namespace Crispberry_PiPhone
                         PhoneUi.Size(row, 44f);
                         PhoneUi.AddHorizontal(row, 6f);
                         PhoneUi.CreateButton(row.transform, captured.FromName ?? "Scout", () => TogglePlay(captured.AudioFile), new Vector2(160f, 40f));
-                        PhoneUi.CreateButton(row.transform, "Stop", VoiceIo.StopPlay, new Vector2(56f, 40f));
-                        PhoneUi.CreateButton(row.transform, "Del", () =>
+                        PhoneUi.CreateIconChip(row.transform, "Stop", PhoneIcons.Material("stop"), VoiceIo.StopPlay, false, new Vector2(40f, 40f));
+                        PhoneUi.CreateIconChip(row.transform, "Delete", PhoneIcons.Material("delete"), () =>
                         {
                             VoiceIo.StopPlay();
                             PhoneStore.DeleteVoicemail(captured.Id);
                             _host.ShowToast("Moved to Trash.");
                             Build();
-                        }, new Vector2(56f, 40f));
+                        }, false, new Vector2(40f, 40f));
                     }
                 }
 

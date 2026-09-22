@@ -112,39 +112,40 @@ namespace Crispberry_PiPhone
                 _host.SetTitle("Gallery");
                 var tabs = PhoneUi.CreateImage(_host.Content, "Tabs", PhoneUi.Rounded(14), PhoneUi.Surface);
                 PhoneUi.Size(tabs.gameObject, 36f);
-                PhoneUi.AddHorizontal(tabs.gameObject, 4f);
-                tabs.GetComponent<HorizontalLayoutGroup>().padding = new RectOffset(4, 4, 3, 3);
-                Chip(tabs.transform, "Photos", "photos");
-                Chip(tabs.transform, "Videos", "videos");
-                Chip(tabs.transform, "Files", "downloads");
+                var tabRow = PhoneUi.AddHorizontal(tabs.gameObject, 4f);
+                tabRow.padding = new RectOffset(4, 4, 3, 3);
+                tabRow.childForceExpandWidth = false;
+                Chip(tabs.transform, "Photos", "photos", "photo_library");
+                Chip(tabs.transform, "Videos", "videos", "videocam");
+                Chip(tabs.transform, "Files", "downloads", "folder");
 
                 var tools = new GameObject("Tools", typeof(RectTransform));
                 tools.transform.SetParent(_host.Content, false);
                 PhoneUi.Size(tools, 36f);
                 PhoneUi.AddHorizontal(tools, 6f);
-                PhoneUi.CreateButton(tools.transform, "Trash", PhoneTrash.Reveal, new Vector2(72f, 32f));
+                PhoneUi.CreateIconChip(tools.transform, "Trash", PhoneIcons.Material("delete"), PhoneTrash.Reveal, false, new Vector2(36f, 32f));
                 var spacer = new GameObject("Pad", typeof(RectTransform));
                 spacer.transform.SetParent(tools.transform, false);
                 spacer.AddComponent<LayoutElement>().flexibleWidth = 1f;
                 if (_selecting)
                 {
-                    PhoneUi.CreateButton(tools.transform, "All", SelectAllVisible, new Vector2(56f, 32f));
-                    PhoneUi.CreateButton(tools.transform, "Cancel", () =>
+                    PhoneUi.MaterialChip(tools.transform, "select_all", "All", SelectAllVisible, new Vector2(36f, 32f));
+                    PhoneUi.MaterialChip(tools.transform, "close", "Cancel", () =>
                     {
                         _selecting = false;
                         _picked.Clear();
                         ShowGallery();
-                    }, new Vector2(80f, 32f));
-                    PhoneUi.CreateButton(tools.transform, _picked.Count > 0 ? "Delete (" + _picked.Count + ")" : "Delete", DeletePicked, new Vector2(110f, 32f));
+                    }, new Vector2(36f, 32f));
+                    PhoneUi.CreateIconChip(tools.transform, "Delete", PhoneIcons.Material("delete"), DeletePicked, false, new Vector2(36f, 32f));
                 }
                 else
                 {
-                    PhoneUi.CreateButton(tools.transform, "Select", () =>
+                    PhoneUi.MaterialChip(tools.transform, "select", "Select", () =>
                     {
                         _selecting = true;
                         _picked.Clear();
                         ShowGallery();
-                    }, new Vector2(80f, 32f));
+                    }, new Vector2(36f, 32f));
                 }
 
                 if (_folder == "downloads")
@@ -166,7 +167,7 @@ namespace Crispberry_PiPhone
                         {
                         }
                     }, new Vector2(80f, 32f));
-                    PhoneUi.CreateButton(row.transform, _busy ? "..." : "Save", () => StartDownload(input), new Vector2(72f, 32f));
+                    PhoneUi.MaterialChip(row.transform, "save", "Save", () => StartDownload(input), new Vector2(36f, 32f));
                 }
 
                 ScrollRect scroll = PhoneUi.CreateScrollView(_host.Content, out RectTransform content);
@@ -250,21 +251,15 @@ namespace Crispberry_PiPhone
                 ShowGallery();
             }
 
-            private void Chip(Transform parent, string label, string folder)
+            private void Chip(Transform parent, string label, string folder, string icon)
             {
                 bool on = _folder == folder;
-                Button btn = PhoneUi.CreateButton(parent, label, () =>
+                PhoneUi.CreateIconChip(parent, label, PhoneIcons.Material(icon), () =>
                 {
                     _folder = folder;
                     _galleryNorm = 1f;
                     ShowGallery();
-                }, new Vector2(88f, 28f));
-                var le = btn.GetComponent<LayoutElement>();
-                if (le != null)
-                    le.flexibleWidth = 1f;
-                var img = btn.GetComponent<Image>();
-                if (img != null)
-                    img.color = on ? PhoneUi.Accent : PhoneUi.SurfaceAlt;
+                }, on, new Vector2(36f, 32f));
             }
 
             private static string ExtBadge(string file)
@@ -452,7 +447,7 @@ namespace Crispberry_PiPhone
                 _page = "view";
                 Clear();
                 _host.SetTitle(photo != null && photo.Video ? "Video" : (PhoneVideo.IsVideoPath(PhoneStore.MediaPath(downloadWall)) ? "Video" : "Photo"));
-                PhoneUi.CreateButton(_host.Content, "Back", () => GoBack(), new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", () => GoBack(), new Vector2(36f, 32f));
 
                 var wrap = new GameObject("ViewWrap", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
                 wrap.transform.SetParent(_host.Content, false);
@@ -532,16 +527,24 @@ namespace Crispberry_PiPhone
                         PhoneTheme.SetWallpaper(wall);
                         _host.ShowToast("Wallpaper set.");
                     }, new Vector2(220f, 40f));
+                    if (!string.IsNullOrEmpty(PhoneTheme.WallpaperFile))
+                    {
+                        PhoneUi.CreateButton(_host.Content, "Use default background", () =>
+                        {
+                            PhoneTheme.SetWallpaper(string.Empty);
+                            _host.ShowToast("Default background restored.");
+                        }, new Vector2(220f, 40f));
+                    }
                 }
                 if (photo != null)
                 {
-                    PhoneUi.CreateButton(_host.Content, "Delete", () =>
+                    PhoneUi.CreateIconChip(_host.Content, "Delete", PhoneIcons.Material("delete"), () =>
                     {
                         PhoneVideo.Stop(preview);
                         PhoneStore.DeletePhoto(photo.Id);
                         _host.ShowToast("Moved to Trash.");
                         ShowGallery();
-                    }, new Vector2(160f, 40f));
+                    }, false, new Vector2(40f, 40f));
                 }
                 else if (!string.IsNullOrEmpty(downloadWall))
                 {
@@ -554,12 +557,12 @@ namespace Crispberry_PiPhone
                     if (found != null)
                     {
                         DownloadItem captured = found;
-                        PhoneUi.CreateButton(_host.Content, "Delete", () =>
+                        PhoneUi.CreateIconChip(_host.Content, "Delete", PhoneIcons.Material("delete"), () =>
                         {
                             PhoneStore.DeleteDownload(captured.Id);
                             _host.ShowToast("Moved to Trash.");
                             ShowDownloads();
-                        }, new Vector2(160f, 40f));
+                        }, false, new Vector2(40f, 40f));
                     }
                 }
             }

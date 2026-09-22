@@ -105,9 +105,9 @@ namespace Crispberry_PiPhone
                 PhoneUi.Size(tabs.gameObject, 40f);
                 PhoneUi.AddHorizontal(tabs.gameObject, 6f);
                 tabs.GetComponent<HorizontalLayoutGroup>().padding = new RectOffset(6, 6, 4, 4);
-                _keypadTab = Tab(tabs, "Keypad", ShowKeypad);
-                _contactsTab = Tab(tabs, "Contacts", ShowContacts);
-                _recentsTab = Tab(tabs, "Recents", ShowRecents);
+                _keypadTab = Tab(tabs, "Dialpad", PhoneIcons.Material("dialpad"), ShowKeypad);
+                _contactsTab = Tab(tabs, "Contacts", PhoneIcons.Material("contact_page"), ShowContacts);
+                _recentsTab = Tab(tabs, "Recents", PhoneIcons.Material("call_log"), ShowRecents);
 
                 _keypadPage = Page("KeypadPage");
                 BuildKeypad();
@@ -132,12 +132,15 @@ namespace Crispberry_PiPhone
                 return go;
             }
 
-            private Button Tab(Transform parent, string label, UnityEngine.Events.UnityAction onClick)
+            private Button Tab(Transform parent, string label, Sprite icon, UnityEngine.Events.UnityAction onClick)
             {
-                Button btn = PhoneUi.CreateButton(parent, label, onClick, new Vector2(100f, 32f));
+                Button btn = PhoneUi.CreateIconChip(parent, label, icon, onClick, false, new Vector2(36f, 32f));
                 var le = btn.GetComponent<LayoutElement>();
                 if (le != null)
+                {
                     le.flexibleWidth = 1f;
+                    le.preferredWidth = 96f;
+                }
                 return btn;
             }
 
@@ -147,7 +150,7 @@ namespace Crispberry_PiPhone
                 PhoneUi.Size(displayRow.gameObject, 56f);
                 _numberLabel = PhoneUi.CreateLabel(displayRow, "Number", string.Empty, 28f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Stretch(_numberLabel.rectTransform, 36f, 4f);
-                var back = PhoneUi.CreateButton(displayRow.transform, "<", Backspace, new Vector2(36f, 36f));
+                var back = PhoneUi.CreateIconChip(displayRow.transform, "Backspace", PhoneIcons.Material("backspace"), Backspace, false, new Vector2(36f, 36f));
                 var backRt = back.GetComponent<RectTransform>();
                 backRt.anchorMin = backRt.anchorMax = new Vector2(1f, 0.5f);
                 backRt.pivot = new Vector2(1f, 0.5f);
@@ -163,7 +166,7 @@ namespace Crispberry_PiPhone
                 bool land = _host.IsLandscape;
                 gridLe.minHeight = land ? 160f : 220f;
                 var grid = gridGo.AddComponent<GridLayoutGroup>();
-                grid.cellSize = land ? new Vector2(88f, 36f) : new Vector2(92f, 52f);
+                grid.cellSize = land ? new Vector2(72f, 64f) : new Vector2(96f, 84f);
                 grid.spacing = land ? new Vector2(12f, 6f) : new Vector2(10f, 8f);
                 grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
                 grid.constraintCount = 3;
@@ -182,29 +185,65 @@ namespace Crispberry_PiPhone
                 var callLayout = callRow.GetComponent<HorizontalLayoutGroup>();
                 callLayout.childForceExpandWidth = false;
                 callLayout.childControlWidth = false;
-                PhoneUi.CreateCircleButton(callRow.transform, "Call", PlaceCall, land ? 48f : 64f, PhoneUi.CallGreen);
+                Button callBtn = PhoneUi.CreateCircleButton(callRow.transform, "Call", PlaceCall, land ? 48f : 64f, PhoneUi.CallGreen);
+                PhoneUi.SetCircleIcon(callBtn, PhoneIcons.Material("call"));
             }
 
             private void AddKey(Transform parent, string digit, string letters)
             {
-                var rt = PhoneUi.CreateImage(parent, "Key_" + PhoneUi.Sanitize(digit), PhoneUi.Circle(), PhoneUi.SurfaceAlt);
-                rt.GetComponent<Image>().type = Image.Type.Simple;
-                var button = rt.gameObject.AddComponent<Button>();
-                button.targetGraphic = rt.GetComponent<Image>();
+                var key = new GameObject("Key_" + PhoneUi.Sanitize(digit), typeof(RectTransform));
+                key.transform.SetParent(parent, false);
+                var stack = PhoneUi.AddVertical(key, 1f, new RectOffset(0, 0, 0, 0));
+                stack.childAlignment = TextAnchor.UpperCenter;
+                stack.childForceExpandWidth = false;
+                stack.childForceExpandHeight = false;
+                stack.childControlWidth = true;
+                stack.childControlHeight = true;
+
+                Sprite icon = KeyIcon(digit);
+                float d = _host.IsLandscape ? 40f : 52f;
+                var art = PhoneUi.CreateImage(key.transform, "I", icon != null ? icon : PhoneUi.Circle(), PhoneUi.ButtonText);
+                art.sizeDelta = new Vector2(d, d);
+                var artImg = art.GetComponent<Image>();
+                artImg.type = Image.Type.Simple;
+                artImg.preserveAspect = true;
+                var button = art.gameObject.AddComponent<Button>();
+                button.targetGraphic = artImg;
                 button.colors = PhoneUi.TintColors();
                 string captured = digit;
                 button.onClick.AddListener(() => Press(captured));
-                var digitLabel = PhoneUi.CreateLabel(rt, "Digit", digit, 22f, FontStyles.Normal, TextAlignmentOptions.Center);
-                digitLabel.rectTransform.anchorMin = new Vector2(0f, 0.28f);
-                digitLabel.rectTransform.anchorMax = new Vector2(1f, 1f);
-                digitLabel.rectTransform.offsetMin = Vector2.zero;
-                digitLabel.rectTransform.offsetMax = Vector2.zero;
-                var sub = PhoneUi.CreateLabel(rt, "Letters", letters, 10f, FontStyles.Normal, TextAlignmentOptions.Center);
-                sub.color = PhoneUi.TextDim;
-                sub.rectTransform.anchorMin = new Vector2(0f, 0.04f);
-                sub.rectTransform.anchorMax = new Vector2(1f, 0.36f);
-                sub.rectTransform.offsetMin = Vector2.zero;
-                sub.rectTransform.offsetMax = Vector2.zero;
+                var artLe = art.gameObject.AddComponent<LayoutElement>();
+                artLe.preferredWidth = d;
+                artLe.preferredHeight = d;
+                artLe.minWidth = d;
+                artLe.minHeight = d;
+                artLe.flexibleWidth = 0f;
+                artLe.flexibleHeight = 0f;
+
+                if (!string.IsNullOrEmpty(letters))
+                {
+                    var sub = PhoneUi.CreateLabel(key.transform, "Letters", letters, 11f, FontStyles.Normal, TextAlignmentOptions.Center);
+                    sub.color = PhoneUi.Text;
+#pragma warning disable CS0618
+                    sub.enableWordWrapping = false;
+#pragma warning restore CS0618
+                    sub.overflowMode = TextOverflowModes.Overflow;
+                    float cellW = _host.IsLandscape ? 72f : 96f;
+                    var subLe = PhoneUi.Size(sub.gameObject, 16f, cellW);
+                    subLe.flexibleWidth = 0f;
+                    subLe.flexibleHeight = 0f;
+                }
+            }
+
+            private static Sprite KeyIcon(string digit)
+            {
+                if (digit == "*")
+                    return PhoneIcons.Material("asterisk");
+                if (digit == "#")
+                    return PhoneIcons.Material("tag");
+                if (digit != null && digit.Length == 1 && digit[0] >= '0' && digit[0] <= '9')
+                    return PhoneIcons.Material("counter_" + digit);
+                return null;
             }
 
             private void BuildContacts()
@@ -221,48 +260,76 @@ namespace Crispberry_PiPhone
                 PhoneUi.FitVertical(content.gameObject);
 
                 PhotonPlayer[] players = BuiltinApps.OtherPlayers();
-                if (players.Length == 0)
+                var seen = new HashSet<string>();
+                int shown = 0;
+                for (int i = 0; i < players.Length; i++)
                 {
-                    var empty = PhoneUi.CreateLabel(content, "Empty", "No scouts nearby.", 15f, FontStyles.Normal, TextAlignmentOptions.Center);
-                    empty.color = PhoneUi.TextDim;
-                    PhoneUi.Size(empty.gameObject, 36f);
+                    PhotonPlayer player = players[i];
+                    string id = BuiltinApps.PlayerId(player);
+                    PhoneContacts.See(id, BuiltinApps.PlayerName(player));
+                    seen.Add(id);
+                    AddContactRow(content, id, player.ActorNumber, PhoneContacts.Display(id, BuiltinApps.PlayerName(player)));
+                    shown++;
                 }
-                else
+                PiPhoneContact[] saved = PhoneContacts.All();
+                for (int i = 0; i < saved.Length; i++)
                 {
-                    for (int i = 0; i < players.Length; i++)
-                    {
-                        PhotonPlayer player = players[i];
-                        int actor = player.ActorNumber;
-                        string id = BuiltinApps.PlayerId(player);
-                        string real = BuiltinApps.PlayerName(player);
-                        PhoneContacts.See(id, real);
-                        string name = PhoneContacts.Display(id, real);
-                        var row = new GameObject("C", typeof(RectTransform));
-                        row.transform.SetParent(content, false);
-                        PhoneUi.Size(row, 56f);
-                        PhoneUi.AddHorizontal(row, 6f);
-                        PhoneContacts.CreateAvatar(row.transform, id, 40f);
-                        var textCol = new GameObject("T", typeof(RectTransform));
-                        textCol.transform.SetParent(row.transform, false);
-                        var textLe = textCol.AddComponent<LayoutElement>();
-                        textLe.flexibleWidth = 1f;
-                        textLe.minWidth = 80f;
-                        PhoneUi.AddVertical(textCol, 0f, new RectOffset(0, 0, 4, 4));
-                        string idCap = id;
-                        Button nameBtn = PhoneUi.CreateButton(textCol.transform, name, () => ShowContactProfile(idCap), new Vector2(140f, 24f));
-                        var nameLe = nameBtn.GetComponent<LayoutElement>();
-                        if (nameLe != null)
-                            nameLe.flexibleWidth = 1f;
-                        var realLab = PhoneUi.CreateLabel(textCol.transform, "R", real, 11f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
-                        realLab.color = PhoneUi.TextDim;
-                        PhoneUi.Size(realLab.gameObject, 14f);
-                        int actorCaptured = actor;
-                        PhoneUi.CreateButton(row.transform, "C", () => CallService.Dial(new[] { actorCaptured }, false), new Vector2(36f, 36f));
-                        PhoneUi.CreateButton(row.transform, "V", () => CallService.Dial(new[] { actorCaptured }, false, true), new Vector2(36f, 36f));
-                    }
+                    PiPhoneContact contact = saved[i];
+                    if (contact == null || !PhoneContacts.IsSaved(contact.Id) || seen.Contains(contact.Id))
+                        continue;
+                    AddContactRow(content, contact.Id, 0, PhoneContacts.Display(contact.Id, contact.RealName));
+                    shown++;
+                }
+                if (shown == 0)
+                {
+                    var empty = PhoneUi.CreateLabel(content, "Empty", "No saved contacts. Save a scout from their profile while they're in the lobby.", 15f, FontStyles.Normal, TextAlignmentOptions.Center);
+                    empty.color = PhoneUi.TextDim;
+                    PhoneUi.Size(empty.gameObject, 48f);
                 }
 
                 PhoneUi.CreateButton(_contactsPage.transform, "Start group call", CallSelected, new Vector2(240f, 44f));
+            }
+
+            private void AddContactRow(RectTransform content, string id, int actor, string name)
+            {
+                string idCap = id;
+                int actorCaptured = actor;
+                var row = new GameObject("C", typeof(RectTransform));
+                row.transform.SetParent(content, false);
+                PhoneUi.Size(row, 56f);
+                PhoneUi.AddHorizontal(row, 6f);
+                PhoneContacts.CreateAvatar(row.transform, id, 40f);
+                var textCol = new GameObject("T", typeof(RectTransform));
+                textCol.transform.SetParent(row.transform, false);
+                var textLe = textCol.AddComponent<LayoutElement>();
+                textLe.flexibleWidth = 1f;
+                textLe.minWidth = 80f;
+                PhoneUi.AddVertical(textCol, 0f, new RectOffset(0, 0, 4, 4));
+                Button nameBtn = PhoneUi.CreateButton(textCol.transform, name, () => ShowContactProfile(idCap), new Vector2(140f, 24f));
+                var nameLe = nameBtn.GetComponent<LayoutElement>();
+                if (nameLe != null)
+                    nameLe.flexibleWidth = 1f;
+                string status = actor > 0 ? "In the lobby" : "Not in this lobby";
+                var realLab = PhoneUi.CreateLabel(textCol.transform, "R", status, 11f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+                realLab.color = PhoneUi.TextDim;
+                PhoneUi.Size(realLab.gameObject, 14f);
+                PhoneUi.CreateIconChip(row.transform, "Call", PhoneIcons.Material("phone"), () => DialActor(actorCaptured), false, new Vector2(36f, 36f));
+                PhoneUi.CreateIconChip(row.transform, "Video", PhoneIcons.Material("videocam"), () => DialActor(actorCaptured, true), false, new Vector2(36f, 36f));
+            }
+
+            private void DialActor(int actor, bool video)
+            {
+                if (actor <= 0)
+                {
+                    _host.ShowToast("Failed to connect.");
+                    return;
+                }
+                CallService.Dial(new[] { actor }, false, video);
+            }
+
+            private void DialActor(int actor)
+            {
+                DialActor(actor, false);
             }
 
             private void ToggleSelect(int actor, Button row)
@@ -298,9 +365,18 @@ namespace Crispberry_PiPhone
                     CallLogItem call = PhoneStore.Calls[i];
                     if (call == null)
                         continue;
-                    string label = (call.Outgoing ? "↑ " : "↓ ") + (call.Missed ? "(missed) " : "") + call.OtherName;
+                    string label = call.OtherName ?? "Scout";
                     string otherId = call.OtherId;
-                    PhoneUi.CreateButton(content, label, () =>
+                    var row = new GameObject("Call", typeof(RectTransform));
+                    row.transform.SetParent(content, false);
+                    PhoneUi.Size(row, 44f);
+                    PhoneUi.AddHorizontal(row, 6f);
+                    var rh = row.GetComponent<HorizontalLayoutGroup>();
+                    rh.childForceExpandWidth = false;
+                    rh.childAlignment = TextAnchor.MiddleLeft;
+                    string mark = call.Missed ? "phone_missed" : (call.Outgoing ? "call_made" : "call_received");
+                    PhoneUi.CreateIconChip(row.transform, call.Missed ? "Missed" : "Call", PhoneIcons.Material(mark), null, false, new Vector2(28f, 28f));
+                    Button nameBtn = PhoneUi.CreateButton(row.transform, label, () =>
                     {
                         PhotonPlayer p = BuiltinApps.FindById(otherId);
                         if (p == null)
@@ -309,7 +385,13 @@ namespace Crispberry_PiPhone
                             return;
                         }
                         CallService.Dial(new[] { p.ActorNumber }, false);
-                    }, new Vector2(300f, 40f));
+                    }, new Vector2(160f, 36f));
+                    var nle = nameBtn.GetComponent<LayoutElement>();
+                    if (nle != null)
+                    {
+                        nle.flexibleWidth = 1f;
+                        nle.minWidth = 80f;
+                    }
                     shown++;
                 }
             }
@@ -375,7 +457,7 @@ namespace Crispberry_PiPhone
                 string real = PhoneContacts.Real(id, "Scout");
                 string custom = PhoneContacts.Display(id, real);
                 _host.SetTitle(custom);
-                PhoneUi.CreateButton(_profilePage.transform, "Back", ShowContacts, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_profilePage.transform, "arrow_back", "Back", ShowContacts, new Vector2(36f, 32f));
                 var head = new GameObject("Head", typeof(RectTransform));
                 head.transform.SetParent(_profilePage.transform, false);
                 PhoneUi.Size(head, 80f);
@@ -397,13 +479,13 @@ namespace Crispberry_PiPhone
                 TMP_InputField nameIn = PhoneUi.CreateInput(_profilePage.transform, "Custom name");
                 nameIn.text = custom == real ? string.Empty : custom;
                 PhoneUi.Size(nameIn.gameObject, 40f);
-                PhoneUi.CreateButton(_profilePage.transform, "Save name", () =>
+                PhoneUi.MaterialChip(_profilePage.transform, "save", "Save", () =>
                 {
                     PhoneContacts.SetCustomName(id, nameIn.text);
                     _toneContactName = PhoneContacts.Display(id, real);
                     DrawContactProfile();
                     _host.ShowToast("Contact saved.");
-                }, new Vector2(200f, 36f));
+                }, new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_profilePage.transform, "Photo from Gallery", DrawPhotoPicker, new Vector2(220f, 36f));
 
                 PhotonPlayer live = BuiltinApps.FindById(id);
@@ -411,20 +493,32 @@ namespace Crispberry_PiPhone
                 var actions = new GameObject("A", typeof(RectTransform));
                 actions.transform.SetParent(_profilePage.transform, false);
                 PhoneUi.Size(actions, 44f);
-                PhoneUi.AddHorizontal(actions, 8f);
-                if (actor > 0)
+                var actionRow = PhoneUi.AddHorizontal(actions, 8f);
+                actionRow.childForceExpandWidth = false;
+                PhoneUi.CreateIconChip(actions.transform, "Call", PhoneIcons.Material("call"), () => DialActor(actor), false, new Vector2(40f, 36f));
+                PhoneUi.CreateIconChip(actions.transform, "Video", PhoneIcons.Material("videocam"), () => DialActor(actor, true), false, new Vector2(40f, 36f));
+                PhoneUi.CreateIconChip(actions.transform, "Text", PhoneIcons.Material("chat"), () => MessagesApp.OpenConversation(id, PhoneContacts.Display(id, real)), false, new Vector2(40f, 36f));
+                PhoneUi.CreateButton(actions.transform, "Tones", () => ShowContactTones(id, PhoneContacts.Display(id, real)), new Vector2(72f, 36f));
+
+                bool callsBlocked = PhoneContacts.BlocksCalls(id);
+                bool textsBlocked = PhoneContacts.BlocksTexts(id);
+                PhoneUi.CreateButton(_profilePage.transform, callsBlocked ? "Calls blocked" : "Block calls", () =>
                 {
-                    PhoneUi.CreateButton(actions.transform, "Call", () => CallService.Dial(new[] { actor }, false), new Vector2(90f, 36f));
-                    PhoneUi.CreateButton(actions.transform, "Video", () => CallService.Dial(new[] { actor }, false, true), new Vector2(90f, 36f));
-                }
-                PhoneUi.CreateButton(actions.transform, "Tones", () => ShowContactTones(id, PhoneContacts.Display(id, real)), new Vector2(90f, 36f));
+                    PhoneContacts.SetBlockCalls(id, !callsBlocked);
+                    DrawContactProfile();
+                }, new Vector2(220f, 36f));
+                PhoneUi.CreateButton(_profilePage.transform, textsBlocked ? "Texts blocked" : "Block texts", () =>
+                {
+                    PhoneContacts.SetBlockTexts(id, !textsBlocked);
+                    DrawContactProfile();
+                }, new Vector2(220f, 36f));
             }
 
             private void DrawPhotoPicker()
             {
                 ClearPage(_profilePage);
                 _host.SetTitle("Contact photo");
-                PhoneUi.CreateButton(_profilePage.transform, "Back", DrawContactProfile, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_profilePage.transform, "arrow_back", "Back", DrawContactProfile, new Vector2(36f, 32f));
                 ScrollRect scroll = PhoneUi.CreateScrollView(_profilePage.transform, out RectTransform content);
                 scroll.gameObject.AddComponent<LayoutElement>().flexibleHeight = 1f;
                 PhoneUi.AddVertical(content.gameObject, 6f, new RectOffset(4, 4, 4, 4));
@@ -479,7 +573,7 @@ namespace Crispberry_PiPhone
             {
                 ClearPage(_tonesPage);
                 _host.SetTitle(_toneContactName ?? "Sounds");
-                PhoneUi.CreateButton(_tonesPage.transform, "Back", () => ShowContactProfile(_toneContactId), new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_tonesPage.transform, "arrow_back", "Back", () => ShowContactProfile(_toneContactId), new Vector2(36f, 32f));
                 var hint = PhoneUi.CreateLabel(_tonesPage.transform, "H", "Empty = Settings default.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 hint.color = PhoneUi.TextDim;
                 PhoneUi.Size(hint.gameObject, 22f);
@@ -491,7 +585,7 @@ namespace Crispberry_PiPhone
             {
                 _toneRing = ring;
                 ClearPage(_tonesPage);
-                PhoneUi.CreateButton(_tonesPage.transform, "Back", DrawContactTones, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_tonesPage.transform, "arrow_back", "Back", DrawContactTones, new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_tonesPage.transform, "Default", () =>
                 {
                     if (ring)

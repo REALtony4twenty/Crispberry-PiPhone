@@ -16,6 +16,8 @@ namespace Crispberry_PiPhone
         private Image _preview;
         private RectTransform _marker;
         private Slider _brightness;
+        private Slider _opacity;
+        private float _a = 1f;
         private Texture2D _wheelTex;
         private Sprite _wheelSprite;
         private float _h;
@@ -28,8 +30,8 @@ namespace Crispberry_PiPhone
             var go = new GameObject("ColorPicker", typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var le = go.AddComponent<LayoutElement>();
-            le.minHeight = 220f;
-            le.preferredHeight = 220f;
+            le.minHeight = 276f;
+            le.preferredHeight = 276f;
             le.flexibleWidth = 1f;
             PhoneUi.AddVertical(go, 8f, new RectOffset(4, 4, 4, 4)).childAlignment = TextAnchor.UpperCenter;
 
@@ -43,20 +45,17 @@ namespace Crispberry_PiPhone
         internal void SetColor(Color color, bool notify)
         {
             Color.RGBToHSV(color, out _h, out _s, out _v);
+            _a = Mathf.Clamp01(color.a);
             _suppress = true;
             if (_brightness != null)
             {
                 _brightness.SetValueWithoutNotify(_v);
-                Transform row = _brightness.transform.parent;
-                if (row != null)
-                {
-                    var labels = row.GetComponentsInChildren<TextMeshProUGUI>(true);
-                    for (int i = 0; i < labels.Length; i++)
-                    {
-                        if (labels[i] != null && labels[i].name == "Pct")
-                            labels[i].text = Mathf.RoundToInt(_v * 100f) + "%";
-                    }
-                }
+                WritePct(_brightness, Mathf.RoundToInt(_v * 100f) + "%");
+            }
+            if (_opacity != null)
+            {
+                _opacity.SetValueWithoutNotify(_a);
+                WritePct(_opacity, Mathf.RoundToInt(_a * 100f) + "%");
             }
             UpdateMarker();
             UpdatePreview();
@@ -67,7 +66,12 @@ namespace Crispberry_PiPhone
 
         internal Color Current
         {
-            get { return Color.HSVToRGB(_h, _s, _v); }
+            get
+            {
+                Color color = Color.HSVToRGB(_h, _s, _v);
+                color.a = _a;
+                return color;
+            }
         }
 
         private void Build()
@@ -116,6 +120,29 @@ namespace Crispberry_PiPhone
                 UpdatePreview();
                 RaiseChanged();
             });
+            _opacity = PhoneUi.CreateSliderRow(transform, "Opacity", 0f, 1f, _a, v =>
+            {
+                if (_suppress)
+                    return;
+                _a = Mathf.Clamp01(v);
+                UpdatePreview();
+                RaiseChanged();
+            });
+        }
+
+        private static void WritePct(Slider slider, string text)
+        {
+            if (slider == null)
+                return;
+            Transform row = slider.transform.parent;
+            if (row == null)
+                return;
+            var labels = row.GetComponentsInChildren<TextMeshProUGUI>(true);
+            for (int i = 0; i < labels.Length; i++)
+            {
+                if (labels[i] != null && labels[i].name == "Pct")
+                    labels[i].text = text;
+            }
         }
 
         private void OnWheelHit(Vector2 local01)

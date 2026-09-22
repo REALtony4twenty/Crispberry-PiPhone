@@ -116,6 +116,13 @@ namespace Crispberry_PiPhone
 
         private static IEnumerator CallScoutmasterRoutine(IPiPhoneHost host, string digits)
         {
+            Character ghostCheck = Character.localCharacter;
+            if (ghostCheck != null && ghostCheck.IsGhost)
+            {
+                if (host != null)
+                    host.ShowToast("You're already beyond rescue!");
+                yield break;
+            }
             if (host != null)
                 host.ShowToast("Calling Rescue...");
             yield return new WaitForSecondsRealtime(0.8f);

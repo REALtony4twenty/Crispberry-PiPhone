@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Photon.Pun;
 using TMPro;
 using UnityEngine;
@@ -10,6 +11,8 @@ namespace Crispberry_PiPhone
     {
         private static Session _live;
         private static Material _eyeMat;
+        private static bool _passportLogged;
+        private static readonly Dictionary<int, Sprite> _passportIcons = new Dictionary<int, Sprite>();
 
         internal static void Register()
         {
@@ -90,6 +93,7 @@ namespace Crispberry_PiPhone
                 if (bodyPad != null)
                     bodyPad.padding = new RectOffset(8, 8, 6, 6);
                 ClosetCatalog.Ensure();
+                EnsurePassportIcons();
 
                 if (_host.IsLandscape)
                     BuildLandscape();
@@ -176,6 +180,7 @@ namespace Crispberry_PiPhone
                 CamHudBtn(bar.transform, PhoneIcons.Material("expand_more"), "v", () => NudgeCam(-0.14f, 0f, 0f));
                 CamHudBtn(bar.transform, PhoneIcons.Material("remove"), "-", () => NudgeCam(0f, -0.14f, 0f));
                 CamHudBtn(bar.transform, PhoneIcons.Material("add"), "+", () => NudgeCam(0f, 0.14f, 0f));
+                CamHudBtn(bar.transform, PhoneIcons.Material("filter_center_focus"), "o", RecenterCam);
             }
 
             private void CamHudBtn(Transform parent, Sprite icon, string fallback, UnityEngine.Events.UnityAction click)
@@ -204,6 +209,13 @@ namespace Crispberry_PiPhone
                 _camOrbit += orbit;
             }
 
+            private void RecenterCam()
+            {
+                _camLift = 0f;
+                _camOrbit = 0f;
+                _camZoom = 1f;
+            }
+
             private void BuildTabColumn(Transform parent, bool withTitle)
             {
                 var tabs = new GameObject("Tabs", typeof(RectTransform));
@@ -227,23 +239,36 @@ namespace Crispberry_PiPhone
                 for (int i = 0; i < _tabTypes.Length; i++)
                 {
                     int captured = i;
-                    _tabBtns[i] = MakeTab(tabs.transform, _tabLabels[i], () => PickTab(captured));
+                    _tabBtns[i] = MakeTab(tabs.transform, _tabLabels[i], PassportIcon(_tabTypes[i]), () => PickTab(captured));
                 }
-                MakeTab(tabs.transform, "Random", Randomize);
+                MakeTab(tabs.transform, "Random", null, Randomize);
             }
 
-            private Button MakeTab(Transform parent, string label, UnityEngine.Events.UnityAction click)
+            private Button MakeTab(Transform parent, string label, Sprite icon, UnityEngine.Events.UnityAction click)
             {
-                Button btn = PhoneUi.CreateButton(parent, label, click, new Vector2(88f, 28f));
+                Button btn = icon != null
+                    ? PhoneUi.CreateIconChip(parent, label, icon, click, false, new Vector2(72f, 36f))
+                    : PhoneUi.CreateButton(parent, label, click, new Vector2(88f, 28f));
                 var le = btn.GetComponent<LayoutElement>();
                 if (le != null)
                 {
                     le.minWidth = 0f;
                     le.preferredWidth = 0f;
-                    le.minHeight = 24f;
-                    le.preferredHeight = 26f;
+                    le.minHeight = 32f;
+                    le.preferredHeight = 36f;
                     le.flexibleWidth = 1f;
                     le.flexibleHeight = 1f;
+                }
+                Transform art = btn.transform.Find("I");
+                if (art != null)
+                {
+                    var iconImg = art.GetComponent<Image>();
+                    if (iconImg != null)
+                    {
+                        iconImg.type = Image.Type.Simple;
+                        iconImg.color = Color.white;
+                        iconImg.preserveAspect = true;
+                    }
                 }
                 var tmp = btn.GetComponentInChildren<TextMeshProUGUI>(true);
                 if (tmp != null)
@@ -252,12 +277,178 @@ namespace Crispberry_PiPhone
                 return btn;
             }
 
+            private static Sprite PassportIcon(Customization.Type type)
+            {
+                Sprite sprite;
+                return _passportIcons.TryGetValue((int)type, out sprite) ? sprite : null;
+            }
+
+            private static void EnsurePassportIcons()
+            {
+                PassportTab[] tabs = null;
+                PassportManager manager = PassportManager.instance;
+                if (manager != null)
+                    tabs = manager.tabs;
+                if (tabs == null || tabs.Length == 0)
+                    tabs = UnityEngine.Object.FindObjectsByType<PassportTab>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                if (tabs == null)
+                    return;
+                for (int i = 0; i < tabs.Length; i++)
+                {
+                    PassportTab tab = tabs[i];
+                    if (tab == null)
+                        continue;
+                    int key = (int)tab.type;
+                    if (_passportIcons.ContainsKey(key))
+                        continue;
+                    string note;
+                    Sprite sprite = PassportTabSprite(tab, out note);
+                    if (!_passportLogged)
+                        Plugin.LogInfo("Closet tab " + tab.type + " -> " + note);
+                    if (sprite != null)
+                        _passportIcons[key] = sprite;
+                }
+                _passportLogged = true;
+            }
+
+            private static Sprite PassportTabSprite(PassportTab tab, out string note)
+            {
+                note = "none";
+                RawImage[] raws = tab.GetComponentsInChildren<RawImage>(true);
+                for (int i = 0; i < raws.Length; i++)
+                {
+                    RawImage raw = raws[i];
+                    Texture2D tex = raw != null ? raw.texture as Texture2D : null;
+                    if (tex == null || ChromeName(tex.name) || tex.width < 8 || tex.height < 8)
+                        continue;
+                    Sprite made = SpriteFrom(tex, raw.uvRect);
+                    if (made == null)
+                        continue;
+                    note = "raw " + raw.gameObject.name + " " + tex.name + " " + tex.width + "x" + tex.height;
+                    return made;
+                }
+
+                SpriteRenderer[] renderers = tab.GetComponentsInChildren<SpriteRenderer>(true);
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    SpriteRenderer renderer = renderers[i];
+                    if (renderer == null || ChromeSprite(renderer.sprite))
+                        continue;
+                    note = "renderer " + renderer.gameObject.name + " " + renderer.sprite.name;
+                    return renderer.sprite;
+                }
+
+                Image[] images = tab.GetComponentsInChildren<Image>(true);
+                Sprite named = null;
+                string namedNote = null;
+                Sprite smallest = null;
+                string smallestNote = null;
+                float smallestArea = float.MaxValue;
+                for (int i = 0; i < images.Length; i++)
+                {
+                    Image img = images[i];
+                    if (img == null || img.gameObject == tab.gameObject)
+                        continue;
+                    Texture2D matTex = img.material != null ? img.material.mainTexture as Texture2D : null;
+                    if (matTex != null && img.material != img.defaultMaterial && !ChromeName(matTex.name) && matTex.width >= 8 && matTex.height >= 8 && matTex.width <= 512)
+                    {
+                        Sprite fromMat = SpriteFrom(matTex, new Rect(0f, 0f, 1f, 1f));
+                        if (fromMat != null)
+                        {
+                            note = "material " + img.gameObject.name + " " + matTex.name + " " + matTex.width + "x" + matTex.height;
+                            return fromMat;
+                        }
+                    }
+                    if (img.sprite == null || img.type == Image.Type.Sliced || ChromeSprite(img.sprite))
+                        continue;
+                    string n = img.gameObject.name ?? string.Empty;
+                    string imgNote = "image " + n + " spr=" + img.sprite.name + " tex=" + (img.sprite.texture != null ? img.sprite.texture.name : "null");
+                    if (n.IndexOf("icon", StringComparison.OrdinalIgnoreCase) >= 0
+                        || n.IndexOf("glyph", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        named = img.sprite;
+                        namedNote = imgNote;
+                    }
+                    float area = img.sprite.rect.width * img.sprite.rect.height;
+                    if (area >= 16f && area < smallestArea)
+                    {
+                        smallestArea = area;
+                        smallest = img.sprite;
+                        smallestNote = imgNote;
+                    }
+                }
+                if (named != null)
+                {
+                    note = namedNote;
+                    return named;
+                }
+                if (smallest != null)
+                {
+                    note = smallestNote;
+                    return smallest;
+                }
+                if (raws.Length == 0 && images.Length == 0)
+                    note = "no graphics";
+                else
+                    note = "skipped " + raws.Length + " raw, " + images.Length + " image";
+                return null;
+            }
+
+            private static bool ChromeSprite(Sprite sprite)
+            {
+                if (sprite == null || sprite.texture == null)
+                    return true;
+                if (sprite.texture.width <= 8 && sprite.texture.height <= 8)
+                    return true;
+                return ChromeName(sprite.name) || ChromeName(sprite.texture.name);
+            }
+
+            private static bool ChromeName(string name)
+            {
+                if (string.IsNullOrEmpty(name))
+                    return false;
+                return name == "UISprite"
+                    || name == "Background"
+                    || name == "Knob"
+                    || name == "UIMask"
+                    || name == "InputFieldBackground"
+                    || name == "UnityWhite"
+                    || name.StartsWith("Unity", StringComparison.Ordinal);
+            }
+
+            private static Sprite SpriteFrom(Texture2D tex, Rect uv)
+            {
+                float x = uv.x * tex.width;
+                float y = uv.y * tex.height;
+                float w = uv.width * tex.width;
+                float h = uv.height * tex.height;
+                if (w < 8f || h < 8f)
+                {
+                    x = 0f;
+                    y = 0f;
+                    w = tex.width;
+                    h = tex.height;
+                }
+                try
+                {
+                    Sprite sprite = Sprite.Create(tex, new Rect(x, y, w, h), new Vector2(0.5f, 0.5f), 100f);
+                    sprite.hideFlags = HideFlags.HideAndDontSave;
+                    sprite.name = tex.name;
+                    return sprite;
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogInfo("Closet icon failed: " + ex.Message);
+                    return null;
+                }
+            }
+
             private void BuildGrid(Transform parent, float flex)
             {
                 _scroll = PhoneUi.CreateScrollView(parent, out _optionContent);
                 _scroll.movementType = ScrollRect.MovementType.Elastic;
                 _scroll.inertia = true;
-                _scroll.scrollSensitivity = 72f;
+                _scroll.scrollSensitivity = 14f;
                 var sle = _scroll.gameObject.AddComponent<LayoutElement>();
                 sle.flexibleHeight = flex;
                 sle.flexibleWidth = 1f;
@@ -406,7 +597,7 @@ namespace Crispberry_PiPhone
             {
                 IPiPhoneHost host = _host;
                 var tile = PhoneUi.CreateImage(_optionContent, "Custom", PhoneUi.Rounded(14), PhoneUi.SurfaceAlt);
-                Sprite art = PhoneIcons.Material("face");
+                Sprite art = PhoneIcons.Material("color_lens");
                 if (art != null)
                 {
                     var icon = PhoneUi.CreateImage(tile, "Art", art, Color.white);

@@ -76,6 +76,10 @@
       <HintPath>$(GameManaged)\PhotonVoice.PUN.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="System.Drawing">
+      <HintPath>$(GameManaged)\System.Drawing.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="Unity.TextMeshPro">
       <HintPath>$(GameManaged)\Unity.TextMeshPro.dll</HintPath>
       <Private>False</Private>
@@ -195,6 +199,7 @@
     <EmbeddedResource Include="Icons\*.png" />
     <EmbeddedResource Include="Icons\material\*.png" />
     <EmbeddedResource Include="Icons\cards\*.png" />
+    <EmbeddedResource Include="Icons\emoji\*.png" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="DeployToProfile" AfterTargets="Build" Condition="Exists('$(BepInExPlugins)')">

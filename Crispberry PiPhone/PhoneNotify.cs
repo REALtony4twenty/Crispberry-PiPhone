@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace Crispberry_PiPhone
@@ -36,8 +37,8 @@ namespace Crispberry_PiPhone
                 PhoneStore.AddNotice(title ?? "Notice", body ?? string.Empty, appId ?? string.Empty);
             if (PhoneMenu.IsOpen)
                 PhoneMenu.ShowBanner(title, body);
-            if (sound && CanPlay())
-                PhoneSounds.PlayApp(appId);
+            if (sound)
+                PlayAlert(false, () => PhoneSounds.PlayApp(appId));
         }
 
         public static void IncomingText(string fromId, string fromName, string preview)
@@ -54,8 +55,7 @@ namespace Crispberry_PiPhone
                 PhoneMenu.ShowBanner("Message", name);
             else
                 AlertHud.ShowText(fromId, name, body);
-            if (CanPlay())
-                PhoneSounds.PlayTextFor(fromId);
+            PlayAlert(false, () => PhoneSounds.PlayTextFor(fromId));
         }
 
         public static void IncomingCall(string fromId, string fromName)
@@ -68,13 +68,20 @@ namespace Crispberry_PiPhone
                 PhoneMenu.ShowBanner("Incoming call", fromName);
             else
                 AlertHud.ShowCall();
-            if (CanPlay())
-                PhoneSounds.PlayRingtoneFor(fromId);
+            PlayAlert(true, () => PhoneSounds.PlayRingtoneFor(fromId));
         }
 
-        private static bool CanPlay()
+        private static void PlayAlert(bool call, Action ring)
         {
-            return !PhoneTheme.DoNotDisturb && PhoneTheme.RingerMode == 0;
+            if (PhoneTheme.DoNotDisturb || PhoneTheme.RingerMode == 2)
+                return;
+            if (PhoneTheme.RingerMode == 1)
+            {
+                PhoneSounds.PlayVibrate(call);
+                return;
+            }
+            if (ring != null)
+                ring();
         }
     }
 }

@@ -74,18 +74,28 @@ namespace Crispberry_PiPhone
                         PhoneUi.Size(row, 44f);
                         PhoneUi.AddHorizontal(row, 6f);
                         PhoneUi.CreateButton(row.transform, "Memo " + (PhoneStore.Memos.Count - i), () => TogglePlay(file), new Vector2(160f, 40f));
-                        PhoneUi.CreateButton(row.transform, "Stop", VoiceIo.StopPlay, new Vector2(56f, 40f));
-                        PhoneUi.CreateButton(row.transform, "Del", () =>
+                        PhoneUi.CreateIconChip(row.transform, "Stop", PhoneIcons.Material("stop"), VoiceIo.StopPlay, false, new Vector2(40f, 40f));
+                        PhoneUi.CreateIconChip(row.transform, "Delete", PhoneIcons.Material("delete"), () =>
                         {
                             VoiceIo.StopPlay();
                             PhoneStore.DeleteMemo(id);
                             _host.ShowToast("Moved to Trash.");
                             Build();
-                        }, new Vector2(56f, 40f));
+                        }, false, new Vector2(40f, 40f));
                     }
                 }
 
-                PhoneUi.CreateButton(actions, VoiceIo.IsRecording ? "Stop recording" : "Record memo", ToggleMemo, new Vector2(240f, 44f));
+                var recRow = new GameObject("Rec", typeof(RectTransform));
+                recRow.transform.SetParent(actions, false);
+                PhoneUi.Size(recRow, 44f);
+                var recLayout = PhoneUi.AddHorizontal(recRow, 0f);
+                recLayout.childForceExpandWidth = false;
+                PhoneUi.MaterialChip(
+                    recRow.transform,
+                    VoiceIo.IsRecording ? "mic_off" : "mic",
+                    VoiceIo.IsRecording ? "Stop" : "Record",
+                    ToggleMemo,
+                    new Vector2(40f, 40f));
             }
 
             private static void TogglePlay(string file)

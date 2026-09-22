@@ -122,11 +122,11 @@ namespace Crispberry_PiPhone
                     PhoneUi.Size(row, 40f);
                     PhoneUi.AddHorizontal(row, 6f);
                     PhoneUi.CreateButton(row.transform, captured.Name, () => ShowAlert(captured), new Vector2(200f, 36f));
-                    PhoneUi.CreateButton(row.transform, "Delete", () =>
+                    PhoneUi.CreateIconChip(row.transform, "Delete", PhoneIcons.Material("delete"), () =>
                     {
                         PhoneStore.DeleteSound(captured.Id);
                         ShowHome();
-                    }, new Vector2(56f, 36f));
+                    }, false, new Vector2(40f, 36f));
                 }
             }
 
@@ -135,16 +135,16 @@ namespace Crispberry_PiPhone
                 _page = "alert";
                 Clear();
                 _host.SetTitle(sound.Name);
-                PhoneUi.CreateButton(_host.Content, "Back", ShowHome, new Vector2(120f, 36f));
-                PhoneUi.CreateButton(_host.Content, "Play", () => Preview(sound), new Vector2(220f, 40f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowHome, new Vector2(36f, 32f));
+                PhoneUi.MaterialChip(_host.Content, "play", "Play", () => Preview(sound), new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_host.Content, "Use as ringtone", () => { PhoneTheme.SetTone("ringtone", sound.Id); _host.ShowToast("Ringtone set."); }, new Vector2(240f, 40f));
                 PhoneUi.CreateButton(_host.Content, "Use as text tone", () => { PhoneTheme.SetTone("text", sound.Id); _host.ShowToast("Text tone set."); }, new Vector2(240f, 40f));
                 PhoneUi.CreateButton(_host.Content, "Use as notification", () => { PhoneTheme.SetTone("notify", sound.Id); _host.ShowToast("Alert sound set."); }, new Vector2(240f, 40f));
-                PhoneUi.CreateButton(_host.Content, "Delete", () =>
+                PhoneUi.CreateIconChip(_host.Content, "Delete", PhoneIcons.Material("delete"), () =>
                 {
                     PhoneStore.DeleteSound(sound.Id);
                     ShowHome();
-                }, new Vector2(160f, 40f));
+                }, false, new Vector2(40f, 40f));
             }
 
             private void ShowPick()
@@ -152,7 +152,7 @@ namespace Crispberry_PiPhone
                 _page = "pick";
                 Clear();
                 _host.SetTitle("Trim");
-                PhoneUi.CreateButton(_host.Content, "Back", ShowHome, new Vector2(120f, 36f));
+                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowHome, new Vector2(36f, 32f));
                 var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Pick a library song, then keep a short clip.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 hint.color = PhoneUi.TextDim;
                 PhoneUi.Wrap(hint);
@@ -363,8 +363,8 @@ namespace Crispberry_PiPhone
 
             private void AddPreviewSave(Transform parent, float width)
             {
-                _previewBtn = PhoneUi.CreateButton(parent, "PREVIEW", TogglePreview, new Vector2(width, 40f));
-                PhoneUi.CreateButton(parent, "SAVE", () => _host.StartHostCoroutine(SaveTrim(WindowSeconds(), _ringtone ? "ringtone" : "notify")), new Vector2(width, 40f));
+                _previewBtn = PhoneUi.CreateIconChip(parent, "Preview", PhoneIcons.Material("play"), TogglePreview, false, new Vector2(44f, 40f));
+                PhoneUi.MaterialChip(parent, "save", "Save", () => _host.StartHostCoroutine(SaveTrim(WindowSeconds(), _ringtone ? "ringtone" : "text")), new Vector2(36f, 32f));
             }
 
             private void SetKind(bool ringtone)
@@ -445,11 +445,7 @@ namespace Crispberry_PiPhone
 
             private void SetPreviewLabel(bool playing)
             {
-                if (_previewBtn == null)
-                    return;
-                TextMeshProUGUI tmp = _previewBtn.GetComponentInChildren<TextMeshProUGUI>(true);
-                if (tmp != null)
-                    tmp.text = playing ? "STOP" : "PREVIEW";
+                PhoneUi.SetChipIcon(_previewBtn, PhoneIcons.Material(playing ? "stop" : "play"), playing ? "Stop" : "Preview");
             }
 
             private IEnumerator PreviewTrim()
@@ -488,7 +484,13 @@ namespace Crispberry_PiPhone
                 SoundItem saved = PhoneStore.AddAlertWav(VoiceIo.ToWav(sliced), clipName);
                 if (saved != null)
                 {
-                    PhoneTheme.SetTone(kind, saved.Id);
+                    if (kind == "text")
+                    {
+                        PhoneTheme.SetTone("text", saved.Id);
+                        PhoneTheme.SetTone("notify", saved.Id);
+                    }
+                    else
+                        PhoneTheme.SetTone(kind, saved.Id);
                     _host.ShowToast("Saved to MakeNoti.");
                     ShowHome();
                 }

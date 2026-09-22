@@ -47,6 +47,7 @@ namespace Crispberry_PiPhone
             private int _selPile = -1;
             private int _selFrom;
             private bool _won;
+            private bool _lost;
             private bool _auto;
             private int _dealId;
             private TextMeshProUGUI _status;
@@ -81,26 +82,27 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.solitaire", "Solitaire"));
-                PhoneUi.CreateButton(_host.Content, "Turn 1", () => Start(1), new Vector2(220f, 48f));
-                PhoneUi.CreateButton(_host.Content, "Turn 3", () => Start(3), new Vector2(220f, 44f));
+                PhoneUi.CreateButton(_host.Content, "Play", () => Start(1), new Vector2(220f, 48f));
                 var high = PhoneUi.CreateLabel(_host.Content, "High", "Wins  " + PhoneTheme.HighSolitaire, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Size(high.gameObject, 28f);
-                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Turn 1 flips one card. Turn 3 flips three, and only the top one can be played. When the deck is empty and every card is face up, the stacks finish themselves. You can also tap the empty deck.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
+                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Tap the deck to flip one card. When the deck is empty and every card is face up, the stacks finish themselves. You can also tap the empty deck. If nothing left can be played, the game ends.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 hint.color = PhoneUi.TextDim;
                 PhoneUi.Wrap(hint);
-                PhoneUi.Size(hint.gameObject, 52f);
+                PhoneUi.Size(hint.gameObject, 64f);
             }
 
             private void Start(int draw)
             {
                 _draw = draw < 1 ? 1 : draw;
                 _won = false;
+                _lost = false;
                 _auto = false;
                 _dealId++;
                 _selPile = -1;
                 Deal();
                 _page = "play";
                 BuildPlayUi();
+                MaybeStuck();
             }
 
             private void Deal()
@@ -147,7 +149,7 @@ namespace Crispberry_PiPhone
                 Transform right;
                 PhoneGames.PlayLayout(_host, out left, out center, out right);
                 _status = PhoneGames.HudBar(left, StatusText(), BuildMenu);
-                if (_won)
+                if (_won || _lost)
                     PhoneGames.OverRow(left, () => Start(_draw), BuildMenu);
 
                 var table = new GameObject("Table", typeof(RectTransform));
@@ -218,7 +220,9 @@ namespace Crispberry_PiPhone
             {
                 if (_won)
                     return "You win!    " + PhoneTheme.HighSolitaire;
-                return (_draw == 3 ? "Turn 3" : "Turn 1") + "    " + PhoneTheme.HighSolitaire + " wins";
+                if (_lost)
+                    return "No more moves";
+                return PhoneTheme.HighSolitaire + " wins";
             }
 
             private static Sprite CardArt(int card)
@@ -293,11 +297,11 @@ namespace Crispberry_PiPhone
 
             private void DrawStock()
             {
-                if (_won || _auto)
+                if (_won || _lost || _auto)
                     return;
                 if (_stock.Count == 0)
                 {
-                    if (CanAutoComplete())
+                    if (CanAutoComplete() && HasMove())
                     {
                         _host.StartHostCoroutine(AutoComplete());
                         return;
@@ -310,6 +314,7 @@ namespace Crispberry_PiPhone
                     _waste.Clear();
                     _selPile = -1;
                     BuildPlayUi();
+                    MaybeStuck();
                     return;
                 }
                 int n = Mathf.Min(_draw, _stock.Count);
@@ -323,11 +328,12 @@ namespace Crispberry_PiPhone
                 _selPile = -1;
                 BuildPlayUi();
                 MaybeAuto();
+                MaybeStuck();
             }
 
             private void TapWaste()
             {
-                if (_won || _waste.Count == 0)
+                if (_won || _lost || _waste.Count == 0)
                     return;
                 if (_selPile == 7)
                     _selPile = -1;
@@ -346,7 +352,7 @@ namespace Crispberry_PiPhone
 
             private void TapFound(int f)
             {
-                if (_won)
+                if (_won || _lost)
                     return;
                 if (_selPile < 0)
                     return;
@@ -362,7 +368,7 @@ namespace Crispberry_PiPhone
 
             private void TapTab(int col, int idx)
             {
-                if (_won)
+                if (_won || _lost)
                     return;
                 var pile = _tab[col];
                 if (_selPile >= 0 && !(_selPile == col))
@@ -434,6 +440,7 @@ namespace Crispberry_PiPhone
                 int deal = _dealId;
                 _auto = true;
                 _selPile = -1;
+                Plugin.LogInfo("Solitaire is finishing the stacks.");
                 _host.ShowToast("Finishing the stacks.");
                 int guard = 0;
                 while (_page == "play" && !_won && deal == _dealId && guard < 160)
@@ -444,7 +451,17 @@ namespace Crispberry_PiPhone
                     yield return new WaitForSecondsRealtime(0.08f);
                 }
                 if (deal == _dealId)
+                {
+                    bool won = _won;
                     _auto = false;
+                    if (won)
+                        Plugin.LogInfo("Solitaire auto-finish completed the game.");
+                    else
+                    {
+                        Plugin.LogInfo("Solitaire auto-finish stopped before the board was clear.");
+                        MaybeStuck();
+                    }
+                }
             }
 
             private bool MoveOneToFoundation()
@@ -697,16 +714,141 @@ namespace Crispberry_PiPhone
                     _won = true;
                     PhoneGames.Remember(ref PhoneTheme.HighSolitaire, PhoneTheme.HighSolitaire + 1, _host);
                     _host.ShowToast("You win!");
+                    if (!_auto)
+                        Plugin.LogInfo("Solitaire won.");
                 }
                 BuildPlayUi();
                 MaybeAuto();
+                MaybeStuck();
+            }
+
+            private void MaybeStuck()
+            {
+                if (_lost || _won || _auto || _page != "play" || _host == null)
+                    return;
+                if (HasMove())
+                    return;
+                _lost = true;
+                Plugin.LogInfo("Solitaire has no more moves.");
+                _host.ShowToast("No more moves.");
+                BuildPlayUi();
+            }
+
+            private bool HasMove()
+            {
+                if (_waste.Count > 0 && CardPlays(_waste[_waste.Count - 1]))
+                    return true;
+                if (TableauPlays())
+                    return true;
+                return StockOffersPlay();
+            }
+
+            private bool TableauPlays()
+            {
+                for (int c = 0; c < 7; c++)
+                {
+                    var pile = _tab[c];
+                    if (pile.Count == 0)
+                        continue;
+                    if (!_up[pile[pile.Count - 1]])
+                        return true;
+                    for (int i = 0; i < pile.Count; i++)
+                    {
+                        if (!_up[pile[i]])
+                            continue;
+                        if (RunPlays(c, i))
+                            return true;
+                    }
+                }
+                return false;
+            }
+
+            private bool RunPlays(int col, int idx)
+            {
+                var pile = _tab[col];
+                int card = pile[idx];
+                for (int i = idx; i < pile.Count; i++)
+                {
+                    if (!_up[pile[i]])
+                        return false;
+                }
+                bool wholeColumn = idx == 0;
+                for (int dest = 0; dest < 7; dest++)
+                {
+                    if (dest == col)
+                        continue;
+                    var other = _tab[dest];
+                    if (other.Count == 0)
+                    {
+                        if (card % 13 == 12 && !wholeColumn)
+                            return true;
+                        continue;
+                    }
+                    int top = other[other.Count - 1];
+                    if (_up[top] && CanStack(card, top))
+                        return true;
+                }
+                return idx == pile.Count - 1 && CanPlaceFound(card, card / 13);
+            }
+
+            private bool CardPlays(int card)
+            {
+                if (CanPlaceFound(card, card / 13))
+                    return true;
+                bool empty = false;
+                for (int c = 0; c < 7; c++)
+                {
+                    if (_tab[c].Count == 0)
+                    {
+                        empty = true;
+                        continue;
+                    }
+                    int top = _tab[c][_tab[c].Count - 1];
+                    if (_up[top] && CanStack(card, top))
+                        return true;
+                }
+                return empty && card % 13 == 12;
+            }
+
+            private bool StockOffersPlay()
+            {
+                if (_stock.Count == 0 && _waste.Count == 0)
+                    return false;
+                var stock = new List<int>(_stock);
+                var waste = new List<int>(_waste);
+                int recycles = 0;
+                int guard = 0;
+                while (guard < 120 && recycles < 3)
+                {
+                    guard++;
+                    if (stock.Count == 0)
+                    {
+                        if (waste.Count == 0)
+                            break;
+                        for (int i = waste.Count - 1; i >= 0; i--)
+                            stock.Add(waste[i]);
+                        waste.Clear();
+                        recycles++;
+                        continue;
+                    }
+                    int n = Mathf.Min(_draw, stock.Count);
+                    for (int i = 0; i < n; i++)
+                    {
+                        int c = stock[stock.Count - 1];
+                        stock.RemoveAt(stock.Count - 1);
+                        waste.Add(c);
+                    }
+                    if (waste.Count > 0 && CardPlays(waste[waste.Count - 1]))
+                        return true;
+                }
+                return false;
             }
 
             private void MaybeAuto()
             {
-                if (_auto || _won || _page != "play" || _host == null)
+                if (_auto || _won || _lost || _page != "play" || _host == null)
                     return;
-                if (!CanAutoComplete())
+                if (!CanAutoComplete() || !HasMove())
                     return;
                 _host.StartHostCoroutine(AutoComplete());
             }

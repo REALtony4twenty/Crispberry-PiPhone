@@ -1,4 +1,9 @@
-﻿Material Design icons by Google
-https://github.com/google/material-design-icons (tag 3.0.1)
-Licensed under the Apache License, Version 2.0
+﻿Material Symbols by Google
+https://github.com/google/material-design-icons
+https://fonts.google.com/icons
+Licensed under the Apache License, Version 2.0.
 See LICENSE in this folder.
+
+The PNG files in this folder, except shutter.png, are rasterized from Google's
+filled (fill1) and outline (default) 48px SVGs. Rasterizing to PNG is the only
+change. shutter.png is original art for this mod and is not a Google icon.

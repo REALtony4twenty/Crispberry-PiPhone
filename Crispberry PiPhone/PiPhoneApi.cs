@@ -57,9 +57,10 @@ namespace Crispberry_PiPhone
     /// not stretch to fill the monitor. <see cref="PiPhoneApp.Immersive"/> hides the
     /// in-app title bar. Players can also rotate any time (shade Wide/Tall or the
     /// landscape keybind); that pins landscape until they rotate back or close the
-    /// phone. Status bar stays visible. In landscape the bottom nav is hidden so your
-    /// app can use the full body; a <c>^</c> handle peeks Back / Home / All apps as an
-    /// overlay on top of the app (same idea as the shade from the status bar).
+    /// phone. Status bar and nav bar float over the app. The nav bar does not reserve
+    /// a strip. A draggable <c>^</c> handle shows and hides Back, Home, All apps, and
+    /// Rotate. With the dock on, in portrait, the nav stays above the dock. The dock
+    /// itself stays hidden in landscape.
     /// Closing the phone always returns to portrait. Subscribe to
     /// <see cref="OrientationChanged"/> or set <see cref="PiPhoneApp.OnOrientation"/>
     /// and rebuild under <see cref="IPiPhoneHost.Content"/> using <see cref="IsLandscape"/>
@@ -78,6 +79,13 @@ namespace Crispberry_PiPhone
     /// Shade toolbar: <see cref="RegisterShadeButton"/> adds a compact icon chip to
     /// Quick settings (pull the status bar). Players can hide any extra chip in
     /// Settings → Customize → Toolbar. Use your plugin GUID as the id prefix.
+    ///
+    /// Nav bar: <see cref="RegisterNavButton"/> adds an icon to the right of Rotate.
+    /// Back, Home, All apps, and Rotate stay first. Use your plugin GUID as the id prefix.
+    /// If that row would run off the side of the screen, the bar stacks the icons upward.
+    /// Quick settings has a Navigation chip that hides and shows the bar.
+    /// Material icons follow the filled or outline choice in Look. Full-color pictures
+    /// (emoji, emote scouts) stay untinted.
     ///
     /// Dialer numbers: <see cref="RegisterNumber"/> lets a mod handle a digit string
     /// (like PiPhone's 911 rescue). Return true from <see cref="PiPhoneNumber.OnCall"/>
@@ -121,10 +129,14 @@ namespace Crispberry_PiPhone
     /// the status-bar meters. Nothing drains or changes them unless a mod (or a
     /// later PiPhone update) calls those setters.
     ///
-    /// UI helpers: <see cref="PhoneUi"/> (including <see cref="PhoneUi.CreateThinSlider"/>
-    /// and <see cref="PhoneUi.CreateDualRange"/>) is public so third-party apps match
-    /// the chrome. Icons: <see cref="PhoneIcons.Material"/> is Google Material
-    /// Design (Apache-2.0); <see cref="PiPhoneApp.SetIcon"/> is for your own art.
+    /// UI helpers: <see cref="PhoneUi"/> is public so third-party apps match the chrome.
+    /// Icons do not have to come from Google. <see cref="PiPhoneApp.SetIcon"/>,
+    /// <see cref="CreateIcon(byte[])"/>, and <see cref="CreateIconButton(Transform, Sprite, UnityAction, Vector2)"/>
+    /// take any PNG, JPG, or <see cref="Sprite"/> you made. The phone supplies the
+    /// button shape, size, and icon mask. <see cref="PhoneIcons.Material"/> is optional
+    /// and only the Google Material set shipped with this mod (Apache-2.0).
+    /// Pass <c>tintIcon: false</c> to <see cref="PhoneUi.CreateIconChip"/> when your
+    /// picture already has its own colors.
     /// </summary>
     public static class PiPhoneApi
     {
@@ -288,6 +300,15 @@ namespace Crispberry_PiPhone
         }
 
         /// <summary>
+        /// Add or replace a nav-bar button, placed to the right of Rotate.
+        /// Id should be unique, e.g. "mymod.map".
+        /// </summary>
+        public static void RegisterNavButton(PiPhoneNavButton button)
+        {
+            PhoneMenu.RegisterNavButton(button);
+        }
+
+        /// <summary>
         /// Handle a keypad number. Digits only, e.g. "911". Your
         /// <see cref="PiPhoneNumber.OnCall"/> should return true if you handled it.
         /// </summary>
@@ -364,6 +385,8 @@ namespace Crispberry_PiPhone
                 Screen = PhoneTheme.ScreenColor,
                 Surface = PhoneTheme.SurfaceColor,
                 Nav = PhoneTheme.NavColor,
+                NavButton = PhoneTheme.NavButtonColor,
+                NavIcon = PhoneTheme.NavIconColor,
                 Text = PhoneTheme.TextColor,
                 Accent = PhoneTheme.AccentColor,
                 Icon = PhoneTheme.IconColor,
@@ -385,6 +408,8 @@ namespace Crispberry_PiPhone
             PhoneTheme.ScreenColor = look.Screen;
             PhoneTheme.SurfaceColor = look.Surface;
             PhoneTheme.NavColor = look.Nav;
+            PhoneTheme.NavButtonColor = look.NavButton;
+            PhoneTheme.NavIconColor = look.NavIcon;
             PhoneTheme.TextColor = look.Text;
             PhoneTheme.AccentColor = look.Accent;
             PhoneTheme.IconColor = look.Icon;
@@ -437,6 +462,8 @@ namespace Crispberry_PiPhone
         public static void SetScreenColor(Color color) { PhoneTheme.SetScreenColor(color); }
         public static void SetSurfaceColor(Color color) { PhoneTheme.SetSurfaceColor(color); }
         public static void SetNavColor(Color color) { PhoneTheme.SetNavColor(color); }
+        public static void SetNavButtonColor(Color color) { PhoneTheme.SetNavButtonColor(color); }
+        public static void SetNavIconColor(Color color) { PhoneTheme.SetNavIconColor(color); }
         public static void SetTextColor(Color color) { PhoneTheme.SetTextColor(color); }
         public static void SetAccentColor(Color color) { PhoneTheme.SetAccentColor(color); }
         public static void SetIconColor(Color color) { PhoneTheme.SetIconColor(color); }
@@ -746,6 +773,21 @@ namespace Crispberry_PiPhone
             return PhoneIcons.FromFile(path);
         }
 
+        /// <summary>
+        /// A phone button that shows your own picture. Any sprite works; it does not
+        /// have to be a Google icon. Colors in the picture are kept.
+        /// </summary>
+        public static Button CreateIconButton(Transform parent, Sprite icon, UnityAction onClick, Vector2 size)
+        {
+            return PhoneUi.CreateIconChip(parent, string.Empty, icon, onClick, false, size, false);
+        }
+
+        /// <summary>Same as <see cref="CreateIconButton(Transform, Sprite, UnityAction, Vector2)"/>, decoding a PNG or JPG first.</summary>
+        public static Button CreateIconButton(Transform parent, byte[] pngOrJpg, UnityAction onClick, Vector2 size)
+        {
+            return CreateIconButton(parent, CreateIcon(pngOrJpg), onClick, size);
+        }
+
         public static bool UnregisterApp(string id)
         {
             int index = IndexOf(id);
@@ -783,6 +825,48 @@ namespace Crispberry_PiPhone
                 if (Apps[i] != null && PhoneStore.IsInstalled(Apps[i].Id))
                     list.Add(Apps[i]);
             }
+            return list.ToArray();
+        }
+
+        private static readonly List<PiPhoneCategory> Categories = new List<PiPhoneCategory>();
+
+        /// <summary>
+        /// Add or rename a store section. Apps set <see cref="PiPhoneApp.Category"/> to <paramref name="id"/>.
+        /// </summary>
+        public static void RegisterCategory(string id, string displayName, int sortOrder)
+        {
+            if (string.IsNullOrEmpty(id))
+                return;
+            for (int i = 0; i < Categories.Count; i++)
+            {
+                if (Categories[i] != null && string.Equals(Categories[i].Id, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    Categories[i].DisplayName = string.IsNullOrEmpty(displayName) ? id : displayName;
+                    Categories[i].SortOrder = sortOrder;
+                    return;
+                }
+            }
+            Categories.Add(new PiPhoneCategory
+            {
+                Id = id,
+                DisplayName = string.IsNullOrEmpty(displayName) ? id : displayName,
+                SortOrder = sortOrder
+            });
+        }
+
+        /// <summary>Store sections, sorted by <see cref="PiPhoneCategory.SortOrder"/>.</summary>
+        public static PiPhoneCategory[] GetCategories()
+        {
+            var list = new List<PiPhoneCategory>(Categories);
+            list.Sort((a, b) =>
+            {
+                int ao = a != null ? a.SortOrder : 0;
+                int bo = b != null ? b.SortOrder : 0;
+                int cmp = ao.CompareTo(bo);
+                if (cmp != 0)
+                    return cmp;
+                return string.Compare(a != null ? a.DisplayName : string.Empty, b != null ? b.DisplayName : string.Empty, StringComparison.OrdinalIgnoreCase);
+            });
             return list.ToArray();
         }
 
@@ -943,6 +1027,16 @@ namespace Crispberry_PiPhone
         public string CustomName;
         public string RealName;
         public string PhotoFile;
+        public bool BlockCalls;
+        public bool BlockTexts;
+    }
+
+    /// <summary>A section in the Apps store. Register with <see cref="PiPhoneApi.RegisterCategory"/>.</summary>
+    public sealed class PiPhoneCategory
+    {
+        public string Id;
+        public string DisplayName;
+        public int SortOrder;
     }
 
     /// <summary>Independent chrome colors and corner radii. No preset packs.</summary>
@@ -951,6 +1045,8 @@ namespace Crispberry_PiPhone
         public Color Screen = new Color(0.08f, 0.10f, 0.13f, 1f);
         public Color Surface = new Color(0.16f, 0.18f, 0.21f, 0.96f);
         public Color Nav = new Color(0.10f, 0.11f, 0.13f, 1f);
+        public Color NavButton = new Color(0.20f, 0.22f, 0.26f, 1f);
+        public Color NavIcon = new Color(0.96f, 0.97f, 0.98f, 1f);
         public Color Text = new Color(0.96f, 0.97f, 0.98f, 1f);
         public Color Accent = new Color(0.24f, 0.86f, 0.52f, 1f);
         public Color Icon = Color.white;
@@ -981,8 +1077,9 @@ namespace Crispberry_PiPhone
         public Color IconForeground = Color.white;
 
         /// <summary>
-        /// Optional custom icon. Prefer <see cref="SetIcon(byte[])"/> so the image is
-        /// clamped to 128px and cached. Letter glyphs are only used when this is null.
+        /// Optional custom icon from any source (your PNG, a texture, a sprite).
+        /// You do not need the Google icon set. The phone masks this to the player's
+        /// icon shape. Letter glyphs are only used when this is null.
         /// </summary>
         public Sprite IconSprite;
 
@@ -1030,6 +1127,47 @@ namespace Crispberry_PiPhone
 
         /// <summary>If false, the app is hidden from the Apps listing.</summary>
         public bool ListedInStore = true;
+
+        /// <summary>
+        /// Store section id from <see cref="PiPhoneApi.RegisterCategory"/>,
+        /// for example "games" or "communication". Empty means All only.
+        /// </summary>
+        public string Category;
+
+        /// <summary>Store page text. Built-in apps use this without screenshots.</summary>
+        public string Description;
+
+        private readonly List<Sprite> _screenshots = new List<Sprite>();
+
+        /// <summary>Pictures shown on the store page, in the order they were added. Clamped to 480px.</summary>
+        public Sprite[] Screenshots
+        {
+            get { return _screenshots.ToArray(); }
+        }
+
+        /// <summary>Add a store screenshot. PNG or JPG, clamped to 480px. At most 8.</summary>
+        public bool AddScreenshot(byte[] pngOrJpg)
+        {
+            return AddScreenshot(PhoneIcons.FromBytes(pngOrJpg, true, 480));
+        }
+
+        /// <summary>Add a store screenshot from a texture. Copied and clamped to 480px.</summary>
+        public bool AddScreenshot(Texture2D texture)
+        {
+            return AddScreenshot(PhoneIcons.Screenshot(texture));
+        }
+
+        /// <summary>Add a store screenshot sprite. Clamped to 480px. At most 8.</summary>
+        public bool AddScreenshot(Sprite sprite)
+        {
+            if (sprite == null || _screenshots.Count >= 8)
+                return false;
+            Sprite ready = PhoneIcons.ClampSprite(sprite, 480);
+            if (ready == null)
+                return false;
+            _screenshots.Add(ready);
+            return true;
+        }
 
         /// <summary>If true, the app cannot be uninstalled (the Apps store itself).</summary>
         public bool Sticky;
@@ -1137,6 +1275,35 @@ namespace Crispberry_PiPhone
     }
 
     /// <summary>
+    /// A nav-bar icon. Register with <see cref="PiPhoneApi.RegisterNavButton"/>.
+    /// Built-in Back, Home, All apps, and Rotate stay to the left of these.
+    /// </summary>
+    public sealed class PiPhoneNavButton
+    {
+        /// <summary>Stable id, e.g. "mymod.map".</summary>
+        public string Id;
+
+        /// <summary>Fallback letter if no icon is set.</summary>
+        public string Glyph;
+
+        /// <summary>Optional icon. White-on-transparent sprites tint with the nav icon color.</summary>
+        public Sprite Icon;
+
+        /// <summary>Optional live icon. Preferred over <see cref="Icon"/>.</summary>
+        public Func<Sprite> IconFn;
+
+        /// <summary>Set false for a full-color picture so the phone does not tint it.</summary>
+        public bool TintIcon = true;
+
+        public int SortOrder = 100;
+
+        public Action OnClick;
+
+        /// <summary>If set and this returns false, the button is left off the bar.</summary>
+        public Func<bool> Available;
+    }
+
+    /// <summary>
     /// A compact Quick settings chip. Register with <see cref="PiPhoneApi.RegisterShadeButton"/>.
     /// Players can hide it in Settings → Customize → Toolbar.
     /// </summary>
@@ -1169,6 +1336,9 @@ namespace Crispberry_PiPhone
 
         /// <summary>If set and returns false, the chip is omitted (e.g. Home only while an app is open).</summary>
         public Func<bool> Available;
+
+        /// <summary>When false, Settings cannot hide this chip. The navigation toggle stays available.</summary>
+        public bool CanHide = true;
 
         /// <summary>Optional live glyph, e.g. a lock that changes when toggled.</summary>
         public Func<string> GlyphFn;

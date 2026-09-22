@@ -260,6 +260,13 @@ namespace Crispberry_PiPhone
             return Boost(Trim(clip, pos));
         }
 
+        public static void ApplyVolume()
+        {
+            if (_source == null)
+                return;
+            TrySet(_source, "volume", PhoneTheme.RingVolume);
+        }
+
         public static void Play(object clip)
         {
             Play(clip, false);

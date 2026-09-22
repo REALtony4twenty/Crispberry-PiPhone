@@ -243,6 +243,24 @@ namespace Crispberry_PiPhone
             string callerName = data[7] as string;
             bool groupCall = data[8] is bool && (bool)data[8];
             int[] members = data[9] as int[];
+            if (PhoneTheme.DoNotDisturb || (!string.IsNullOrEmpty(callerId) && PhoneContacts.BlocksCalls(callerId)))
+            {
+                PhoneNet.SendCallReject(caller, callId, true);
+                if (PhoneTheme.DoNotDisturb)
+                {
+                    PhoneStore.AddCall(new CallLogItem
+                    {
+                        Id = PhoneStore.NewId(),
+                        OtherId = callerId,
+                        OtherName = callerName,
+                        Outgoing = false,
+                        Missed = true,
+                        Group = groupCall,
+                        UnixMs = PhoneStore.NowMs()
+                    });
+                }
+                return;
+            }
             if (IsBusy)
             {
                 PhoneNet.SendCallReject(caller, callId, true);

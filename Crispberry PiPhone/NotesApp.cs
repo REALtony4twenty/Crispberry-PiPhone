@@ -46,7 +46,7 @@ namespace Crispberry_PiPhone
                 _noteId = null;
                 Clear();
                 _host.SetTitle("Notes");
-                PhoneUi.CreateButton(_host.Content, "New note", () => Open(PhoneStore.AddNote("New note", string.Empty)), new Vector2(240f, 40f));
+                PhoneUi.MaterialChip(_host.Content, "note_add", "New note", () => Open(PhoneStore.AddNote("New note", string.Empty)), new Vector2(40f, 40f));
 
                 ScrollRect scroll = PhoneUi.CreateScrollView(_host.Content, out RectTransform content);
                 var le = scroll.gameObject.AddComponent<LayoutElement>();
@@ -83,11 +83,11 @@ namespace Crispberry_PiPhone
                     PhoneUi.Size(row, 42f);
                     PhoneUi.AddHorizontal(row, 6f);
                     PhoneUi.CreateButton(row.transform, title, () => Open(captured), new Vector2(220f, 40f));
-                    PhoneUi.CreateButton(row.transform, "Del", () =>
+                    PhoneUi.MaterialChip(row.transform, "delete", "Delete", () =>
                     {
                         PhoneStore.DeleteNote(captured.Id);
                         ShowList();
-                    }, new Vector2(56f, 40f));
+                    }, new Vector2(36f, 32f));
                 }
             }
 
@@ -96,7 +96,7 @@ namespace Crispberry_PiPhone
                 _noteId = note != null ? note.Id : null;
                 Clear();
                 _host.SetTitle("Note");
-                PhoneUi.CreateButton(_host.Content, "< Notes", ShowList, new Vector2(160f, 32f));
+                PhoneUi.CreateIconChip(_host.Content, "Notes", PhoneIcons.Material("arrow_back"), ShowList, false, new Vector2(36f, 32f));
                 TMP_InputField title = PhoneUi.CreateInput(_host.Content, "Title", 80);
                 title.text = note.Title ?? string.Empty;
                 TMP_InputField body = PhoneUi.CreateMultiline(_host.Content, "Write something", 8000);
@@ -111,11 +111,11 @@ namespace Crispberry_PiPhone
                     note.Body = s ?? string.Empty;
                     PhoneStore.UpdateNote(note);
                 });
-                PhoneUi.CreateButton(_host.Content, "Delete note", () =>
+                PhoneUi.MaterialChip(_host.Content, "delete", "Delete", () =>
                 {
                     PhoneStore.DeleteNote(note.Id);
                     ShowList();
-                }, new Vector2(200f, 40f));
+                }, new Vector2(36f, 32f));
             }
 
             private void Clear()

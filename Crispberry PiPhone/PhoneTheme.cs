@@ -49,6 +49,12 @@ namespace Crispberry_PiPhone
         public static string ShownShadeIds = string.Empty;
         /// <summary>Info logs. Leave true while testing; set this default false for release.</summary>
         public static bool WriteLogs = true;
+        public static bool NavRotateButton = true;
+        public static bool NavBarOn = true;
+        public static bool FilledIcons = true;
+        public static float NavHandleX;
+        /// <summary>0 bottom, 1 left, 2 right. The top edge stays clear of the status bar.</summary>
+        public static int NavEdge;
 
         public static Color CaseColor = new Color(0.07f, 0.07f, 0.08f, 1f);
         public static Color ClockColor = new Color(0.96f, 0.97f, 0.98f, 1f);
@@ -57,6 +63,8 @@ namespace Crispberry_PiPhone
         public static Color ScreenColor = new Color(0.08f, 0.10f, 0.13f, 1f);
         public static Color SurfaceColor = new Color(0.16f, 0.18f, 0.21f, 0.96f);
         public static Color NavColor = new Color(0.10f, 0.11f, 0.13f, 1f);
+        public static Color NavButtonColor = new Color(0.20f, 0.22f, 0.26f, 1f);
+        public static Color NavIconColor = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static Color TextColor = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static Color AccentColor = new Color(0.24f, 0.86f, 0.52f, 1f);
         public static Color IconColor = Color.white;
@@ -72,6 +80,8 @@ namespace Crispberry_PiPhone
         public static readonly Color DefaultScreen = new Color(0.08f, 0.10f, 0.13f, 1f);
         public static readonly Color DefaultSurface = new Color(0.16f, 0.18f, 0.21f, 0.96f);
         public static readonly Color DefaultNav = new Color(0.10f, 0.11f, 0.13f, 1f);
+        public static readonly Color DefaultNavButton = new Color(0.20f, 0.22f, 0.26f, 1f);
+        public static readonly Color DefaultNavIcon = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static readonly Color DefaultText = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static readonly Color DefaultAccent = new Color(0.24f, 0.86f, 0.52f, 1f);
         public static readonly Color DefaultIcon = Color.white;
@@ -120,6 +130,8 @@ namespace Crispberry_PiPhone
                     else if (key == "screenc") ScreenColor = ParseColor(val, ScreenColor);
                     else if (key == "surfacec") SurfaceColor = ParseColor(val, SurfaceColor);
                     else if (key == "navc") NavColor = ParseColor(val, NavColor);
+                    else if (key == "navbtn") NavButtonColor = ParseColor(val, NavButtonColor);
+                    else if (key == "navicon") NavIconColor = ParseColor(val, NavIconColor);
                     else if (key == "textc") TextColor = ParseColor(val, TextColor);
                     else if (key == "accentc") AccentColor = ParseColor(val, AccentColor);
                     else if (key == "iconc") IconColor = ParseColor(val, IconColor);
@@ -159,6 +171,11 @@ namespace Crispberry_PiPhone
                     else if (key == "shadeoff") HiddenShadeIds = val ?? string.Empty;
                     else if (key == "shadeon") ShownShadeIds = val ?? string.Empty;
                     else if (key == "logs") WriteLogs = n != 0 || val == "true";
+                    else if (key == "navrot") NavRotateButton = n != 0 || val == "true";
+                    else if (key == "navon") NavBarOn = n != 0 || val == "true";
+                    else if (key == "filled") FilledIcons = n != 0 || val == "true";
+                    else if (key == "navhx") NavHandleX = f;
+                    else if (key == "navedge") NavEdge = n == 1 || n == 2 ? n : 0;
                 }
             }
             catch (Exception ex)
@@ -189,6 +206,8 @@ namespace Crispberry_PiPhone
                     + "screenc=" + Fmt(ScreenColor) + "\n"
                     + "surfacec=" + Fmt(SurfaceColor) + "\n"
                     + "navc=" + Fmt(NavColor) + "\n"
+                    + "navbtn=" + Fmt(NavButtonColor) + "\n"
+                    + "navicon=" + Fmt(NavIconColor) + "\n"
                     + "textc=" + Fmt(TextColor) + "\n"
                     + "accentc=" + Fmt(AccentColor) + "\n"
                     + "iconc=" + Fmt(IconColor) + "\n"
@@ -224,7 +243,12 @@ namespace Crispberry_PiPhone
                     + "poslock=" + (PositionLocked ? "1" : "0") + "\n"
                     + "shadeoff=" + (HiddenShadeIds ?? string.Empty) + "\n"
                     + "shadeon=" + (ShownShadeIds ?? string.Empty) + "\n"
-                    + "logs=" + (WriteLogs ? "1" : "0") + "\n");
+                    + "logs=" + (WriteLogs ? "1" : "0") + "\n"
+                    + "navrot=" + (NavRotateButton ? "1" : "0") + "\n"
+                    + "navon=" + (NavBarOn ? "1" : "0") + "\n"
+                    + "filled=" + (FilledIcons ? "1" : "0") + "\n"
+                    + "navhx=" + NavHandleX.ToString("0.#", CultureInfo.InvariantCulture) + "\n"
+                    + "navedge=" + NavEdge + "\n");
             }
             catch (Exception ex)
             {
@@ -235,19 +259,23 @@ namespace Crispberry_PiPhone
         public static void SetBrightness(float value)
         {
             Brightness = ClampBright(value);
-            Commit();
+            Apply();
+            Save();
+            PhoneMenu.RefreshLiveChrome();
         }
 
         public static void SetPhoneScale(float value)
         {
             PhoneScale = Mathf.Clamp(value, 0.55f, 1.35f);
-            Commit();
+            Save();
+            PhoneMenu.RefreshLiveChrome();
         }
 
         public static void SetPhoneScaleLand(float value)
         {
             PhoneScaleLand = Mathf.Clamp(value, 0.55f, 1.8f);
-            Commit();
+            Save();
+            PhoneMenu.RefreshLiveChrome();
         }
 
         public static void SetPhonePos(float x, float y)
@@ -365,13 +393,46 @@ namespace Crispberry_PiPhone
         public static void SetRingVolume(float value)
         {
             RingVolume = Mathf.Clamp01(value);
-            Commit();
+            VoiceIo.ApplyVolume();
+            Save();
         }
 
         public static void SetMusicVolume(float value)
         {
             MusicVolume = Mathf.Clamp01(value);
             MusicPlayer.ApplyVolume();
+            Save();
+        }
+
+        public static void SetNavRotateButton(bool on)
+        {
+            NavRotateButton = on;
+            Commit();
+        }
+
+        public static void SetNavBar(bool on)
+        {
+            NavBarOn = on;
+            Commit();
+        }
+
+        public static void SetFilledIcons(bool filled)
+        {
+            FilledIcons = filled;
+            PhoneShade.ForgetIcons();
+            Commit();
+        }
+
+        public static void RememberNavHandle(float x)
+        {
+            NavHandleX = x;
+            Save();
+        }
+
+        public static void RememberNavPlace(int edge, float along)
+        {
+            NavEdge = edge == 1 || edge == 2 ? edge : 0;
+            NavHandleX = along;
             Save();
         }
 
@@ -384,31 +445,31 @@ namespace Crispberry_PiPhone
 
         public static void SetCaseColor(Color color)
         {
-            CaseColor = Opaque(color);
+            CaseColor = color;
             Commit();
         }
 
         public static void SetClockColor(Color color)
         {
-            ClockColor = Opaque(color);
+            ClockColor = color;
             Commit();
         }
 
         public static void SetButtonFill(Color color)
         {
-            ButtonFillColor = Opaque(color);
+            ButtonFillColor = color;
             Commit();
         }
 
         public static void SetButtonFont(Color color)
         {
-            ButtonFontColor = Opaque(color);
+            ButtonFontColor = color;
             Commit();
         }
 
         public static void SetScreenColor(Color color)
         {
-            ScreenColor = Opaque(color);
+            ScreenColor = color;
             Commit();
         }
 
@@ -420,25 +481,37 @@ namespace Crispberry_PiPhone
 
         public static void SetNavColor(Color color)
         {
-            NavColor = Opaque(color);
+            NavColor = color;
+            Commit();
+        }
+
+        public static void SetNavButtonColor(Color color)
+        {
+            NavButtonColor = color;
+            Commit();
+        }
+
+        public static void SetNavIconColor(Color color)
+        {
+            NavIconColor = color;
             Commit();
         }
 
         public static void SetTextColor(Color color)
         {
-            TextColor = Opaque(color);
+            TextColor = color;
             Commit();
         }
 
         public static void SetAccentColor(Color color)
         {
-            AccentColor = Opaque(color);
+            AccentColor = color;
             Commit();
         }
 
         public static void SetIconColor(Color color)
         {
-            IconColor = Opaque(color);
+            IconColor = color;
             Commit();
         }
 
@@ -465,10 +538,14 @@ namespace Crispberry_PiPhone
             ScreenColor = DefaultScreen;
             SurfaceColor = DefaultSurface;
             NavColor = DefaultNav;
+            NavButtonColor = DefaultNavButton;
+            NavIconColor = DefaultNavIcon;
             TextColor = DefaultText;
             AccentColor = DefaultAccent;
             IconColor = DefaultIcon;
             FontScale = DefaultFontScale;
+            FilledIcons = true;
+            PhoneShade.ForgetIcons();
             Commit();
         }
 
@@ -686,12 +763,6 @@ namespace Crispberry_PiPhone
             {
                 return fallback;
             }
-        }
-
-        private static Color Opaque(Color c)
-        {
-            c.a = 1f;
-            return c;
         }
 
         private static int Clamp(int value, int min, int max)

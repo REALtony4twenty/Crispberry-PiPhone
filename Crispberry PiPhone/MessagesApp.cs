@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using TMPro;
 using UnityEngine;
+using UnityEngine.TextCore;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using PhotonPlayer = Photon.Realtime.Player;
@@ -31,11 +32,19 @@ namespace Crispberry_PiPhone
                 IconBackground = PhoneUi.MessagesIcon,
                 SortOrder = 10,
                 ShowOnDock = true,
-                OnOpen = host => { _live = new Session(host); _live.Build(); },
+                OnOpen = host =>
+                {
+                    if (_live != null)
+                        _live.Shutdown();
+                    _live = new Session(host);
+                    _live.Build();
+                },
                 OnClose = () =>
                 {
                     PhoneVideo.StopAll();
                     VoiceIo.StopPlay();
+                    if (_live != null)
+                        _live.Shutdown();
                     _live = null;
                 },
                 OnOrientation = () => { if (_live != null) _live.Reload(); }
@@ -74,9 +83,19 @@ namespace Crispberry_PiPhone
             private RectTransform _composeRt;
             private GameObject _mediaBar;
             private GameObject _emojiPanel;
+            private RectTransform _emojiGrid;
+            private TextMeshProUGUI _emojiPageLabel;
+            private GameObject _draftFace;
+            private int _emojiPage;
             private bool _emojiOpen;
             private TMP_InputField _composer;
-            private TextMeshProUGUI _micLabel;
+            private string _draft = string.Empty;
+            private string _shown = string.Empty;
+            private char _padChar = '\u00A0';
+            private int _padCount = 1;
+            private int _logicalCaret;
+            private bool _composerLock;
+            private Button _micBtn;
             private string _threadId;
             private string _threadName;
             private int _threadActor;
@@ -89,8 +108,20 @@ namespace Crispberry_PiPhone
                 _host = host;
             }
 
+            public void Shutdown()
+            {
+                Canvas.willRenderCanvases -= PinComposer;
+            }
+
             public bool GoBack()
             {
+                if (_emojiOpen)
+                {
+                    _emojiOpen = false;
+                    if (_emojiPanel != null)
+                        _emojiPanel.SetActive(false);
+                    return true;
+                }
                 if (_mediaBar != null && _mediaBar.activeSelf)
                 {
                     _mediaBar.SetActive(false);
@@ -118,6 +149,7 @@ namespace Crispberry_PiPhone
 
             public void Build()
             {
+                Canvas.willRenderCanvases += PinComposer;
                 _host.SetTitle("Messages");
                 _listPage = Page("List");
                 var hint = PhoneUi.CreateLabel(_listPage.transform, "Hint", "Hold a chat to delete it. Texts stay on this phone.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
@@ -136,15 +168,15 @@ namespace Crispberry_PiPhone
                 top.transform.SetParent(_threadPage.transform, false);
                 PhoneUi.Size(top, 36f);
                 PhoneUi.AddHorizontal(top, 6f);
-                PhoneUi.CreateButton(top.transform, "<", ShowList, new Vector2(40f, 32f));
-                PhoneUi.CreateButton(top.transform, "♪", ShowContactTones, new Vector2(36f, 32f));
-                PhoneUi.CreateButton(top.transform, "Select", ToggleSelect, new Vector2(72f, 32f));
-                PhoneUi.CreateButton(top.transform, "Del chat", () =>
+                PhoneUi.CreateIconChip(top.transform, "<", PhoneIcons.Material("arrow_back"), ShowList, false, new Vector2(36f, 32f));
+                PhoneUi.CreateIconChip(top.transform, "Tone", PhoneIcons.Material("library_music"), ShowContactTones, false, new Vector2(36f, 32f));
+                PhoneUi.MaterialChip(top.transform, "select", "Select", ToggleSelect, new Vector2(36f, 32f));
+                PhoneUi.CreateIconChip(top.transform, "Delete", PhoneIcons.Material("delete"), () =>
                 {
                     PhoneStore.DeleteThread(_threadId);
                     _host.ShowToast("Conversation deleted.");
                     ShowList();
-                }, new Vector2(88f, 32f));
+                }, false, new Vector2(36f, 32f));
 
                 _threadScroll = PhoneUi.CreateScrollView(_threadPage.transform, out _threadContent);
                 var tLe = _threadScroll.gameObject.AddComponent<LayoutElement>();
@@ -152,35 +184,60 @@ namespace Crispberry_PiPhone
                 PhoneUi.AddVertical(_threadContent.gameObject, 6f, new RectOffset(4, 4, 4, 4));
                 PhoneUi.FitVertical(_threadContent.gameObject);
 
+                var compose = PhoneUi.CreateImage(_threadPage.transform, "Compose", PhoneUi.White(), new Color(1f, 1f, 1f, 0f));
+                _composeRt = compose;
+                PhoneUi.Size(compose.gameObject, 26f);
+                PhoneUi.AddHorizontal(compose.gameObject, 6f);
+                var ch = compose.GetComponent<HorizontalLayoutGroup>();
+                ch.childAlignment = TextAnchor.LowerCenter;
+                ch.childControlHeight = false;
+                ch.childForceExpandHeight = false;
+                ch.childForceExpandWidth = false;
+                ch.padding = new RectOffset(0, 0, 0, 0);
+                PhoneUi.CreateIconChip(compose, "+", PhoneIcons.Material("add"), ToggleMedia, false, new Vector2(26f, 26f));
+                _composer = PhoneUi.CreateInput(compose, "Message", 2000);
+                _composer.lineType = TMP_InputField.LineType.MultiLineNewline;
+                _composer.richText = true;
+                if (_composer.textViewport != null)
+                {
+                    _composer.textViewport.offsetMin = new Vector2(8f, 2f);
+                    _composer.textViewport.offsetMax = new Vector2(-8f, -2f);
+                }
+                var inputText = _composer.textComponent as TextMeshProUGUI;
+                var inputPh = _composer.placeholder as TextMeshProUGUI;
+                if (inputText != null)
+                    inputText.alignment = TextAlignmentOptions.MidlineLeft;
+                if (inputPh != null)
+                    inputPh.alignment = TextAlignmentOptions.MidlineLeft;
+                var caretGuard = _composer.gameObject.AddComponent<ComposerCaretGuard>();
+                caretGuard.AfterInput = SnapEmojiCaret;
+                caretGuard.CopyPlain = CopySelection;
+                PhoneUi.Wrap(inputText);
+                PhoneUi.Wrap(inputPh);
+                PhoneEmoji.Ensure();
+                PhoneEmoji.Bind(_composer.textComponent);
+                _composer.richText = false;
+                if (inputText != null)
+                    inputText.richText = false;
+                _composer.onValueChanged.AddListener(v => OnComposerChanged());
+                PhoneUi.CreateIconChip(compose, "Send", PhoneIcons.Material("send"), SendText, false, new Vector2(26f, 26f));
+                ResizeComposer();
+
                 _mediaBar = new GameObject("Media", typeof(RectTransform));
                 _mediaBar.transform.SetParent(_threadPage.transform, false);
-                PhoneUi.Size(_mediaBar, 44f);
+                PhoneUi.Size(_mediaBar, 40f);
                 PhoneUi.AddHorizontal(_mediaBar, 8f);
                 var mh = _mediaBar.GetComponent<HorizontalLayoutGroup>();
                 mh.childAlignment = TextAnchor.MiddleCenter;
                 mh.childForceExpandWidth = false;
-                PhoneUi.CreateButton(_mediaBar.transform, "▣", ShowAttach, new Vector2(56f, 36f));
-                PhoneUi.CreateButton(_mediaBar.transform, "GIF", ShowGifSearch, new Vector2(56f, 36f));
-                var mic = PhoneUi.CreateButton(_mediaBar.transform, "◉", ToggleVoice, new Vector2(56f, 36f));
-                _micLabel = mic.GetComponentInChildren<TextMeshProUGUI>(true);
+                mh.childForceExpandHeight = false;
+                PhoneUi.CreateIconChip(_mediaBar.transform, "Emoji", null, ToggleEmoji, false, new Vector2(32f, 32f));
+                PhoneUi.CreateIconChip(_mediaBar.transform, "Photos", PhoneIcons.Material("photo_library"), ShowAttach, false, new Vector2(32f, 32f));
+                PhoneUi.CreateIconChip(_mediaBar.transform, "GIF", PhoneIcons.Material("gif"), ShowGifSearch, false, new Vector2(32f, 32f));
+                var mic = PhoneUi.CreateIconChip(_mediaBar.transform, "Mic", PhoneIcons.Material("mic"), ToggleVoice, false, new Vector2(32f, 32f));
+                _micBtn = mic;
                 _mediaBar.SetActive(false);
-
-                var compose = PhoneUi.CreateImage(_threadPage.transform, "Compose", PhoneUi.White(), new Color(1f, 1f, 1f, 0f));
-                _composeRt = compose;
-                PhoneUi.Size(compose.gameObject, 56f);
-                PhoneUi.AddHorizontal(compose.gameObject, 6f);
-                var ch = compose.GetComponent<HorizontalLayoutGroup>();
-                ch.childAlignment = TextAnchor.LowerCenter;
-                ch.padding = new RectOffset(0, 0, 4, 4);
-                PhoneUi.CreateButton(compose, "+", ToggleMedia, new Vector2(36f, 36f));
-                PhoneUi.CreateButton(compose, "☺", ToggleEmoji, new Vector2(36f, 36f));
-                _composer = PhoneUi.CreateInput(compose, "Message", 800);
-                _composer.lineType = TMP_InputField.LineType.MultiLineNewline;
-                PhoneUi.Wrap(_composer.textComponent as TextMeshProUGUI);
-                PhoneUi.Wrap(_composer.placeholder as TextMeshProUGUI);
-                PhoneEmoji.Apply(_composer.textComponent);
-                _composer.onValueChanged.AddListener(v => ResizeComposer());
-                PhoneUi.CreateButton(compose, "➤", SendText, new Vector2(36f, 36f));
+                PaintEmojiButton();
 
                 _pickPage = Page("Pick");
                 _pickPage.SetActive(false);
@@ -198,6 +255,8 @@ namespace Crispberry_PiPhone
 
             public void Reload()
             {
+                if (_emojiOpen)
+                    ShowEmojiPage();
                 if (_threadPage != null && _threadPage.activeSelf && !string.IsNullOrEmpty(_threadId))
                     FillThread();
                 else
@@ -239,6 +298,16 @@ namespace Crispberry_PiPhone
                     seen.Add(id);
                 }
 
+                PiPhoneContact[] saved = PhoneContacts.All();
+                for (int i = 0; i < saved.Length; i++)
+                {
+                    PiPhoneContact contact = saved[i];
+                    if (contact == null || !PhoneContacts.IsSaved(contact.Id) || seen.Contains(contact.Id))
+                        continue;
+                    AddThreadRow(contact.Id, PhoneContacts.Display(contact.Id, contact.RealName), 0, false);
+                    seen.Add(contact.Id);
+                }
+
                 if (_listContent.childCount == 0)
                 {
                     var empty = PhoneUi.CreateLabel(_listContent, "Empty", "No conversations yet.", 15f, FontStyles.Normal, TextAlignmentOptions.Center);
@@ -259,11 +328,11 @@ namespace Crispberry_PiPhone
                 PhoneUi.CreateButton(row.transform, shown, () => OpenThread(id, shown, actor), new Vector2(canDelete ? 180f : 260f, 40f));
                 if (canDelete)
                 {
-                    PhoneUi.CreateButton(row.transform, "Del", () =>
+                    PhoneUi.CreateIconChip(row.transform, "Delete", PhoneIcons.Material("delete"), () =>
                     {
                         PhoneStore.DeleteThread(id);
                         FillList();
-                    }, new Vector2(56f, 40f));
+                    }, false, new Vector2(40f, 40f));
                 }
             }
 
@@ -296,9 +365,12 @@ namespace Crispberry_PiPhone
                 _threadActor = actor;
                 _selecting = false;
                 _picked.Clear();
+                _draft = string.Empty;
                 if (!string.IsNullOrEmpty(name))
                     PhoneStore.DismissNotices(BuiltinApps.MessagesId, name);
                 ShowThreadUi();
+                if (_composer != null)
+                    PushField(0);
                 FillThread();
             }
 
@@ -306,7 +378,14 @@ namespace Crispberry_PiPhone
             {
                 if (_mediaBar == null)
                     return;
-                _mediaBar.SetActive(!_mediaBar.activeSelf);
+                bool open = !_mediaBar.activeSelf;
+                _mediaBar.SetActive(open);
+                if (!open && _emojiOpen)
+                {
+                    _emojiOpen = false;
+                    if (_emojiPanel != null)
+                        _emojiPanel.SetActive(false);
+                }
             }
 
             private void ShowContactTones()
@@ -318,7 +397,7 @@ namespace Crispberry_PiPhone
                 _pickPage.SetActive(true);
                 Clear(_pickPage.transform);
                 _host.SetTitle(_threadName ?? "Sounds");
-                PhoneUi.CreateButton(_pickPage.transform, "Back", ShowThreadUi, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_pickPage.transform, "arrow_back", "Back", ShowThreadUi, new Vector2(36f, 32f));
                 var hint = PhoneUi.CreateLabel(_pickPage.transform, "H", "Empty = Settings default.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 hint.color = PhoneUi.TextDim;
                 PhoneUi.Size(hint.gameObject, 22f);
@@ -329,7 +408,7 @@ namespace Crispberry_PiPhone
             private void FillContactTones(bool ring)
             {
                 Clear(_pickPage.transform);
-                PhoneUi.CreateButton(_pickPage.transform, "Back", ShowContactTones, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_pickPage.transform, "arrow_back", "Back", ShowContactTones, new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_pickPage.transform, "Default", () =>
                 {
                     if (ring)
@@ -368,23 +447,23 @@ namespace Crispberry_PiPhone
                     bar.transform.SetParent(_threadContent, false);
                     PhoneUi.Size(bar, 36f);
                     PhoneUi.AddHorizontal(bar, 6f);
-                    PhoneUi.CreateButton(bar.transform, "All", () =>
+                    PhoneUi.MaterialChip(bar.transform, "select_all", "All", () =>
                     {
                         List<ChatMessage> all = PhoneStore.Thread(_threadId);
                         _picked.Clear();
                         for (int i = 0; i < all.Count; i++)
                             _picked.Add(all[i].Id);
                         FillThread();
-                    }, new Vector2(64f, 32f));
-                    PhoneUi.CreateButton(bar.transform, "Delete", () =>
+                    }, new Vector2(36f, 32f));
+                    PhoneUi.MaterialChip(bar.transform, "delete", "Delete", () =>
                     {
                         var ids = new List<string>(_picked);
                         PhoneStore.DeleteMessages(_threadId, ids);
                         _selecting = false;
                         _picked.Clear();
                         FillThread();
-                    }, new Vector2(80f, 32f));
-                    PhoneUi.CreateButton(bar.transform, "Cancel", ToggleSelect, new Vector2(72f, 32f));
+                    }, new Vector2(36f, 32f));
+                    PhoneUi.MaterialChip(bar.transform, "close", "Cancel", ToggleSelect, new Vector2(36f, 32f));
                 }
 
                 List<ChatMessage> msgs = PhoneStore.Thread(_threadId);
@@ -413,37 +492,411 @@ namespace Crispberry_PiPhone
                     _threadScroll.verticalNormalizedPosition = 0f;
             }
 
+            private const char SoftBreak = '\u2028';
+
+            private void PinComposer()
+            {
+                if (_composer == null || _composer.textComponent == null)
+                    return;
+                RectTransform rt = _composer.textComponent.rectTransform;
+                Vector2 pos = rt.anchoredPosition;
+                Vector2 min = rt.offsetMin;
+                Vector2 max = rt.offsetMax;
+                if (Mathf.Abs(pos.y) > 0.2f || Mathf.Abs(min.y) > 0.2f || Mathf.Abs(max.y) > 0.2f)
+                {
+                    rt.anchoredPosition = new Vector2(pos.x, 0f);
+                    rt.offsetMin = new Vector2(min.x, 0f);
+                    rt.offsetMax = new Vector2(max.x, 0f);
+                }
+            }
+
+            private void SnapEmojiCaret()
+            {
+                if (_composerLock || _composer == null || !_composer.isFocused)
+                    return;
+                string text = _composer.text ?? string.Empty;
+                int anchor = SnapDisplayIndex(text, _composer.selectionStringAnchorPosition);
+                int focus = SnapDisplayIndex(text, _composer.selectionStringFocusPosition);
+                if (anchor == _composer.selectionStringAnchorPosition && focus == _composer.selectionStringFocusPosition)
+                    return;
+                ApplySelection(anchor, focus);
+                _logicalCaret = LogicalCaret(text, focus);
+                _composer.ForceLabelUpdate();
+            }
+
+            private void CopySelection()
+            {
+                if (_composer == null || !_composer.isFocused)
+                    return;
+                string display = _composer.text ?? string.Empty;
+                int a = _composer.selectionStringAnchorPosition;
+                int b = _composer.selectionStringFocusPosition;
+                if (a == b)
+                    return;
+                if (a > b)
+                {
+                    int swap = a;
+                    a = b;
+                    b = swap;
+                }
+                int plainA = PhoneEmoji.PlainIndexAtField(_draft, LogicalCaret(display, a));
+                int plainB = PhoneEmoji.PlainIndexAtField(_draft, LogicalCaret(display, b));
+                string draft = _draft ?? string.Empty;
+                if (plainA < 0)
+                    plainA = 0;
+                if (plainB < plainA)
+                    plainB = plainA;
+                if (plainA > draft.Length)
+                    plainA = draft.Length;
+                if (plainB > draft.Length)
+                    plainB = draft.Length;
+                GUIUtility.systemCopyBuffer = draft.Substring(plainA, plainB - plainA);
+            }
+
+            private int SnapDisplayIndex(string display, int index)
+            {
+                if (string.IsNullOrEmpty(display) || index <= 0)
+                    return 0;
+                if (index >= display.Length)
+                    return display.Length;
+                int pads = _padCount < 1 ? 1 : _padCount;
+                char pad = _padChar == '\0' ? '\u00A0' : _padChar;
+                int i = 0;
+                while (i < display.Length)
+                {
+                    if (display[i] == SoftBreak)
+                    {
+                        i++;
+                        continue;
+                    }
+                    if (display[i] != pad)
+                    {
+                        if (i >= index)
+                            return index;
+                        i++;
+                        continue;
+                    }
+                    int start = i;
+                    int n = 0;
+                    while (i < display.Length && display[i] == pad && n < pads)
+                    {
+                        n++;
+                        i++;
+                    }
+                    if (index > start && index < i)
+                        return (index - start) <= (i - index) ? start : i;
+                }
+                return index;
+            }
+
+            private static string StripSoft(string text)
+            {
+                if (string.IsNullOrEmpty(text) || text.IndexOf(SoftBreak) < 0)
+                    return text ?? string.Empty;
+                return text.Replace(SoftBreak.ToString(), string.Empty);
+            }
+
+            private int LogicalCaret(string display, int displayIndex)
+            {
+                if (string.IsNullOrEmpty(display) || displayIndex <= 0)
+                    return 0;
+                int end = displayIndex < display.Length ? displayIndex : display.Length;
+                int pads = _padCount < 1 ? 1 : _padCount;
+                char pad = _padChar == '\0' ? '\u00A0' : _padChar;
+                int count = 0;
+                int i = 0;
+                while (i < end)
+                {
+                    if (display[i] == SoftBreak)
+                    {
+                        i++;
+                        continue;
+                    }
+                    if (display[i] == pad)
+                    {
+                        int n = 0;
+                        while (i < display.Length && display[i] == pad && n < pads)
+                        {
+                            n++;
+                            i++;
+                        }
+                        count++;
+                        continue;
+                    }
+                    count++;
+                    i++;
+                }
+                return count;
+            }
+
+            private int DisplayCaret(string display, int logicalIndex)
+            {
+                if (string.IsNullOrEmpty(display) || logicalIndex <= 0)
+                    return 0;
+                int pads = _padCount < 1 ? 1 : _padCount;
+                char pad = _padChar == '\0' ? '\u00A0' : _padChar;
+                int seen = 0;
+                int i = 0;
+                while (i < display.Length)
+                {
+                    if (display[i] == SoftBreak)
+                    {
+                        i++;
+                        continue;
+                    }
+                    if (seen == logicalIndex)
+                        return i;
+                    if (display[i] == pad)
+                    {
+                        int n = 0;
+                        while (i < display.Length && display[i] == pad && n < pads)
+                        {
+                            n++;
+                            i++;
+                        }
+                        seen++;
+                        continue;
+                    }
+                    seen++;
+                    i++;
+                }
+                return display.Length;
+            }
+
+            private string DisplayToLogical(string display)
+            {
+                if (string.IsNullOrEmpty(display))
+                    return string.Empty;
+                int pads = _padCount < 1 ? 1 : _padCount;
+                char pad = _padChar == '\0' ? '\u00A0' : _padChar;
+                var sb = new StringBuilder(display.Length);
+                for (int i = 0; i < display.Length; i++)
+                {
+                    char c = display[i];
+                    if (c == SoftBreak)
+                        continue;
+                    if (c == pad)
+                    {
+                        int n = 0;
+                        while (i < display.Length && display[i] == pad && n < pads)
+                        {
+                            n++;
+                            i++;
+                        }
+                        i--;
+                        if (n > 0)
+                            sb.Append(PhoneEmoji.FieldMark);
+                        continue;
+                    }
+                    sb.Append(c);
+                }
+                return sb.ToString();
+            }
+
+            private static bool IsNewlineInsert(string before, string after)
+            {
+                if (before == null || after == null || after.Length != before.Length + 1)
+                    return false;
+                int i = 0;
+                int n = before.Length;
+                while (i < n && before[i] == after[i])
+                    i++;
+                if (i >= after.Length)
+                    return false;
+                char c = after[i];
+                if (c != '\n' && c != '\r')
+                    return false;
+                return string.CompareOrdinal(after, i + 1, before, i, n - i) == 0;
+            }
+
+            private float EmojiSlot(TMP_Text tmp)
+            {
+                float size = tmp != null ? tmp.fontSize : 16f;
+                if (size < 14f)
+                    size = 16f;
+                return size + 2f;
+            }
+
+            private void MeasurePads(TMP_Text tmp, float slot)
+            {
+                _padChar = '\u00A0';
+                float adv = 0f;
+                if (tmp != null && tmp.font != null && tmp.font.characterLookupTable != null)
+                {
+                    float point = tmp.font.faceInfo.pointSize;
+                    float scale = point > 0.01f ? tmp.fontSize / point : 1f;
+                    TMP_Character character;
+                    if (tmp.font.characterLookupTable.TryGetValue(0x00A0, out character) && character != null && character.glyph != null)
+                        adv = character.glyph.metrics.horizontalAdvance * scale;
+                    if (adv < 2f && tmp.font.characterLookupTable.TryGetValue(0x0020, out character) && character != null && character.glyph != null)
+                        adv = character.glyph.metrics.horizontalAdvance * scale;
+                }
+                if (adv < 2f)
+                    adv = 4f;
+                _padCount = Mathf.Clamp(Mathf.CeilToInt(slot / adv), 1, 12);
+            }
+
+            private float ComposerWidth()
+            {
+                if (_composer != null)
+                {
+                    var field = _composer.GetComponent<RectTransform>();
+                    if (field != null)
+                        LayoutRebuilder.ForceRebuildLayoutImmediate(field);
+                    if (_composer.textViewport != null)
+                    {
+                        float width = _composer.textViewport.rect.width;
+                        if (width > 40f)
+                            return width - 4f;
+                    }
+                    if (field != null && field.rect.width > 40f)
+                        return field.rect.width - 16f;
+                }
+                return Mathf.Max(160f, PhoneUi.ContentWidth() - 70f);
+            }
+
+            private string ExpandEmoji(string logical, float limit, float slot)
+            {
+                if (string.IsNullOrEmpty(logical))
+                    return string.Empty;
+                int pads = _padCount < 1 ? 1 : _padCount;
+                char pad = _padChar == '\0' ? '\u00A0' : _padChar;
+                var sb = new StringBuilder(logical.Length + 8);
+                float x = 0f;
+                float letter = slot * 0.5f;
+                for (int i = 0; i < logical.Length; i++)
+                {
+                    char c = logical[i];
+                    if (c == '\n')
+                    {
+                        sb.Append(c);
+                        x = 0f;
+                        continue;
+                    }
+                    if (c == PhoneEmoji.FieldMark)
+                    {
+                        if (limit > 40f && x > 1f && x + slot > limit)
+                        {
+                            sb.Append(SoftBreak);
+                            x = 0f;
+                        }
+                        sb.Append(pad, pads);
+                        x += slot;
+                        continue;
+                    }
+                    sb.Append(c);
+                    x += letter;
+                }
+                return sb.ToString();
+            }
+
+            private void ApplySelection(int anchor, int focus)
+            {
+                if (_composer == null)
+                    return;
+                string field = _composer.text ?? string.Empty;
+                if (anchor < 0)
+                    anchor = 0;
+                if (focus < 0)
+                    focus = 0;
+                if (anchor > field.Length)
+                    anchor = field.Length;
+                if (focus > field.Length)
+                    focus = field.Length;
+                TMP_Text tmp = _composer.textComponent;
+                if (tmp != null)
+                    tmp.ForceMeshUpdate(true);
+                _composer.selectionStringAnchorPosition = anchor;
+                _composer.selectionStringFocusPosition = focus;
+                _logicalCaret = LogicalCaret(field, focus);
+            }
+
             private void ResizeComposer()
             {
                 if (_composer == null)
                     return;
+                const float bar = 26f;
                 TextMeshProUGUI tmp = _composer.textComponent as TextMeshProUGUI;
                 if (tmp != null)
+                    tmp.richText = false;
+                string logical = PhoneEmoji.ToField(_draft);
+                bool busy = logical.IndexOf(PhoneEmoji.FieldMark) >= 0 || logical.IndexOf('\n') >= 0 || logical.Length > 24;
+                float h = bar;
+                if (busy && tmp != null)
                 {
-                    PhoneUi.Wrap(tmp);
-                    tmp.ForceMeshUpdate();
+                    float slot = EmojiSlot(tmp);
+                    if (logical.IndexOf(PhoneEmoji.FieldMark) >= 0)
+                        MeasurePads(tmp, slot);
+                    _composerLock = true;
+                    string previous = _composer.text ?? string.Empty;
+                    int anchor = _composer.selectionStringAnchorPosition;
+                    int focus = _composer.selectionStringFocusPosition;
+                    int logicalAnchor = LogicalCaret(previous, anchor);
+                    int logicalFocus = LogicalCaret(previous, focus);
+                    string flowed = logical.IndexOf(PhoneEmoji.FieldMark) >= 0
+                        ? ExpandEmoji(logical, ComposerWidth(), slot)
+                        : logical;
+                    bool changed = previous != flowed;
+                    if (changed)
+                        _composer.text = flowed;
+                    tmp.ForceMeshUpdate(true);
+                    int lines = tmp.textInfo != null ? tmp.textInfo.lineCount : 1;
+                    TextAlignmentOptions align = lines > 1 ? TextAlignmentOptions.TopLeft : TextAlignmentOptions.MidlineLeft;
+                    if (tmp.alignment != align)
+                    {
+                        tmp.alignment = align;
+                        tmp.ForceMeshUpdate(true);
+                        lines = tmp.textInfo != null ? tmp.textInfo.lineCount : lines;
+                    }
+                    if (changed)
+                        ApplySelection(DisplayCaret(_composer.text, logicalAnchor), DisplayCaret(_composer.text, logicalFocus));
+                    else
+                        _logicalCaret = logicalFocus;
+                    _shown = _composer.text ?? string.Empty;
+                    _composerLock = false;
+                    if (lines > 1)
+                    {
+                        float sum = 0f;
+                        if (tmp.textInfo != null && tmp.textInfo.lineInfo != null)
+                        {
+                            int n = lines < tmp.textInfo.lineInfo.Length ? lines : tmp.textInfo.lineInfo.Length;
+                            for (int i = 0; i < n; i++)
+                                sum += Mathf.Max(slot, tmp.textInfo.lineInfo[i].lineHeight);
+                        }
+                        else
+                            sum = lines * slot;
+                        h = Mathf.Clamp(sum + 16f, bar, 280f);
+                    }
                 }
-                float h = 48f;
-                if (tmp != null)
-                    h = Mathf.Clamp(tmp.preferredHeight + 18f, 48f, 140f);
+                else if (tmp != null && tmp.alignment != TextAlignmentOptions.MidlineLeft)
+                    tmp.alignment = TextAlignmentOptions.MidlineLeft;
+                var rt = _composer.GetComponent<RectTransform>();
+                if (rt != null && Mathf.Abs(rt.rect.height - h) > 0.5f)
+                    rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, h);
                 var le = _composer.GetComponent<LayoutElement>();
-                if (le != null)
+                if (le != null && Mathf.Abs(le.preferredHeight - h) > 0.5f)
                 {
                     le.minHeight = h;
                     le.preferredHeight = h;
+                    le.flexibleHeight = 0f;
+                    le.flexibleWidth = 1f;
                 }
-                if (_composeRt != null)
-                    PhoneUi.Size(_composeRt.gameObject, h + 10f);
+                if (_composeRt != null && Mathf.Abs(_composeRt.rect.height - h) > 0.5f)
+                    PhoneUi.Size(_composeRt.gameObject, h);
             }
 
             private void SendText()
             {
                 if (_composer == null || string.IsNullOrEmpty(_threadId))
                     return;
-                string text = _composer.text;
-                if (string.IsNullOrEmpty(text) || text.Trim().Length == 0)
+                string text = (_draft ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(text))
                     return;
-                text = text.Trim();
+                if (_threadActor <= 0)
+                {
+                    _host.ShowToast("Failed to send.");
+                    return;
+                }
                 var msg = new ChatMessage
                 {
                     Id = PhoneStore.NewId(),
@@ -454,57 +907,346 @@ namespace Crispberry_PiPhone
                     UnixMs = PhoneStore.NowMs()
                 };
                 PhoneStore.AddMessage(msg);
-                _composer.text = string.Empty;
-                ResizeComposer();
-                if (_threadActor > 0)
-                    PhoneNet.SendText(_threadActor, msg);
-                else
-                    _host.ShowToast("Saved locally. They're not in the lobby.");
+                _draft = string.Empty;
+                PushField(0);
+                PhoneNet.SendText(_threadActor, msg);
                 FillThread();
             }
 
             private void ToggleEmoji()
             {
                 _emojiOpen = !_emojiOpen;
+                if (_emojiOpen)
+                    PhoneEmoji.Rush();
                 if (_emojiPanel == null)
                     BuildEmojiPanel();
                 if (_emojiPanel != null)
+                {
                     _emojiPanel.SetActive(_emojiOpen);
+                    if (_emojiOpen)
+                        _emojiPanel.transform.SetAsLastSibling();
+                }
+            }
+
+            private void PaintEmojiButton()
+            {
+                if (_mediaBar == null)
+                    return;
+                Transform chip = _mediaBar.transform.Find("Chip");
+                if (chip == null)
+                    return;
+                Sprite smile = PhoneEmoji.SpriteFor("\U0001F60A");
+                if (smile == null && PhoneEmoji.Names.Count > 0)
+                    smile = PhoneEmoji.SpriteFor(PhoneEmoji.Sequence(PhoneEmoji.Names[0]));
+                var btn = chip.GetComponent<Button>();
+                if (btn != null && smile != null)
+                {
+                    PhoneUi.SetChipIcon(btn, smile, "Emoji", false);
+                }
             }
 
             private void BuildEmojiPanel()
             {
                 if (_threadPage == null)
                     return;
+                PhoneEmoji.Ensure();
                 _emojiPanel = new GameObject("Emoji", typeof(RectTransform));
                 _emojiPanel.transform.SetParent(_threadPage.transform, false);
-                if (_composeRt != null)
-                    _emojiPanel.transform.SetSiblingIndex(_composeRt.transform.GetSiblingIndex());
-                PhoneUi.Size(_emojiPanel, 148f);
-                ScrollRect scroll = PhoneUi.CreateScrollView(_emojiPanel.transform, out RectTransform content);
-                var le = scroll.gameObject.AddComponent<LayoutElement>();
-                le.flexibleHeight = 1f;
-                le.minHeight = 120f;
-                PhoneUi.ApplyMediaGrid(content);
-                string[] faces = PhoneEmoji.Common;
-                for (int i = 0; i < faces.Length; i++)
+                _emojiPanel.transform.SetAsLastSibling();
+                PhoneUi.Size(_emojiPanel, 196f);
+                PhoneUi.AddVertical(_emojiPanel, 4f, new RectOffset(0, 0, 0, 0));
+
+                var pages = new GameObject("Pages", typeof(RectTransform));
+                pages.transform.SetParent(_emojiPanel.transform, false);
+                PhoneUi.Size(pages, 32f);
+                var pageRow = PhoneUi.AddHorizontal(pages, 8f);
+                pageRow.childForceExpandWidth = false;
+                pageRow.childAlignment = TextAnchor.MiddleCenter;
+                PhoneUi.CreateButton(pages.transform, "<", () => StepEmojiPage(-1), new Vector2(36f, 28f));
+                _emojiPageLabel = PhoneUi.CreateLabel(pages.transform, "Page", "1 / 1", 14f, FontStyles.Normal, TextAlignmentOptions.Center);
+                PhoneUi.Size(_emojiPageLabel.gameObject, 28f, 72f);
+                PhoneUi.CreateButton(pages.transform, ">", () => StepEmojiPage(1), new Vector2(36f, 28f));
+
+                var gridGo = new GameObject("Grid", typeof(RectTransform));
+                gridGo.transform.SetParent(_emojiPanel.transform, false);
+                var gridLe = gridGo.AddComponent<LayoutElement>();
+                gridLe.flexibleWidth = 1f;
+                gridLe.preferredHeight = 156f;
+                gridLe.minHeight = 156f;
+                _emojiGrid = gridGo.GetComponent<RectTransform>();
+                ShowEmojiPage();
+                PaintEmojiButton();
+            }
+
+            private void StepEmojiPage(int delta)
+            {
+                int pages = EmojiPageCount();
+                if (pages < 1)
+                    pages = 1;
+                _emojiPage += delta;
+                if (_emojiPage < 0)
+                    _emojiPage = pages - 1;
+                if (_emojiPage >= pages)
+                    _emojiPage = 0;
+                ShowEmojiPage();
+            }
+
+            private int EmojiColumnCount(out float cell)
+            {
+                float width = PhoneUi.ContentWidth() - 28f;
+                if (width < 120f)
+                    width = 120f;
+                const float gap = 6f;
+                const float pad = 8f;
+                int cols = Mathf.FloorToInt((width - pad + gap) / (36f + gap));
+                if (cols < 4)
+                    cols = 4;
+                cell = Mathf.Floor((width - pad - gap * (cols - 1)) / cols);
+                if (cell < 28f)
+                    cell = 28f;
+                if (cell > 48f)
+                    cell = 48f;
+                return cols;
+            }
+
+            private int EmojiPageCount()
+            {
+                float cell;
+                int cols = EmojiColumnCount(out cell);
+                int pageSize = cols * 4;
+                int count = PhoneEmoji.Names.Count;
+                if (pageSize < 1)
+                    return 1;
+                return Mathf.Max(1, (count + pageSize - 1) / pageSize);
+            }
+
+            private void ShowEmojiPage()
+            {
+                if (_emojiGrid == null)
+                    return;
+                for (int i = _emojiGrid.childCount - 1; i >= 0; i--)
+                    UnityEngine.Object.Destroy(_emojiGrid.GetChild(i).gameObject);
+                float cell;
+                int cols = EmojiColumnCount(out cell);
+                int pageSize = cols * 4;
+                int pages = EmojiPageCount();
+                if (_emojiPage >= pages)
+                    _emojiPage = pages - 1;
+                if (_emojiPage < 0)
+                    _emojiPage = 0;
+                if (_emojiPageLabel != null)
+                    _emojiPageLabel.text = (_emojiPage + 1) + " / " + pages;
+                var grid = _emojiGrid.gameObject.GetComponent<GridLayoutGroup>();
+                if (grid == null)
+                    grid = _emojiGrid.gameObject.AddComponent<GridLayoutGroup>();
+                grid.cellSize = new Vector2(cell, cell);
+                grid.spacing = new Vector2(6f, 6f);
+                grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+                grid.constraintCount = cols;
+                grid.padding = new RectOffset(4, 4, 2, 2);
+                grid.childAlignment = TextAnchor.UpperLeft;
+                grid.startAxis = GridLayoutGroup.Axis.Horizontal;
+                grid.startCorner = GridLayoutGroup.Corner.UpperLeft;
+                IList<string> names = PhoneEmoji.Names;
+                int start = _emojiPage * pageSize;
+                int end = start + pageSize;
+                if (end > names.Count)
+                    end = names.Count;
+                for (int i = start; i < end; i++)
                 {
-                    string face = faces[i];
-                    Button btn = PhoneUi.CreateButton(content, face, () => InsertEmoji(face), new Vector2(40f, 36f));
-                    PhoneEmoji.Apply(btn.GetComponentInChildren<TextMeshProUGUI>(true));
+                    string seq = PhoneEmoji.Sequence(names[i]);
+                    Sprite sprite = PhoneEmoji.SpriteFor(seq);
+                    if (sprite == null || string.IsNullOrEmpty(seq))
+                        continue;
+                    string captured = seq;
+                    PhoneUi.CreateIconChip(_emojiGrid, names[i], sprite, () => InsertEmoji(captured), false, new Vector2(cell, cell), false);
                 }
+            }
+
+            private void OnComposerChanged()
+            {
+                if (_composerLock || _composer == null)
+                    return;
+                string raw = _composer.text ?? string.Empty;
+                string before = PhoneEmoji.ToField(_draft);
+                string now = DisplayToLogical(raw);
+                if (IsNewlineInsert(before, now))
+                {
+                    bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+                    if (!shift)
+                    {
+                        int at = now.LastIndexOf('\n');
+                        if (at < 0)
+                            at = now.LastIndexOf('\r');
+                        string trimmed = at >= 0 ? now.Remove(at, 1) : now;
+                        _draft = PhoneEmoji.ApplyFieldEdit(_draft, before, trimmed);
+                        if (string.IsNullOrEmpty(PhoneEmoji.ToField(_draft)) || (!PhoneEmoji.HasEmoji(_draft) && string.IsNullOrEmpty(PhoneEmoji.ToField(_draft).Trim())))
+                        {
+                            PushField(trimmed.Length);
+                            return;
+                        }
+                        SendText();
+                        return;
+                    }
+                }
+                if (string.Equals(now, before, StringComparison.Ordinal))
+                {
+                    ResizeComposer();
+                    RefreshDraft();
+                    return;
+                }
+                _draft = PhoneEmoji.ApplyFieldEdit(_draft, before, now);
+                string field = PhoneEmoji.ToField(_draft);
+                if (string.Equals(field, DisplayToLogical(_composer.text), StringComparison.Ordinal))
+                {
+                    ResizeComposer();
+                    RefreshDraft();
+                    return;
+                }
+                PushField(LogicalCaret(raw, _composer.stringPosition));
+            }
+
+            private void PushField(int logicalCaret)
+            {
+                if (_composer == null)
+                    return;
+                _composerLock = true;
+                string field = PhoneEmoji.ToField(_draft);
+                if (StripSoft(_composer.text) != field)
+                    _composer.text = field;
+                ApplySelection(logicalCaret, logicalCaret);
+                _shown = _composer.text ?? string.Empty;
+                _composerLock = false;
+                ResizeComposer();
+                RefreshDraft();
             }
 
             private void InsertEmoji(string face)
             {
                 if (_composer == null || string.IsNullOrEmpty(face))
                     return;
-                string cur = _composer.text ?? string.Empty;
-                int at = Mathf.Clamp(_composer.caretPosition, 0, cur.Length);
-                _composer.text = cur.Insert(at, face);
-                _composer.caretPosition = at + face.Length;
-                PhoneEmoji.Apply(_composer.textComponent);
-                ResizeComposer();
+                string field = PhoneEmoji.ToField(_draft);
+                int at = LogicalCaret(_composer.text, _composer.selectionStringFocusPosition);
+                if (at < 0)
+                    at = 0;
+                if (at > field.Length)
+                    at = field.Length;
+                int plainAt = PhoneEmoji.PlainIndexAtField(_draft, at);
+                _draft = (_draft ?? string.Empty).Insert(plainAt, face);
+                PushField(at + 1);
+            }
+
+            private void RefreshDraft()
+            {
+                if (_composer == null || _composer.textComponent == null)
+                    return;
+                var tmp = _composer.textComponent as TextMeshProUGUI;
+                if (tmp != null)
+                    tmp.color = PhoneUi.Text;
+                bool emoji = PhoneEmoji.HasEmoji(_draft);
+                if (_draftFace == null && _composer.textComponent != null)
+                {
+                    _draftFace = new GameObject("DraftFace", typeof(RectTransform));
+                    _draftFace.transform.SetParent(_composer.textComponent.transform, false);
+                    var canvas = _draftFace.AddComponent<CanvasGroup>();
+                    canvas.blocksRaycasts = false;
+                    canvas.interactable = false;
+                }
+                if (_draftFace == null)
+                    return;
+                for (int i = _draftFace.transform.childCount - 1; i >= 0; i--)
+                    UnityEngine.Object.Destroy(_draftFace.transform.GetChild(i).gameObject);
+                if (!emoji || tmp == null)
+                {
+                    _draftFace.SetActive(false);
+                    return;
+                }
+                _draftFace.SetActive(true);
+                var faceRt = _draftFace.GetComponent<RectTransform>();
+                faceRt.anchorMin = Vector2.zero;
+                faceRt.anchorMax = Vector2.one;
+                faceRt.offsetMin = Vector2.zero;
+                faceRt.offsetMax = Vector2.zero;
+                tmp.ForceMeshUpdate(true);
+                TMP_TextInfo info = tmp.textInfo;
+                if (info == null || info.characterInfo == null)
+                    return;
+                string field = _composer.text ?? string.Empty;
+                float slot = EmojiSlot(tmp);
+                int pads = _padCount < 1 ? 1 : _padCount;
+                char pad = _padChar == '\0' ? '\u00A0' : _padChar;
+                Vector2 pivot = tmp.rectTransform.pivot;
+                int placed = 0;
+                int logicalIndex = 0;
+                int ci = 0;
+                while (ci < field.Length && ci < info.characterCount)
+                {
+                    if (field[ci] == SoftBreak)
+                    {
+                        ci++;
+                        continue;
+                    }
+                    if (field[ci] != pad)
+                    {
+                        logicalIndex++;
+                        ci++;
+                        continue;
+                    }
+                    int start = ci;
+                    int nPads = 0;
+                    while (ci < field.Length && ci < info.characterCount && field[ci] == pad && nPads < pads)
+                    {
+                        nPads++;
+                        ci++;
+                    }
+                    int plainAt = PhoneEmoji.PlainIndexAtField(_draft, logicalIndex);
+                    logicalIndex++;
+                    int n = PhoneEmoji.SequenceLength(_draft, plainAt);
+                    Sprite sprite = n > 0 ? PhoneEmoji.SpriteFor(_draft.Substring(plainAt, n)) : null;
+                    TMP_CharacterInfo first = info.characterInfo[start];
+                    TMP_CharacterInfo last = info.characterInfo[start + nPads - 1];
+                    float run = last.xAdvance - first.origin;
+                    float lineH = slot;
+                    float midY = (first.bottomLeft.y + first.topRight.y) * 0.5f;
+                    if (info.lineInfo != null && first.lineNumber >= 0 && first.lineNumber < info.lineCount && first.lineNumber < info.lineInfo.Length)
+                    {
+                        TMP_LineInfo line = info.lineInfo[first.lineNumber];
+                        if (line.lineHeight > 1f)
+                            lineH = line.lineHeight;
+                        midY = (line.ascender + line.descender) * 0.5f;
+                    }
+                    float size = Mathf.Min(lineH * 0.92f, Mathf.Max(run, 4f));
+                    if (sprite != null)
+                    {
+                        var img = PhoneUi.CreateImage(_draftFace.transform, "E", sprite, Color.white);
+                        var art = img.GetComponent<Image>();
+                        art.preserveAspect = true;
+                        art.raycastTarget = false;
+                        img.anchorMin = img.anchorMax = pivot;
+                        img.pivot = new Vector2(0.5f, 0.5f);
+                        img.anchoredPosition = new Vector2(first.origin + run * 0.5f, midY);
+                        img.sizeDelta = new Vector2(size, size);
+                        placed++;
+                    }
+                    for (int p = start; p < start + nPads && p < info.characterCount; p++)
+                    {
+                        TMP_CharacterInfo ch = info.characterInfo[p];
+                        int mesh = ch.materialReferenceIndex;
+                        int vi = ch.vertexIndex;
+                        if (info.meshInfo == null || mesh < 0 || mesh >= info.meshInfo.Length)
+                            continue;
+                        Color32[] colors = info.meshInfo[mesh].colors32;
+                        if (colors != null && vi >= 0 && vi + 3 < colors.Length)
+                        {
+                            colors[vi].a = 0;
+                            colors[vi + 1].a = 0;
+                            colors[vi + 2].a = 0;
+                            colors[vi + 3].a = 0;
+                        }
+                    }
+                }
+                if (placed > 0)
+                    tmp.UpdateVertexData(TMP_VertexDataUpdateFlags.Colors32);
             }
 
             private void ToggleVoice()
@@ -512,12 +1254,17 @@ namespace Crispberry_PiPhone
                 if (_recording)
                 {
                     _recording = false;
-                    if (_micLabel != null)
-                        _micLabel.text = "◉";
+                    if (_micBtn != null)
+                        PhoneUi.SetChipIcon(_micBtn, PhoneIcons.Material("mic"), "Mic");
                     object clip = VoiceIo.StopRecord();
                     if (clip == null)
                     {
                         _host.ShowToast("No audio. Talk or hold PTT while you record.");
+                        return;
+                    }
+                    if (_threadActor <= 0)
+                    {
+                        _host.ShowToast("Failed to send.");
                         return;
                     }
                     byte[] wav = VoiceIo.ToWav(clip);
@@ -534,10 +1281,9 @@ namespace Crispberry_PiPhone
                         UnixMs = PhoneStore.NowMs()
                     };
                     PhoneStore.AddMessage(msg);
-                    if (_threadActor > 0)
-                        PhoneNet.SendVoice(_threadActor, msg, wav);
+                    PhoneNet.SendVoice(_threadActor, msg, wav);
                     FillThread();
-                    _host.ShowToast("Voice message saved.");
+                    _host.ShowToast("Voice message sent.");
                     return;
                 }
                 if (!VoiceIo.StartRecord())
@@ -546,8 +1292,8 @@ namespace Crispberry_PiPhone
                     return;
                 }
                 _recording = true;
-                if (_micLabel != null)
-                    _micLabel.text = "■";
+                if (_micBtn != null)
+                    PhoneUi.SetChipIcon(_micBtn, PhoneIcons.Material("stop"), "Stop");
                 _host.ShowToast("Recording... tap again to send.");
             }
 
@@ -561,7 +1307,7 @@ namespace Crispberry_PiPhone
                 _pickPage.SetActive(true);
                 Clear(_pickPage.transform);
                 _host.SetTitle("Send media");
-                PhoneUi.CreateButton(_pickPage.transform, "Back", ShowThreadUi, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_pickPage.transform, "arrow_back", "Back", ShowThreadUi, new Vector2(36f, 32f));
                 PhoneUi.CreateButton(_pickPage.transform, "Photos", () => ShowAttachFolder("photos"), new Vector2(280f, 44f));
                 var note = PhoneUi.CreateLabel(_pickPage.transform, "Note", "Photos, GIFs, and voice messages can be sent. Videos and other files are staying off until they can go through without dropping the lobby.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 note.color = PhoneUi.TextDim;
@@ -580,7 +1326,7 @@ namespace Crispberry_PiPhone
                 Clear(_pickPage.transform);
                 string title = folder == "downloads" ? "Downloads" : (folder == "videos" ? "Videos" : (folder == "audio" ? "Audio" : "Photos"));
                 _host.SetTitle(title);
-                PhoneUi.CreateButton(_pickPage.transform, "Back", ShowAttach, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_pickPage.transform, "arrow_back", "Back", ShowAttach, new Vector2(36f, 32f));
                 if (folder == "audio")
                 {
                     FillAttachAudio();
@@ -704,7 +1450,7 @@ namespace Crispberry_PiPhone
                 _pickPage.SetActive(true);
                 Clear(_pickPage.transform);
                 _host.SetTitle("GIFs");
-                PhoneUi.CreateButton(_pickPage.transform, "Back", ShowThreadUi, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_pickPage.transform, "arrow_back", "Back", ShowThreadUi, new Vector2(36f, 32f));
 
                 var searchRow = new GameObject("SearchRow", typeof(RectTransform));
                 searchRow.transform.SetParent(_pickPage.transform, false);
@@ -896,6 +1642,11 @@ namespace Crispberry_PiPhone
                     _host.ShowToast("Too large to send (" + PhoneNet.SizeLabel(data.Length) + ", max " + PhoneNet.SizeLabel(cap) + ").");
                     return;
                 }
+                if (_threadActor <= 0)
+                {
+                    _host.ShowToast("Failed to send.");
+                    return;
+                }
                 string mediaFile;
                 if (kind == "gif" || kind == "aud")
                 {
@@ -924,10 +1675,7 @@ namespace Crispberry_PiPhone
                     UnixMs = PhoneStore.NowMs()
                 };
                 PhoneStore.AddMessage(msg);
-                if (_threadActor > 0)
-                    PhoneNet.SendMedia(_threadActor, msg, data, kind);
-                else
-                    _host.ShowToast("Saved locally. They're not in the lobby.");
+                PhoneNet.SendMedia(_threadActor, msg, data, kind);
                 ShowThreadUi();
                 FillThread();
             }
@@ -1037,16 +1785,18 @@ namespace Crispberry_PiPhone
                 fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
 
                 string text = visual ? body : (string.IsNullOrEmpty(body) ? " " : body);
-                var label = PhoneUi.CreateLabel(bubble, "Text", text, 14f, FontStyles.Normal, mine ? TextAlignmentOptions.TopRight : TextAlignmentOptions.TopLeft);
-                PhoneUi.Wrap(label);
-                label.overflowMode = TextOverflowModes.Overflow;
-                var lle = label.gameObject.GetComponent<LayoutElement>() ?? label.gameObject.AddComponent<LayoutElement>();
-                lle.preferredWidth = innerW;
-                lle.minWidth = 48f;
-                lle.flexibleWidth = 0f;
-                label.ForceMeshUpdate();
                 if (PhoneEmoji.HasEmoji(text))
-                    PhoneEmoji.Apply(label);
+                    PhoneEmoji.DrawMessage(bubble, text, innerW, 14f, mine ? Color.white : PhoneUi.Text, mine ? TextAlignmentOptions.TopRight : TextAlignmentOptions.TopLeft);
+                else
+                {
+                    var label = PhoneUi.CreateLabel(bubble, "Text", text, 14f, FontStyles.Normal, mine ? TextAlignmentOptions.TopRight : TextAlignmentOptions.TopLeft);
+                    PhoneUi.Wrap(label);
+                    label.overflowMode = TextOverflowModes.Overflow;
+                    var lle = label.gameObject.GetComponent<LayoutElement>() ?? label.gameObject.AddComponent<LayoutElement>();
+                    lle.preferredWidth = innerW;
+                    lle.minWidth = 48f;
+                    lle.flexibleWidth = 0f;
+                }
 
                 if (_selecting)
                 {
@@ -1187,7 +1937,7 @@ namespace Crispberry_PiPhone
                     _mediaBar.SetActive(false);
                 Clear(_pickPage.transform);
                 _host.SetTitle(string.IsNullOrEmpty(msg.Text) ? "Media" : msg.Text);
-                PhoneUi.CreateButton(_pickPage.transform, "Back", ShowThreadUi, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(_pickPage.transform, "arrow_back", "Back", ShowThreadUi, new Vector2(36f, 32f));
                 string path = PhoneStore.MediaPath(msg.MediaFile);
                 bool audio = msg.MediaKind == "aud" || IsAudioPath(path);
                 bool video = msg.MediaKind == "vid" || PhoneVideo.IsVideoPath(path);
@@ -1213,13 +1963,13 @@ namespace Crispberry_PiPhone
                 }
                 if (audio)
                 {
-                    PhoneUi.CreateButton(_pickPage.transform, "Play", () =>
+                    PhoneUi.MaterialChip(_pickPage.transform, "play", "Play", () =>
                     {
                         if (!string.IsNullOrEmpty(msg.AudioFile))
                             VoiceIo.PlayFile(msg.AudioFile);
                         else if (!string.IsNullOrEmpty(path))
                             _host.StartHostCoroutine(PhoneSounds.LoadAndPlay(path));
-                    }, new Vector2(160f, 40f));
+                    }, new Vector2(36f, 32f));
                     PhoneUi.CreateButton(_pickPage.transform, "Save as song", () =>
                     {
                         if (!string.IsNullOrEmpty(path) && File.Exists(path))
@@ -1227,7 +1977,7 @@ namespace Crispberry_PiPhone
                             SoundItem item = PhoneStore.AddSound(path, false, 0f);
                             _host.ShowToast(item != null ? "Saved to Audio." : "Couldn't save that.");
                         }
-                    }, new Vector2(200f, 40f));
+                    }, new Vector2(36f, 32f));
                     PhoneUi.CreateButton(_pickPage.transform, "Save as ringtone", () =>
                     {
                         if (!string.IsNullOrEmpty(path) && File.Exists(path))
@@ -1250,18 +2000,18 @@ namespace Crispberry_PiPhone
                 if (!string.IsNullOrEmpty(path) && File.Exists(path) && msg.MediaKind == "gif")
                 {
                     string gifPath = path;
-                    PhoneUi.CreateButton(_pickPage.transform, "Save to Gallery", () =>
+                    PhoneUi.MaterialChip(_pickPage.transform, "save", "Save", () =>
                     {
                         PhoneStore.AddDownload(File.ReadAllBytes(gifPath), Path.GetExtension(gifPath), string.Empty);
                         _host.ShowToast("Saved to Files.");
-                    }, new Vector2(200f, 40f));
+                    }, new Vector2(36f, 32f));
                 }
                 else if (!string.IsNullOrEmpty(path) && File.Exists(path) && (msg.MediaKind == "img" || msg.MediaKind == "vid"))
                 {
-                    PhoneUi.CreateButton(_pickPage.transform, "Save to Gallery", () =>
+                    PhoneUi.MaterialChip(_pickPage.transform, "save", "Save", () =>
                     {
                         _host.ShowToast("Already in Files (Gallery).");
-                    }, new Vector2(200f, 40f));
+                    }, new Vector2(36f, 32f));
                 }
             }
 
@@ -1413,6 +2163,33 @@ namespace Crispberry_PiPhone
             }
 
             private static readonly Dictionary<string, PhoneGif.Clip> _gifCache = new Dictionary<string, PhoneGif.Clip>();
+        }
+    }
+
+    [DefaultExecutionOrder(32000)]
+    internal sealed class ComposerCaretGuard : MonoBehaviour
+    {
+        public Action AfterInput;
+        public Action CopyPlain;
+        private bool _copy;
+
+        private void Update()
+        {
+            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)
+                || Input.GetKey(KeyCode.LeftCommand) || Input.GetKey(KeyCode.RightCommand);
+            if (ctrl && (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.X)))
+                _copy = true;
+        }
+
+        private void LateUpdate()
+        {
+            if (AfterInput != null)
+                AfterInput();
+            if (!_copy)
+                return;
+            _copy = false;
+            if (CopyPlain != null)
+                CopyPlain();
         }
     }
 }

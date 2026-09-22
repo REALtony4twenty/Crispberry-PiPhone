@@ -267,7 +267,7 @@ namespace Crispberry_PiPhone
             var hostGo = new GameObject("Host", typeof(RectTransform));
             hostGo.transform.SetParent(_overlay.transform, false);
             PhoneUi.Stretch(hostGo.GetComponent<RectTransform>(), 10f, 40f);
-            Button done = PhoneUi.CreateButton(_overlay.transform, "Done", () => Hide(), new Vector2(88f, 32f));
+            Button done = PhoneUi.MaterialChip(_overlay.transform, "check", "Done", () => Hide(), new Vector2(36f, 32f));
             PhoneUi.IgnoreLayout(done.gameObject);
             var doneRt = done.GetComponent<RectTransform>();
             doneRt.anchorMin = new Vector2(1f, 1f);

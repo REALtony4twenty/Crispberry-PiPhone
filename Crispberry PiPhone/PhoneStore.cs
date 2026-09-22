@@ -518,7 +518,7 @@ namespace Crispberry_PiPhone
             return AddSound(sourcePath, false, 0f);
         }
 
-        public const long MusicMaxBytes = 18L * 1024 * 1024;
+        public const long MusicMaxBytes = 96L * 1024 * 1024;
 
         public static SoundItem AddSound(string sourcePath, bool alert, float maxSeconds)
         {
@@ -530,7 +530,7 @@ namespace Crispberry_PiPhone
                 {
                     if (new FileInfo(sourcePath).Length > MusicMaxBytes)
                     {
-                        PhoneMenu.Toast("That song is too large (max ~9 min / 18 MB).");
+                        PhoneMenu.Toast("That song is too large (max 96 MB).");
                         return null;
                     }
                 }
@@ -552,6 +552,8 @@ namespace Crispberry_PiPhone
                 file = id + ext;
                 dest = Path.Combine(SoundsDir, file);
                 File.Copy(sourcePath, dest, true);
+                if (ext == ".wav" || ext == ".wave")
+                    EnsurePlayableWav(dest);
             }
             else
             {
@@ -584,6 +586,25 @@ namespace Crispberry_PiPhone
             Sounds.Insert(0, item);
             SaveSounds();
             return item;
+        }
+
+        private static void EnsurePlayableWav(string dest)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(dest) || !File.Exists(dest))
+                    return;
+                byte[] raw = File.ReadAllBytes(dest);
+                if (VoiceIo.FromWav(raw) != null)
+                    return;
+                byte[] decoded = null;
+                try { decoded = PhoneVideo.DecodeAudioToWav(dest); } catch { }
+                if (decoded != null && decoded.Length > 64)
+                    File.WriteAllBytes(dest, decoded);
+            }
+            catch
+            {
+            }
         }
 
         public static SoundItem AddAlertWav(byte[] wav, string name)

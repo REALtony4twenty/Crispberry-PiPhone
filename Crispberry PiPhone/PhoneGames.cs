@@ -95,8 +95,8 @@ namespace Crispberry_PiPhone
                 v.childForceExpandWidth = true;
                 v.childForceExpandHeight = false;
                 v.childAlignment = TextAnchor.UpperCenter;
-                PhoneUi.CreateButton(row.transform, PhoneLang.T("play_again", "Play Again"), again, new Vector2(96f, 32f));
-                PhoneUi.CreateButton(row.transform, PhoneLang.T("menu", "Menu"), menu, new Vector2(96f, 32f));
+                PhoneUi.MaterialChip(row.transform, "replay", "Play Again", again, new Vector2(36f, 32f));
+                PhoneUi.MaterialChip(row.transform, "menu", "Menu", menu, new Vector2(36f, 32f));
                 return;
             }
             PhoneUi.Size(row, 44f);
@@ -104,14 +104,14 @@ namespace Crispberry_PiPhone
             var layout = row.GetComponent<HorizontalLayoutGroup>();
             layout.childForceExpandWidth = false;
             layout.childAlignment = TextAnchor.MiddleCenter;
-            PhoneUi.CreateButton(row.transform, PhoneLang.T("play_again", "Play Again"), again, new Vector2(140f, 40f));
-            PhoneUi.CreateButton(row.transform, PhoneLang.T("menu", "Menu"), menu, new Vector2(100f, 40f));
+            PhoneUi.MaterialChip(row.transform, "replay", "Play Again", again, new Vector2(36f, 32f));
+            PhoneUi.MaterialChip(row.transform, "menu", "Menu", menu, new Vector2(36f, 32f));
         }
 
         public static void PlayMenu(Transform parent, UnityAction quit, bool over, UnityAction again, UnityAction menu)
         {
             if (quit != null)
-                PhoneUi.CreateButton(parent, PhoneLang.T("quit", "Quit"), quit, new Vector2(PhoneUi.Landscape ? 88f : 100f, PhoneUi.Landscape ? 32f : 36f));
+                PhoneUi.MaterialChip(parent, "logout", "Quit", quit, new Vector2(36f, 32f));
             if (over && again != null && menu != null)
                 OverRow(parent, again, menu);
         }
@@ -130,7 +130,7 @@ namespace Crispberry_PiPhone
                 v.childForceExpandHeight = false;
                 v.childAlignment = TextAnchor.MiddleCenter;
                 if (up != null)
-                    PhoneUi.CreateButton(col.transform, "^", up, new Vector2(w, h));
+                    PhoneUi.CreateIconChip(col.transform, "^", PhoneIcons.Material("expand_less"), up, false, new Vector2(w, h));
                 var mid = new GameObject("Mid", typeof(RectTransform));
                 mid.transform.SetParent(col.transform, false);
                 PhoneUi.Size(mid, h);
@@ -139,11 +139,11 @@ namespace Crispberry_PiPhone
                 mh.childForceExpandWidth = false;
                 mh.childAlignment = TextAnchor.MiddleCenter;
                 if (left != null)
-                    PhoneUi.CreateButton(mid.transform, "<", left, new Vector2(w, h));
+                    PhoneUi.CreateIconChip(mid.transform, "<", PhoneIcons.Material("chevron_left"), left, false, new Vector2(w, h));
                 if (down != null)
-                    PhoneUi.CreateButton(mid.transform, "v", down, new Vector2(w, h));
+                    PhoneUi.CreateIconChip(mid.transform, "v", PhoneIcons.Material("expand_more"), down, false, new Vector2(w, h));
                 if (right != null)
-                    PhoneUi.CreateButton(mid.transform, ">", right, new Vector2(w, h));
+                    PhoneUi.CreateIconChip(mid.transform, ">", PhoneIcons.Material("chevron_right"), right, false, new Vector2(w, h));
                 return;
             }
             var row = new GameObject("Pad", typeof(RectTransform));
@@ -154,13 +154,13 @@ namespace Crispberry_PiPhone
             layout.childForceExpandWidth = false;
             layout.childAlignment = TextAnchor.MiddleCenter;
             if (left != null)
-                PhoneUi.CreateButton(row.transform, "<", left, new Vector2(w, h));
+                PhoneUi.CreateIconChip(row.transform, "<", PhoneIcons.Material("chevron_left"), left, false, new Vector2(w, h));
             if (down != null)
-                PhoneUi.CreateButton(row.transform, "v", down, new Vector2(w, h));
+                PhoneUi.CreateIconChip(row.transform, "v", PhoneIcons.Material("expand_more"), down, false, new Vector2(w, h));
             if (up != null)
-                PhoneUi.CreateButton(row.transform, "^", up, new Vector2(w, h));
+                PhoneUi.CreateIconChip(row.transform, "^", PhoneIcons.Material("expand_less"), up, false, new Vector2(w, h));
             if (right != null)
-                PhoneUi.CreateButton(row.transform, ">", right, new Vector2(w, h));
+                PhoneUi.CreateIconChip(row.transform, ">", PhoneIcons.Material("chevron_right"), right, false, new Vector2(w, h));
         }
 
         public static TextMeshProUGUI HudBar(Transform parent, string text, UnityAction quit)
@@ -180,7 +180,7 @@ namespace Crispberry_PiPhone
                 lab.overflowMode = TextOverflowModes.Ellipsis;
                 PhoneUi.Size(lab.gameObject, 64f);
                 if (quit != null)
-                    PhoneUi.CreateButton(row.transform, PhoneLang.T("quit", "Quit"), quit, new Vector2(120f, 32f));
+                    PhoneUi.MaterialChip(row.transform, "logout", "Quit", quit, new Vector2(36f, 32f));
                 return lab;
             }
             PhoneUi.Size(row, 36f);
@@ -191,7 +191,7 @@ namespace Crispberry_PiPhone
             var port = PhoneUi.CreateLabel(row.transform, "Score", text ?? string.Empty, 15f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
             port.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
             if (quit != null)
-                PhoneUi.CreateButton(row.transform, PhoneLang.T("quit", "Quit"), quit, new Vector2(72f, 32f));
+                PhoneUi.MaterialChip(row.transform, "logout", "Quit", quit, new Vector2(36f, 32f));
             return port;
         }
 

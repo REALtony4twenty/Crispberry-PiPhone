@@ -26,17 +26,47 @@ namespace Crispberry_PiPhone
         /// White-on-transparent Google Material Design icon (Apache-2.0).
         /// Tint with <see cref="Image.color"/>; do not punch rounded corners.
         /// </summary>
+        public static Sprite Logo()
+        {
+            const string key = "logo:crispberry";
+            Sprite cached;
+            if (Cache.TryGetValue(key, out cached) && cached != null)
+                return cached;
+            byte[] bytes = ReadResource("Crispberry_PiPhone.Icons.logo.png") ?? FindResource("logo.png");
+            if (bytes == null)
+                return null;
+            Texture2D tex = PhoneImages.LoadTexture(bytes);
+            if (tex == null)
+                return null;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+            tex.hideFlags = HideFlags.HideAndDontSave;
+            Sprite sprite = Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+            sprite.name = "PiP_Logo";
+            sprite.hideFlags = HideFlags.HideAndDontSave;
+            Cache[key] = sprite;
+            return sprite;
+        }
+
         public static Sprite Material(string name)
         {
             if (string.IsNullOrEmpty(name))
                 return null;
-            string key = "m:" + name;
+            bool outline = !PhoneTheme.FilledIcons;
+            string file = outline ? "o_" + name : name;
+            string key = (outline ? "o:" : "m:") + name;
             Sprite cached;
             if (Cache.TryGetValue(key, out cached) && cached != null)
                 return cached;
-            byte[] bytes = ReadResource("Crispberry_PiPhone.Icons.material." + name + ".png")
-                ?? FindResource("material." + name + ".png")
-                ?? FindResource(name + ".png");
+            byte[] bytes = ReadResource("Crispberry_PiPhone.Icons.material." + file + ".png")
+                ?? FindResource("material." + file + ".png")
+                ?? FindResource(file + ".png");
+            if (bytes == null && outline)
+            {
+                bytes = ReadResource("Crispberry_PiPhone.Icons.material." + name + ".png")
+                    ?? FindResource("material." + name + ".png")
+                    ?? FindResource(name + ".png");
+            }
             if (bytes == null)
                 return null;
             Texture2D tex = PhoneImages.LoadTexture(bytes);
@@ -104,6 +134,11 @@ namespace Crispberry_PiPhone
 
         internal static Sprite FromBytes(byte[] pngOrJpg, bool allowOversizeFile)
         {
+            return FromBytes(pngOrJpg, allowOversizeFile, MaxSize);
+        }
+
+        internal static Sprite FromBytes(byte[] pngOrJpg, bool allowOversizeFile, int maxSize)
+        {
             if (pngOrJpg == null || pngOrJpg.Length < 24)
             {
                 if (!allowOversizeFile)
@@ -121,7 +156,7 @@ namespace Crispberry_PiPhone
                 Reject("could not decode icon bytes as PNG/JPG.");
                 return null;
             }
-            return FromTexture(tex, true);
+            return FromTexture(tex, true, maxSize);
         }
 
         public static Sprite FromFile(string path)
@@ -149,15 +184,27 @@ namespace Crispberry_PiPhone
 
         public static Sprite FromTexture(Texture2D tex, bool consumeSource)
         {
+            return FromTexture(tex, consumeSource, MaxSize);
+        }
+
+        /// <summary>Store-page art. Copied and clamped to 480px. You may destroy <paramref name="texture"/> after.</summary>
+        public static Sprite Screenshot(Texture2D texture)
+        {
+            return FromTexture(texture, false, 480);
+        }
+
+        public static Sprite FromTexture(Texture2D tex, bool consumeSource, int maxSize)
+        {
             if (tex == null)
                 return null;
-            Texture2D ready = Clamp(tex, consumeSource);
+            if (maxSize < 8)
+                maxSize = 8;
+            Texture2D ready = Clamp(tex, consumeSource, maxSize);
             if (ready == null)
                 return null;
             ready.wrapMode = TextureWrapMode.Clamp;
             ready.filterMode = FilterMode.Bilinear;
             ready.hideFlags = HideFlags.HideAndDontSave;
-            PunchRoundedCorners(ready);
             Sprite sprite = Sprite.Create(ready, new Rect(0f, 0f, ready.width, ready.height), new Vector2(0.5f, 0.5f), 100f);
             sprite.name = "PiP_Icon";
             sprite.hideFlags = HideFlags.HideAndDontSave;
@@ -166,11 +213,19 @@ namespace Crispberry_PiPhone
 
         public static Sprite ClampSprite(Sprite sprite)
         {
+            return ClampSprite(sprite, MaxSize);
+        }
+
+        public static Sprite ClampSprite(Sprite sprite, int maxSize)
+        {
             if (sprite == null || sprite.texture == null)
                 return sprite;
-            if (sprite.texture.width <= MaxSize && sprite.texture.height <= MaxSize)
+            Texture2D tex = sprite.texture as Texture2D;
+            if (tex == null)
                 return sprite;
-            return FromTexture(sprite.texture, false);
+            if (tex.width <= maxSize && tex.height <= maxSize)
+                return sprite;
+            return FromTexture(tex, false, maxSize);
         }
 
         public static RectTransform CreateView(Transform parent, PiPhoneApp app, float size, bool circle)
@@ -234,13 +289,17 @@ namespace Crispberry_PiPhone
             Glyph(BuiltinApps.VoiceMemosId, "mic");
             Glyph(BuiltinApps.SoundsId, "library_music");
             Glyph(BuiltinApps.StoreId, "store");
-            Glyph(BuiltinApps.ClosetId, "style");
+            Glyph(BuiltinApps.ClosetId, "checkroom");
             Glyph(BuiltinApps.MakeNotiId, "add_alert");
             Glyph(BuiltinApps.SnakeId, "gesture");
             Glyph(BuiltinApps.Game2048Id, "grid_on");
-            Glyph(BuiltinApps.MinesId, "flag");
-            Glyph(BuiltinApps.SudokuId, "view_module");
-            Glyph(BuiltinApps.SolitaireId, "view_column");
+            Glyph(BuiltinApps.MinesId, "bomb");
+            Glyph(BuiltinApps.SudokuId, "background_grid_small");
+            Glyph(BuiltinApps.SolitaireId, "playing_cards");
+            Glyph(BuiltinApps.SimonId, "action_key");
+            Glyph(BuiltinApps.Connect4Id, "transition_dissolve");
+            Glyph(BuiltinApps.TetrisId, "browse");
+            Glyph(BuiltinApps.BreakoutId, "tile_medium");
         }
 
         private static void Glyph(string appId, string materialName)
@@ -248,101 +307,6 @@ namespace Crispberry_PiPhone
             if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(materialName))
                 return;
             GlyphByApp[appId] = materialName;
-        }
-
-        public static Sprite PaintStacker()
-        {
-            return Paint(64, (px, w) =>
-            {
-                Fill(px, w, 64, 0, 0, 64, 64, new Color32(18, 22, 28, 255));
-                Color32 c = new Color32(48, 196, 214, 255);
-                Fill(px, w, 64, 16, 34, 32, 12, c);
-                Fill(px, w, 64, 26, 18, 12, 16, c);
-            });
-        }
-
-        public static Sprite PaintFourAcross()
-        {
-            return Paint(64, (px, w) =>
-            {
-                Fill(px, w, 64, 0, 0, 64, 64, new Color32(20, 48, 96, 255));
-                Disc(px, w, 64, 18, 40, 8, new Color32(220, 56, 56, 255));
-                Disc(px, w, 64, 36, 40, 8, new Color32(240, 200, 48, 255));
-                Disc(px, w, 64, 18, 22, 8, new Color32(240, 200, 48, 255));
-                Disc(px, w, 64, 36, 22, 8, new Color32(220, 56, 56, 255));
-            });
-        }
-
-        public static Sprite PaintBrickBreak()
-        {
-            return Paint(64, (px, w) =>
-            {
-                Fill(px, w, 64, 0, 0, 64, 64, new Color32(28, 16, 16, 255));
-                Color32 brick = new Color32(220, 86, 64, 255);
-                Fill(px, w, 64, 10, 42, 20, 8, brick);
-                Fill(px, w, 64, 34, 42, 20, 8, brick);
-                Fill(px, w, 64, 22, 32, 20, 8, brick);
-                Fill(px, w, 64, 16, 12, 32, 6, new Color32(236, 236, 240, 255));
-                Disc(px, w, 64, 40, 22, 4, new Color32(255, 255, 255, 255));
-            });
-        }
-
-        public static Sprite PaintEcho()
-        {
-            return Paint(64, (px, w) =>
-            {
-                Fill(px, w, 64, 0, 0, 64, 64, new Color32(16, 18, 20, 255));
-                Fill(px, w, 64, 8, 34, 22, 22, new Color32(48, 196, 96, 255));
-                Fill(px, w, 64, 34, 34, 22, 22, new Color32(220, 64, 64, 255));
-                Fill(px, w, 64, 8, 8, 22, 22, new Color32(240, 196, 48, 255));
-                Fill(px, w, 64, 34, 8, 22, 22, new Color32(56, 120, 220, 255));
-            });
-        }
-
-        private static Sprite Paint(int size, System.Action<Color32[], int> draw)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.ARGB32, false);
-            tex.filterMode = FilterMode.Bilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-            var px = new Color32[size * size];
-            draw(px, size);
-            tex.SetPixels32(px);
-            tex.Apply(false, false);
-            return FromTexture(tex, true);
-        }
-
-        private static void Fill(Color32[] px, int w, int h, int x, int y, int rw, int rh, Color32 c)
-        {
-            int x1 = Mathf.Max(0, x);
-            int y1 = Mathf.Max(0, y);
-            int x2 = Mathf.Min(w, x + rw);
-            int y2 = Mathf.Min(h, y + rh);
-            for (int yy = y1; yy < y2; yy++)
-            {
-                int row = yy * w;
-                for (int xx = x1; xx < x2; xx++)
-                    px[row + xx] = c;
-            }
-        }
-
-        private static void Disc(Color32[] px, int w, int h, int cx, int cy, int r, Color32 c)
-        {
-            int r2 = r * r;
-            for (int y = cy - r; y <= cy + r; y++)
-            {
-                if (y < 0 || y >= h)
-                    continue;
-                int row = y * w;
-                for (int x = cx - r; x <= cx + r; x++)
-                {
-                    if (x < 0 || x >= w)
-                        continue;
-                    int dx = x - cx;
-                    int dy = y - cy;
-                    if (dx * dx + dy * dy <= r2)
-                        px[row + x] = c;
-                }
-            }
         }
 
         private static Sprite MaterialFor(PiPhoneApp app)
@@ -355,63 +319,18 @@ namespace Crispberry_PiPhone
             return Material(name);
         }
 
-        private static void PunchRoundedCorners(Texture2D tex)
+        private static Texture2D Clamp(Texture2D tex, bool consumeSource)
         {
-            if (tex == null)
-                return;
-            try
-            {
-                int w = tex.width;
-                int h = tex.height;
-                if (w < 8 || h < 8)
-                    return;
-                Color32[] px = tex.GetPixels32();
-                float r = Mathf.Min(w, h) * 0.22f;
-                if (r < 2f)
-                    r = 2f;
-                float r2 = r * r;
-                float maxX = w - 1 - r;
-                float maxY = h - 1 - r;
-                for (int y = 0; y < h; y++)
-                {
-                    for (int x = 0; x < w; x++)
-                    {
-                        float dx = 0f;
-                        float dy = 0f;
-                        if (x < r)
-                            dx = r - x;
-                        else if (x > maxX)
-                            dx = x - maxX;
-                        if (y < r)
-                            dy = r - y;
-                        else if (y > maxY)
-                            dy = y - maxY;
-                        if (dx > 0f && dy > 0f && dx * dx + dy * dy > r2)
-                        {
-                            int i = y * w + x;
-                            px[i].a = 0;
-                        }
-                    }
-                }
-                tex.SetPixels32(px);
-                tex.Apply(false, false);
-            }
-            catch
-            {
-            }
+            return Clamp(tex, consumeSource, MaxSize);
         }
 
-        private static Texture2D Clamp(Texture2D tex, bool consumeSource)
+        private static Texture2D Clamp(Texture2D tex, bool consumeSource, int maxSize)
         {
             int w = tex.width;
             int h = tex.height;
-            if (w <= MaxSize && h <= MaxSize)
-            {
-                if (!consumeSource)
-                    return tex;
+            if (w <= maxSize && h <= maxSize)
                 return tex;
-            }
-            float scale = MaxSize / (float)Mathf.Max(w, h);
+            float scale = maxSize / (float)Mathf.Max(w, h);
             int nw = Mathf.Max(2, Mathf.RoundToInt(w * scale));
             int nh = Mathf.Max(2, Mathf.RoundToInt(h * scale));
             var rt = RenderTexture.GetTemporary(nw, nh, 0, RenderTextureFormat.ARGB32);

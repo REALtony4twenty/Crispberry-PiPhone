@@ -369,6 +369,8 @@ namespace Crispberry_PiPhone
             };
             if (string.IsNullOrEmpty(msg.Id) || string.IsNullOrEmpty(msg.FromId))
                 return;
+            if (PhoneTheme.DoNotDisturb || PhoneContacts.BlocksTexts(msg.FromId))
+                return;
             msg.ThreadId = msg.FromId;
             PhoneStore.AddMessage(msg);
             PhoneNotify.IncomingText(msg.FromId, msg.FromName, msg.Text);
@@ -380,7 +382,7 @@ namespace Crispberry_PiPhone
             if (data.Length < 9)
                 return;
             string id = data[3] as string;
-            if (string.IsNullOrEmpty(id))
+            if (string.IsNullOrEmpty(id) || PhoneTheme.DoNotDisturb || PhoneContacts.BlocksTexts(data[5] as string))
                 return;
             _incoming[id] = new PendingVoice
             {
@@ -451,7 +453,7 @@ namespace Crispberry_PiPhone
             if (data.Length < 9)
                 return;
             string id = data[3] as string;
-            if (string.IsNullOrEmpty(id))
+            if (string.IsNullOrEmpty(id) || PhoneContacts.BlocksTexts(data[4] as string))
                 return;
             _incomingMedia[id] = new PendingMedia
             {

@@ -119,7 +119,7 @@ namespace Crispberry_PiPhone
         }
 
         /// <summary>Compact shade/toolbar chip. Prefer a sprite icon; <paramref name="glyph"/> is the fallback.</summary>
-        public static Button CreateIconChip(Transform parent, string glyph, Sprite icon, UnityAction onClick, bool lit, Vector2 size)
+        public static Button CreateIconChip(Transform parent, string glyph, Sprite icon, UnityAction onClick, bool lit, Vector2 size, bool tintIcon = true)
         {
             Color fill = lit ? Accent : SurfaceAlt;
             var rt = CreateImage(parent, "Chip", ChipShape(), fill);
@@ -127,7 +127,7 @@ namespace Crispberry_PiPhone
             var button = rt.gameObject.AddComponent<Button>();
             button.targetGraphic = img;
             button.colors = TintColors();
-            Color fg = lit ? new Color(0.10f, 0.11f, 0.12f, 1f) : ButtonText;
+            Color fg = !tintIcon ? Color.white : (lit ? new Color(0.10f, 0.11f, 0.12f, 1f) : ButtonText);
             if (icon != null)
             {
                 var art = CreateImage(rt, "I", icon, fg);
@@ -156,6 +156,86 @@ namespace Crispberry_PiPhone
             return button;
         }
 
+        /// <summary>Phone chip for a built-in Material icon name. Falls back to <paramref name="fallback"/> text if the picture is missing.</summary>
+        public static Button MaterialChip(Transform parent, string iconName, string fallback, UnityAction onClick, Vector2 size)
+        {
+            return CreateIconChip(parent, fallback, PhoneIcons.Material(iconName), onClick, false, size);
+        }
+
+        public static void SetChipIcon(Button button, Sprite icon, string glyph, bool tintIcon = true)
+        {
+            if (button == null)
+                return;
+            Transform art = button.transform.Find("I");
+            Transform label = button.transform.Find("G");
+            Color fg = tintIcon ? ButtonText : Color.white;
+            if (icon != null)
+            {
+                if (art == null)
+                {
+                    var created = CreateImage(button.transform, "I", icon, fg);
+                    Stretch(created, 6f, 6f);
+                    var createdImg = created.GetComponent<Image>();
+                    createdImg.raycastTarget = false;
+                    createdImg.preserveAspect = true;
+                    createdImg.type = Image.Type.Simple;
+                }
+                else
+                {
+                    var img = art.GetComponent<Image>();
+                    if (img != null)
+                    {
+                        img.sprite = icon;
+                        img.color = fg;
+                    }
+                    art.gameObject.SetActive(true);
+                }
+                if (label != null)
+                    label.gameObject.SetActive(false);
+                return;
+            }
+            if (art != null)
+                art.gameObject.SetActive(false);
+            if (label == null)
+            {
+                var tmp = CreateLabel(button.transform, "G", glyph ?? string.Empty, 14f, FontStyles.Normal, TextAlignmentOptions.Center);
+                tmp.color = ButtonText;
+                Stretch(tmp.rectTransform, 2f, 2f);
+                return;
+            }
+            label.gameObject.SetActive(true);
+            var text = label.GetComponent<TextMeshProUGUI>();
+            if (text != null)
+                text.text = glyph ?? string.Empty;
+        }
+
+        public static void SetCircleIcon(Button button, Sprite icon)
+        {
+            if (button == null || icon == null)
+                return;
+            var labels = button.GetComponentsInChildren<TextMeshProUGUI>(true);
+            for (int i = 0; i < labels.Length; i++)
+                labels[i].gameObject.SetActive(false);
+            Transform art = button.transform.Find("I");
+            if (art == null)
+            {
+                var created = CreateImage(button.transform, "I", icon, ButtonText);
+                Stretch(created, 16f, 16f);
+                var createdImg = created.GetComponent<Image>();
+                createdImg.raycastTarget = false;
+                createdImg.preserveAspect = true;
+                createdImg.type = Image.Type.Simple;
+                return;
+            }
+            art.gameObject.SetActive(true);
+            var img = art.GetComponent<Image>();
+            if (img != null)
+            {
+                img.sprite = icon;
+                img.color = ButtonText;
+            }
+        }
+
         public static Button CreateCircleButton(Transform parent, string label, UnityAction onClick, float diameter, Color color)
         {
             var rt = CreateImage(parent, "CircleBtn_" + Sanitize(label), Circle(), color);
@@ -180,7 +260,7 @@ namespace Crispberry_PiPhone
             scroll.horizontal = false;
             scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
-            scroll.scrollSensitivity = 40f;
+            scroll.scrollSensitivity = 14f;
 
             var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
             viewport.transform.SetParent(root, false);

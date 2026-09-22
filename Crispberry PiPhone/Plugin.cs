@@ -15,7 +15,7 @@ namespace Crispberry_PiPhone
     {
         public const string PluginGuid = "tony4twentys.Crispberry_PiPhone";
         public const string PluginName = "Crispberry PiPhone";
-        public const string PluginVersion = "0.17.46";
+        public const string PluginVersion = "0.17.68";
         public const string OsName = "Crispberry OS";
 
         public static string OsVersionLabel

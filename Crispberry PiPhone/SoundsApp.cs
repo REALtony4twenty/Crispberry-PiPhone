@@ -107,8 +107,10 @@ namespace Crispberry_PiPhone
                 float artSize = wide ? 96f : 180f;
                 var art = PhoneUi.CreateImage(artParent, "Art", PhoneUi.Rounded(24), new Color(0.62f, 0.24f, 0.40f, 1f));
                 PhoneUi.Size(art.gameObject, artSize, artSize);
-                var glyph = PhoneUi.CreateLabel(art, "G", "♪", wide ? 36f : 64f, FontStyles.Normal, TextAlignmentOptions.Center);
-                glyph.color = Color.white;
+                var glyph = PhoneUi.CreateImage(art, "I", PhoneIcons.Material("library_music"), Color.white);
+                PhoneUi.Stretch(glyph, artSize * 0.22f, artSize * 0.22f);
+                glyph.GetComponent<Image>().raycastTarget = false;
+                glyph.GetComponent<Image>().preserveAspect = true;
 
                 var controls = new GameObject("Ctl", typeof(RectTransform));
                 controls.transform.SetParent(wide ? infoParent : artParent, false);
@@ -117,7 +119,7 @@ namespace Crispberry_PiPhone
                 var h = controls.GetComponent<HorizontalLayoutGroup>();
                 h.childAlignment = TextAnchor.MiddleCenter;
                 h.childForceExpandWidth = false;
-                PhoneUi.CreateButton(controls.transform, "|<", MusicPlayer.Prev, new Vector2(56f, 44f));
+                PhoneUi.CreateIconChip(controls.transform, "Previous", PhoneIcons.Material("skip_previous"), MusicPlayer.Prev, false, new Vector2(56f, 44f));
                 var play = PhoneUi.CreateIconChip(controls.transform, MusicPlayer.Playing ? "■" : ">", PhoneIcons.Material(MusicPlayer.Playing ? "stop" : "play"), null, false, new Vector2(56f, 44f));
                 play.onClick.AddListener(() =>
                 {
@@ -125,7 +127,7 @@ namespace Crispberry_PiPhone
                     PaintPlay(play);
                 });
                 _playLabel = play.GetComponentInChildren<TextMeshProUGUI>(true);
-                PhoneUi.CreateButton(controls.transform, ">|", MusicPlayer.Next, new Vector2(56f, 44f));
+                PhoneUi.CreateIconChip(controls.transform, ">|", PhoneIcons.Material("skip_next"), MusicPlayer.Next, false, new Vector2(56f, 44f));
 
                 PhoneUi.CreateSliderRow(infoParent, "Music", 0f, 1f, PhoneTheme.MusicVolume, v =>
                 {
@@ -143,8 +145,14 @@ namespace Crispberry_PiPhone
                     PhoneUi.Size(next.gameObject, 56f);
                 }
 
-                PhoneUi.CreateButton(infoParent, "Library", ShowLibrary, new Vector2(280f, 40f));
-                PhoneUi.CreateButton(infoParent, "Playlists", ShowLists, new Vector2(280f, 40f));
+                var nav = new GameObject("Nav", typeof(RectTransform));
+                nav.transform.SetParent(infoParent, false);
+                PhoneUi.Size(nav, 44f);
+                var navRow = PhoneUi.AddHorizontal(nav, 8f);
+                navRow.childForceExpandWidth = false;
+                navRow.childAlignment = TextAnchor.MiddleCenter;
+                PhoneUi.MaterialChip(nav.transform, "library_music", "Library", ShowLibrary, new Vector2(40f, 40f));
+                PhoneUi.MaterialChip(nav.transform, "playlist_play", "Playlists", ShowLists, new Vector2(40f, 40f));
             }
 
             private static void PaintPlay(Button play)
@@ -172,7 +180,7 @@ namespace Crispberry_PiPhone
                 _page = "library";
                 Clear();
                 _host.SetTitle("Library");
-                PhoneUi.CreateButton(_host.Content, "Add song", AddMusic, new Vector2(220f, 40f));
+                PhoneUi.MaterialChip(_host.Content, "library_add", "Add song", AddMusic, new Vector2(40f, 40f));
                 FillSoundRows(PhoneStore.MusicTracks(), id =>
                 {
                     MusicPlayer.PlayLibrary(id);
@@ -186,11 +194,11 @@ namespace Crispberry_PiPhone
                 _list = null;
                 Clear();
                 _host.SetTitle("Playlists");
-                PhoneUi.CreateButton(_host.Content, "New playlist", () =>
+                PhoneUi.MaterialChip(_host.Content, "playlist_add", "New playlist", () =>
                 {
                     PlaylistItem created = PhoneStore.AddPlaylist("Playlist " + (PhoneStore.Playlists.Count + 1));
                     ShowPlaylist(created);
-                }, new Vector2(220f, 40f));
+                }, new Vector2(40f, 40f));
                 if (PhoneStore.Playlists.Count == 0)
                 {
                     Empty("No playlists yet.");
@@ -211,11 +219,11 @@ namespace Crispberry_PiPhone
                     PhoneUi.Size(row, 40f);
                     PhoneUi.AddHorizontal(row, 6f);
                     PhoneUi.CreateButton(row.transform, captured.Name, () => ShowPlaylist(captured), new Vector2(200f, 36f));
-                    PhoneUi.CreateButton(row.transform, "Del", () =>
+                    PhoneUi.CreateIconChip(row.transform, "Delete", PhoneIcons.Material("delete"), () =>
                     {
                         PhoneStore.DeletePlaylist(captured.Id);
                         ShowLists();
-                    }, new Vector2(56f, 36f));
+                    }, false, new Vector2(40f, 36f));
                 }
             }
 
@@ -225,7 +233,7 @@ namespace Crispberry_PiPhone
                 _list = list;
                 Clear();
                 _host.SetTitle(list.Name);
-                PhoneUi.CreateButton(_host.Content, "Play", () =>
+                PhoneUi.MaterialChip(_host.Content, "playlist_play", "Play", () =>
                 {
                     if (list.TrackIds.Count == 0)
                     {
@@ -234,8 +242,8 @@ namespace Crispberry_PiPhone
                     }
                     MusicPlayer.PlayPlaylist(list, list.TrackIds[0]);
                     ShowPlayer();
-                }, new Vector2(160f, 40f));
-                PhoneUi.CreateButton(_host.Content, "Add from library", () => ShowAddToList(list), new Vector2(240f, 40f));
+                }, new Vector2(36f, 32f));
+                PhoneUi.MaterialChip(_host.Content, "playlist_add", "Add from library", () => ShowAddToList(list), new Vector2(40f, 40f));
                 if (list.TrackIds.Count == 0)
                 {
                     Empty("Empty playlist.");
@@ -260,11 +268,11 @@ namespace Crispberry_PiPhone
                         MusicPlayer.PlayPlaylist(list, captured.Id);
                         ShowPlayer();
                     }, new Vector2(200f, 36f));
-                    PhoneUi.CreateButton(row.transform, "X", () =>
+                    PhoneUi.CreateIconChip(row.transform, "Remove", PhoneIcons.Material("playlist_remove"), () =>
                     {
                         PhoneStore.RemoveFromPlaylist(list.Id, captured.Id);
                         ShowPlaylist(list);
-                    }, new Vector2(40f, 36f));
+                    }, false, new Vector2(36f, 36f));
                 }
             }
 
@@ -278,10 +286,15 @@ namespace Crispberry_PiPhone
                     PhoneStore.AddToPlaylist(list.Id, id);
                     _host.ShowToast("Added.");
                     ShowPlaylist(list);
-                });
+                }, list);
             }
 
             private void FillSoundRows(List<SoundItem> items, System.Action<string> onPick)
+            {
+                FillSoundRows(items, onPick, null);
+            }
+
+            private void FillSoundRows(List<SoundItem> items, System.Action<string> onPick, PlaylistItem adding)
             {
                 if (items == null || items.Count == 0)
                 {
@@ -314,11 +327,17 @@ namespace Crispberry_PiPhone
                     PhoneUi.Size(row, 40f);
                     PhoneUi.AddHorizontal(row, 6f);
                     PhoneUi.CreateButton(row.transform, captured.Name, () => onPick(captured.Id), new Vector2(200f, 36f));
-                    PhoneUi.CreateButton(row.transform, "Del", () =>
+                    if (adding != null)
+                    {
+                        bool inList = adding.TrackIds != null && adding.TrackIds.Contains(captured.Id);
+                        PhoneUi.CreateIconChip(row.transform, inList ? "Added" : "Add", PhoneIcons.Material(inList ? "playlist_add_check" : "playlist_add"), () => onPick(captured.Id), false, new Vector2(40f, 36f));
+                    }
+                    else
+                    PhoneUi.CreateIconChip(row.transform, "Delete", PhoneIcons.Material("delete"), () =>
                     {
                         PhoneStore.DeleteSound(captured.Id);
                         ShowLibrary();
-                    }, new Vector2(56f, 36f));
+                    }, false, new Vector2(40f, 36f));
                 }
             }
 

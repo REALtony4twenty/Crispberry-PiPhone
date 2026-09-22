@@ -18,7 +18,6 @@ namespace Crispberry_PiPhone
                 DisplayName = "Brick Break",
                 IconGlyph = "=",
                 IconBackground = new Color(0.86f, 0.32f, 0.28f, 1f),
-                IconSprite = PhoneIcons.PaintBrickBreak(),
                 SortOrder = 75,
                 ShowOnHome = true,
                 OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
@@ -81,7 +80,7 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.breakout", "Brick Break"));
-                PhoneUi.CreateButton(_host.Content, PhoneLang.T("play", "Play"), StartGame, new Vector2(220f, 48f));
+                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
                 var high = PhoneUi.CreateLabel(_host.Content, "High", "High score  " + PhoneTheme.HighBreakout, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Size(high.gameObject, 28f);
                 var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Drag the field or use A/D. Tap or Space to serve. Each wall is a new layout.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);

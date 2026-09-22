@@ -27,7 +27,6 @@ namespace Crispberry_PiPhone
                 DisplayName = "Four Across",
                 IconGlyph = "4",
                 IconBackground = new Color(0.16f, 0.42f, 0.82f, 1f),
-                IconSprite = PhoneIcons.PaintFourAcross(),
                 SortOrder = 74,
                 ShowOnHome = true,
                 OnOpen = host => { _live = new Session(host); _live.ShowMenu(); },
@@ -441,7 +440,7 @@ namespace Crispberry_PiPhone
                     PhoneUi.Size(row, 40f);
                     PhoneUi.AddHorizontal(row, 6f);
                     PhoneUi.CreateButton(row.transform, label, () => ShowBoard(captured), new Vector2(200f, 36f)).GetComponent<LayoutElement>().flexibleWidth = 1f;
-                    PhoneUi.CreateButton(row.transform, "X", () =>
+                    PhoneUi.MaterialChip(row.transform, "delete", "Delete", () =>
                     {
                         Games.Remove(captured);
                         Save();
@@ -505,7 +504,7 @@ namespace Crispberry_PiPhone
                 PhoneUi.Wrap(turn);
                 turn.overflowMode = TextOverflowModes.Ellipsis;
                 PhoneUi.Size(turn.gameObject, 56f);
-                PhoneUi.CreateButton(left, "Lobbies", ShowMenu, new Vector2(120f, 32f));
+                PhoneUi.MaterialChip(left, "group", "Lobbies", ShowMenu, new Vector2(36f, 32f));
 
                 var gridGo = new GameObject("Board", typeof(RectTransform));
                 gridGo.transform.SetParent(center, false);
@@ -550,7 +549,7 @@ namespace Crispberry_PiPhone
                 {
                     if (g.Status == "done")
                     {
-                        PhoneUi.CreateButton(right, "Play again", () =>
+                        PhoneUi.MaterialChip(right, "replay", "Play again", () =>
                         {
                             ResetBoard(g);
                             Save();
@@ -560,7 +559,7 @@ namespace Crispberry_PiPhone
                             ShowBoard(g);
                         }, new Vector2(100f, 36f));
                     }
-                    PhoneUi.CreateButton(right, "Leave lobby", () =>
+                    PhoneUi.MaterialChip(right, "logout", "Leave lobby", () =>
                     {
                         int actor = OtherActor(g);
                         if (actor > 0)
@@ -572,7 +571,7 @@ namespace Crispberry_PiPhone
                 }
                 else if (g.Status == "done")
                 {
-                    PhoneUi.CreateButton(right, "Play again", () =>
+                    PhoneUi.MaterialChip(right, "replay", "Play again", () =>
                     {
                         ResetBoard(g);
                         Save();

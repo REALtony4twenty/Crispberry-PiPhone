@@ -20,6 +20,9 @@ namespace Crispberry_PiPhone
         private string _textName;
         private string _textBody;
         private bool _call;
+        private Button _dndBtn;
+        private Button _ringerBtn;
+        private Button _playBtn;
 
         public static void Ensure()
         {
@@ -164,8 +167,8 @@ namespace Crispberry_PiPhone
             PhoneUi.AddHorizontal(actions, 8f);
             var ah = actions.GetComponent<HorizontalLayoutGroup>();
             ah.childForceExpandWidth = false;
-            PhoneUi.CreateButton(actions.transform, "Yes", Accept, new Vector2(88f, 32f));
-            PhoneUi.CreateButton(actions.transform, "No", Dismiss, new Vector2(88f, 32f));
+            PhoneUi.MaterialChip(actions.transform, "check", "Yes", Accept, new Vector2(36f, 32f));
+            PhoneUi.MaterialChip(actions.transform, "close", "No", Dismiss, new Vector2(36f, 32f));
 
             var tools = new GameObject("Q", typeof(RectTransform));
             tools.transform.SetParent(_banner, false);
@@ -173,18 +176,22 @@ namespace Crispberry_PiPhone
             PhoneUi.AddHorizontal(tools, 6f);
             var th = tools.GetComponent<HorizontalLayoutGroup>();
             th.childForceExpandWidth = false;
-            PhoneUi.CreateButton(tools.transform, "DND", () =>
+            _dndBtn = PhoneUi.CreateIconChip(tools.transform, "DND", PhoneIcons.Material("dnd"), () =>
             {
                 PhoneTheme.SetDoNotDisturb(!PhoneTheme.DoNotDisturb);
                 Paint();
-            }, new Vector2(72f, 30f));
-            PhoneUi.CreateButton(tools.transform, "Ringer", () =>
+            }, PhoneTheme.DoNotDisturb, new Vector2(36f, 30f));
+            _ringerBtn = PhoneUi.CreateIconChip(tools.transform, "Ringer", RingerIcon(), () =>
             {
                 PhoneTheme.CycleRinger();
                 Paint();
-            }, new Vector2(80f, 30f));
-            PhoneUi.CreateButton(tools.transform, MusicPlayer.Playing ? "❚❚" : "▶", MusicPlayer.Toggle, new Vector2(44f, 30f));
-            PhoneUi.CreateButton(tools.transform, "►|", MusicPlayer.Next, new Vector2(44f, 30f));
+            }, false, new Vector2(36f, 30f));
+            _playBtn = PhoneUi.CreateIconChip(tools.transform, "Play", PhoneIcons.Material(MusicPlayer.Playing ? "pause" : "play"), () =>
+            {
+                MusicPlayer.Toggle();
+                PaintTools();
+            }, false, new Vector2(36f, 30f));
+            PhoneUi.CreateIconChip(tools.transform, "Next", PhoneIcons.Material("skip_next"), MusicPlayer.Next, false, new Vector2(36f, 30f));
 
             _banner.gameObject.SetActive(false);
         }
@@ -215,6 +222,35 @@ namespace Crispberry_PiPhone
                 _keys.text = Plugin.FormatAlertKeys(true) + (PhoneTheme.DoNotDisturb ? "  ·  DND" : string.Empty);
             }
             _banner.gameObject.SetActive(true);
+            PaintTools();
+        }
+
+        private static Sprite RingerIcon()
+        {
+            if (PhoneTheme.RingerMode == 1)
+                return PhoneIcons.Material("vibration");
+            if (PhoneTheme.RingerMode == 2)
+                return PhoneIcons.Material("volume_off");
+            return PhoneIcons.Material("volume_up");
+        }
+
+        private void PaintTools()
+        {
+            if (_dndBtn != null)
+            {
+                var fill = _dndBtn.GetComponent<Image>();
+                if (fill != null)
+                    fill.color = PhoneTheme.DoNotDisturb ? PhoneUi.Accent : PhoneUi.SurfaceAlt;
+                Transform art = _dndBtn.transform.Find("I");
+                if (art != null)
+                {
+                    var icon = art.GetComponent<Image>();
+                    if (icon != null)
+                        icon.color = PhoneTheme.DoNotDisturb ? new Color(0.10f, 0.11f, 0.12f, 1f) : PhoneUi.ButtonText;
+                }
+            }
+            PhoneUi.SetChipIcon(_ringerBtn, RingerIcon(), "Ringer");
+            PhoneUi.SetChipIcon(_playBtn, PhoneIcons.Material(MusicPlayer.Playing ? "pause" : "play"), MusicPlayer.Playing ? "Pause" : "Play");
         }
 
         private void Accept()

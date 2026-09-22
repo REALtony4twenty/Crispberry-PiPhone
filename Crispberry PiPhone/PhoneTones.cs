@@ -132,7 +132,11 @@ namespace Crispberry_PiPhone
             if (!string.IsNullOrEmpty(custom))
                 return custom;
             string app = AppTone(BuiltinApps.MessagesId);
-            return string.IsNullOrEmpty(app) ? PhoneTheme.TextToneId : app;
+            if (!string.IsNullOrEmpty(app))
+                return app;
+            if (!string.IsNullOrEmpty(PhoneTheme.TextToneId))
+                return PhoneTheme.TextToneId;
+            return PhoneTheme.NotifyToneId;
         }
 
         public static void FillPicker(UnityEngine.Transform parent, System.Action redraw, System.Action<SoundItem> pick)
@@ -159,12 +163,12 @@ namespace Crispberry_PiPhone
                     nle.flexibleWidth = 1f;
                 string path = PhoneStore.SoundPath(captured.File);
                 bool on = PhoneSounds.IsPreviewing(path);
-                PhoneUi.CreateButton(row.transform, on ? "■" : "▶", () =>
+                PhoneUi.CreateIconChip(row.transform, on ? "Stop" : "Play", PhoneIcons.Material(on ? "stop" : "play"), () =>
                 {
                     PhoneSounds.TogglePreview(path);
                     if (redraw != null)
                         redraw();
-                }, new UnityEngine.Vector2(44f, 36f));
+                }, false, new UnityEngine.Vector2(40f, 36f));
             }
         }
 

@@ -18,7 +18,6 @@ namespace Crispberry_PiPhone
                 DisplayName = "Echo",
                 IconGlyph = "4",
                 IconBackground = new Color(0.18f, 0.62f, 0.48f, 1f),
-                IconSprite = PhoneIcons.PaintEcho(),
                 SortOrder = 73,
                 ShowOnHome = true,
                 OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
@@ -79,7 +78,7 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.simon", "Echo"));
-                PhoneUi.CreateButton(_host.Content, "Play", StartGame, new Vector2(220f, 48f));
+                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
                 var high = PhoneUi.CreateLabel(_host.Content, "High", "Best  " + PhoneTheme.HighSimon, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Size(high.gameObject, 28f);
                 var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Watch the colors, then tap them back in order.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);

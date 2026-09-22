@@ -80,7 +80,7 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.mines", "Mines"));
-                PhoneUi.CreateButton(_host.Content, "Play", StartGame, new Vector2(220f, 48f));
+                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
                 var high = PhoneUi.CreateLabel(_host.Content, "High", "Best clears  " + PhoneTheme.HighMines, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Size(high.gameObject, 28f);
                 var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Tap a cell to open it. Switch to Flag to mark mines. First tap is always safe.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
@@ -143,7 +143,7 @@ namespace Crispberry_PiPhone
                         _labels[i].raycastTarget = false;
                 }
 
-                _flagBtn = PhoneUi.CreateButton(right, _flagMode ? PhoneLang.T("flag", "Flag") : PhoneLang.T("open", "Open"), ToggleFlag, new Vector2(120f, 40f));
+                _flagBtn = PhoneUi.CreateIconChip(right, PhoneLang.T("flag", "Flag"), PhoneIcons.Material("flag"), ToggleFlag, _flagMode, new Vector2(44f, 40f));
                 Draw();
             }
 
@@ -152,16 +152,16 @@ namespace Crispberry_PiPhone
                 if (_dead || _won)
                     return;
                 _flagMode = !_flagMode;
-                SetBtn(_flagBtn, _flagMode ? PhoneLang.T("flag", "Flag") : PhoneLang.T("open", "Open"));
-            }
-
-            private static void SetBtn(Button button, string text)
-            {
-                if (button == null)
-                    return;
-                var tmp = button.GetComponentInChildren<TextMeshProUGUI>(true);
-                if (tmp != null)
-                    tmp.text = text;
+                var fill = _flagBtn != null ? _flagBtn.GetComponent<Image>() : null;
+                if (fill != null)
+                    fill.color = _flagMode ? PhoneUi.Accent : PhoneUi.SurfaceAlt;
+                Transform art = _flagBtn != null ? _flagBtn.transform.Find("I") : null;
+                if (art != null)
+                {
+                    var icon = art.GetComponent<Image>();
+                    if (icon != null)
+                        icon.color = _flagMode ? new Color(0.10f, 0.11f, 0.12f, 1f) : PhoneUi.ButtonText;
+                }
             }
 
             private void Click(int i)

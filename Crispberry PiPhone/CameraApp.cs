@@ -57,6 +57,7 @@ namespace Crispberry_PiPhone
         private static Button _modeBtn;
         private static Button _shutterBtn;
         private static Button _squareBtn;
+        private static Button _flipBtn;
         private static bool _square;
         private static Button _emoteBtn;
         private static GameObject _emotePanel;
@@ -108,11 +109,11 @@ namespace Crispberry_PiPhone
             var barLayout = bar.GetComponent<HorizontalLayoutGroup>();
             barLayout.padding = new RectOffset(6, 6, 8, 8);
             barLayout.childForceExpandWidth = false;
-            PhoneUi.CreateButton(bar.transform, "Flip", Flip, new Vector2(64f, 40f));
-            _orientBtn = PhoneUi.CreateButton(bar.transform, Landscape ? "Wide" : "Tall", ToggleLandscape, new Vector2(64f, 40f));
-            _modeBtn = PhoneUi.CreateButton(bar.transform, _videoMode ? "Video" : "Photo", ToggleMode, new Vector2(64f, 40f));
-            _squareBtn = PhoneUi.CreateButton(bar.transform, _square ? "Square" : "Full", ToggleSquare, new Vector2(72f, 40f));
-            _shutterBtn = PhoneUi.CreateButton(bar.transform, ShutterLabel(), PressShutter, new Vector2(64f, 40f));
+            _flipBtn = PhoneUi.CreateIconChip(bar.transform, "Face", PhoneIcons.Material("face_up"), Flip, false, new Vector2(40f, 40f));
+            _orientBtn = PhoneUi.CreateIconChip(bar.transform, "Wide", PhoneIcons.Material("screen_rotation"), ToggleLandscape, false, new Vector2(40f, 40f));
+            _modeBtn = PhoneUi.CreateIconChip(bar.transform, "Photo", PhoneIcons.Material("photo_camera"), ToggleMode, false, new Vector2(40f, 40f));
+            _squareBtn = PhoneUi.CreateIconChip(bar.transform, "Square", PhoneIcons.Material("aspect_ratio"), ToggleSquare, false, new Vector2(40f, 40f));
+            _shutterBtn = PhoneUi.CreateIconChip(bar.transform, "Snap", PhoneIcons.Material("shutter"), PressShutter, false, new Vector2(40f, 40f));
 
             _videoLabel = PhoneUi.CreateLabel(root.transform, "Rec", string.Empty, 14f, FontStyles.Normal, TextAlignmentOptions.Top);
             _videoLabel.rectTransform.anchorMin = new Vector2(0f, 1f);
@@ -157,6 +158,7 @@ namespace Crispberry_PiPhone
             _front = !_front;
             if (_host != null)
                 _host.ShowToast(_front ? "Front camera." : "Back camera.");
+            RefreshBar();
         }
 
         private static void ToggleMode()
@@ -205,30 +207,19 @@ namespace Crispberry_PiPhone
             RefreshBar();
         }
 
-        private static string ShutterLabel()
-        {
-            if (_videoMode)
-                return _recording ? "Stop" : "Rec";
-            return "Snap";
-        }
-
         private static void RefreshBar()
         {
-            SetBtn(_orientBtn, Landscape ? "Wide" : "Tall");
-            SetBtn(_modeBtn, _videoMode ? "Video" : "Photo");
-            SetBtn(_squareBtn, _square ? "Square" : "Full");
-            SetBtn(_shutterBtn, ShutterLabel());
+            PhoneUi.SetChipIcon(_flipBtn, PhoneIcons.Material(_front ? "face_down" : "face_up"), _front ? "Back cam" : "Face cam");
+            PhoneUi.SetChipIcon(_modeBtn, PhoneIcons.Material(_videoMode ? "videocam" : "photo_camera"), _videoMode ? "Video" : "Photo");
+            if (_recording)
+                PhoneUi.SetChipIcon(_shutterBtn, PhoneIcons.Material("stop"), "Stop");
+            else if (_videoMode)
+                PhoneUi.SetChipIcon(_shutterBtn, PhoneIcons.Material("record"), "Rec");
+            else
+                PhoneUi.SetChipIcon(_shutterBtn, PhoneIcons.Material("shutter"), "Snap");
+            ApplyEmoteIcon();
             PlaceEmoteUi();
             PlaceOrbitHud();
-        }
-
-        private static void SetBtn(Button button, string text)
-        {
-            if (button == null)
-                return;
-            var tmp = button.GetComponentInChildren<TextMeshProUGUI>(true);
-            if (tmp != null)
-                tmp.text = text;
         }
 
         private static void BuildZoomUi(Transform root)
@@ -542,11 +533,48 @@ namespace Crispberry_PiPhone
         {
             if (_orbitBar == null)
                 return;
-            _orbitBar.anchorMin = new Vector2(0.5f, 0f);
-            _orbitBar.anchorMax = new Vector2(0.5f, 0f);
-            _orbitBar.pivot = new Vector2(0.5f, 0f);
-            _orbitBar.sizeDelta = new Vector2(200f, Landscape ? 24f : 32f);
-            _orbitBar.anchoredPosition = new Vector2(0f, Landscape ? 96f : 116f);
+            float gap = 6f;
+            float s = Landscape ? 32f : 26f;
+            var grid = _orbitBar.GetComponent<GridLayoutGroup>();
+            if (grid != null)
+            {
+                grid.cellSize = new Vector2(s, s);
+                grid.spacing = new Vector2(4f, 4f);
+                grid.startCorner = GridLayoutGroup.Corner.UpperLeft;
+                grid.childAlignment = TextAnchor.UpperLeft;
+                grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+                grid.constraintCount = Landscape ? 1 : Mathf.Max(1, _orbitBar.childCount);
+            }
+            int n = Mathf.Max(1, _orbitBar.childCount);
+            float span = n * s + (n - 1) * 4f;
+            for (int i = 0; i < _orbitBar.childCount; i++)
+            {
+                var le = _orbitBar.GetChild(i).GetComponent<LayoutElement>();
+                if (le == null)
+                    continue;
+                le.minWidth = s;
+                le.preferredWidth = s;
+                le.minHeight = s;
+                le.preferredHeight = s;
+            }
+            EmoteSpot(out Vector2 anchor, out Vector2 pivot, out Vector2 emoteSize, out Vector2 emotePos);
+            _orbitBar.anchorMin = anchor;
+            _orbitBar.anchorMax = anchor;
+            if (Landscape)
+            {
+                float stackH = span;
+                _orbitBar.pivot = new Vector2(0f, 1f);
+                _orbitBar.sizeDelta = new Vector2(s, stackH);
+                float emoteBottom = emotePos.y - emoteSize.y * pivot.y;
+                _orbitBar.anchoredPosition = new Vector2(emotePos.x, emoteBottom - gap);
+            }
+            else
+            {
+                float rowW = span;
+                _orbitBar.pivot = new Vector2(0f, 1f);
+                _orbitBar.sizeDelta = new Vector2(rowW, s);
+                _orbitBar.anchoredPosition = new Vector2(emotePos.x + emoteSize.x + gap, emotePos.y);
+            }
         }
 
         private static void BuildOrbitHud(Transform root)
@@ -555,17 +583,16 @@ namespace Crispberry_PiPhone
             bar.transform.SetParent(root, false);
             PhoneUi.IgnoreLayout(bar);
             _orbitBar = bar.GetComponent<RectTransform>();
-            PlaceOrbitHud();
-            PhoneUi.AddHorizontal(bar, Landscape ? 2f : 4f);
-            var layout = bar.GetComponent<HorizontalLayoutGroup>();
-            layout.childAlignment = TextAnchor.MiddleCenter;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-            float s = Landscape ? 22f : 30f;
+            var grid = bar.AddComponent<GridLayoutGroup>();
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = 4;
+            float s = 26f;
             OrbitBtn(bar.transform, PhoneIcons.Material("chevron_left"), "<", () => NudgeView(0f, -18f), s);
             OrbitBtn(bar.transform, PhoneIcons.Material("chevron_right"), ">", () => NudgeView(0f, 18f), s);
             OrbitBtn(bar.transform, PhoneIcons.Material("expand_less"), "^", () => NudgeView(0.14f, 0f), s);
             OrbitBtn(bar.transform, PhoneIcons.Material("expand_more"), "v", () => NudgeView(-0.14f, 0f), s);
+            OrbitBtn(bar.transform, PhoneIcons.Material("filter_center_focus"), "o", RecenterView, s);
+            PlaceOrbitHud();
         }
 
         private static void OrbitBtn(Transform parent, Sprite icon, string fallback, UnityEngine.Events.UnityAction click, float size)
@@ -589,10 +616,16 @@ namespace Crispberry_PiPhone
             _camOrbit += orbit;
         }
 
+        private static void RecenterView()
+        {
+            _camLift = 0f;
+            _camOrbit = 0f;
+        }
+
         private static void BuildEmoteUi(Transform root)
         {
             _emotesOpen = false;
-            _emoteBtn = PhoneUi.CreateButton(root, "Emote", ToggleEmotes, new Vector2(72f, 32f));
+            _emoteBtn = PhoneUi.CreateIconChip(root, "Emote", DanceSprite(), ToggleEmotes, false, new Vector2(36f, 36f), false);
             PhoneUi.IgnoreLayout(_emoteBtn.gameObject);
             _emotePanel = new GameObject("Emotes", typeof(RectTransform), typeof(Image));
             _emotePanel.transform.SetParent(root, false);
@@ -602,38 +635,70 @@ namespace Crispberry_PiPhone
             PlaceEmoteUi();
         }
 
+        private static void EmoteSpot(out Vector2 anchor, out Vector2 pivot, out Vector2 size, out Vector2 pos)
+        {
+            if (Landscape)
+            {
+                anchor = new Vector2(0f, 1f);
+                pivot = new Vector2(0f, 1f);
+                size = new Vector2(36f, 36f);
+                pos = new Vector2(8f, -8f);
+            }
+            else
+            {
+                anchor = new Vector2(0f, 1f);
+                pivot = new Vector2(0f, 1f);
+                size = new Vector2(32f, 32f);
+                pos = new Vector2(8f, -8f);
+            }
+        }
+
+        private static void ApplyEmoteIcon()
+        {
+            Sprite dance = DanceSprite();
+            if (dance != null)
+                PhoneUi.SetChipIcon(_emoteBtn, dance, "Emote", false);
+        }
+
+        private static Sprite DanceSprite()
+        {
+            EmoteWheelData[] data = EmoteList();
+            if (data == null)
+                return null;
+            for (int i = 0; i < data.Length; i++)
+            {
+                EmoteWheelData item = data[i];
+                if (item == null || item.emoteSprite == null)
+                    continue;
+                string name = (item.emoteName ?? string.Empty) + " " + (item.anim ?? string.Empty);
+                if (name.IndexOf("dance", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return item.emoteSprite;
+            }
+            return null;
+        }
+
         private static void PlaceEmoteUi()
         {
             if (_emoteBtn != null)
             {
                 var rt = _emoteBtn.GetComponent<RectTransform>();
-                if (Landscape)
-                {
-                    rt.anchorMin = new Vector2(0f, 0.5f);
-                    rt.anchorMax = new Vector2(0f, 0.5f);
-                    rt.pivot = new Vector2(0f, 0.5f);
-                    rt.sizeDelta = new Vector2(84f, 36f);
-                    rt.anchoredPosition = new Vector2(8f, 24f);
-                }
-                else
-                {
-                    rt.anchorMin = new Vector2(0f, 1f);
-                    rt.anchorMax = new Vector2(0f, 1f);
-                    rt.pivot = new Vector2(0f, 1f);
-                    rt.sizeDelta = new Vector2(64f, 26f);
-                    rt.anchoredPosition = new Vector2(8f, -8f);
-                }
+                EmoteSpot(out Vector2 anchor, out Vector2 pivot, out Vector2 size, out Vector2 pos);
+                rt.anchorMin = anchor;
+                rt.anchorMax = anchor;
+                rt.pivot = pivot;
+                rt.sizeDelta = size;
+                rt.anchoredPosition = pos;
             }
             if (_emotePanel == null)
                 return;
             var panel = _emotePanel.GetComponent<RectTransform>();
             if (Landscape)
             {
-                panel.anchorMin = new Vector2(0f, 0.5f);
-                panel.anchorMax = new Vector2(0f, 0.5f);
-                panel.pivot = new Vector2(0f, 0.5f);
-                panel.sizeDelta = new Vector2(210f, 240f);
-                panel.anchoredPosition = new Vector2(98f, 8f);
+                panel.anchorMin = new Vector2(0f, 1f);
+                panel.anchorMax = new Vector2(0f, 1f);
+                panel.pivot = new Vector2(0f, 1f);
+                panel.sizeDelta = new Vector2(210f, 200f);
+                panel.anchoredPosition = new Vector2(50f, -8f);
             }
             else
             {
@@ -641,7 +706,7 @@ namespace Crispberry_PiPhone
                 panel.anchorMax = new Vector2(0f, 1f);
                 panel.pivot = new Vector2(0f, 1f);
                 panel.sizeDelta = new Vector2(168f, 180f);
-                panel.anchoredPosition = new Vector2(8f, -38f);
+                panel.anchoredPosition = new Vector2(8f, -44f);
             }
         }
 
@@ -679,7 +744,13 @@ namespace Crispberry_PiPhone
                 if (item == null || string.IsNullOrEmpty(item.anim))
                     continue;
                 string anim = item.anim;
-                PhoneUi.CreateButton(content, EmoteLabel(item), () => PerformEmote(anim), new Vector2(w, h));
+                var row = new GameObject("EmoteRow", typeof(RectTransform));
+                row.transform.SetParent(content, false);
+                PhoneUi.Size(row, h);
+                PhoneUi.AddHorizontal(row, 4f);
+                if (item.emoteSprite != null)
+                    PhoneUi.CreateIconChip(row.transform, string.Empty, item.emoteSprite, () => PerformEmote(anim), false, new Vector2(h, h), false);
+                PhoneUi.CreateButton(row.transform, EmoteLabel(item), () => PerformEmote(anim), new Vector2(w, h));
             }
         }
 
@@ -761,6 +832,7 @@ namespace Crispberry_PiPhone
             _modeBtn = null;
             _shutterBtn = null;
             _squareBtn = null;
+            _flipBtn = null;
             _emoteBtn = null;
             _emotePanel = null;
             _emotesOpen = false;
@@ -849,26 +921,13 @@ namespace Crispberry_PiPhone
             private static void PlaceBack(Camera cam)
             {
                 Camera main = Camera.main;
-                Character local = Character.localCharacter;
-                if (main != null && local != null && local.refs != null && local.refs.head != null
-                    && (Mathf.Abs(_camOrbit) > 0.5f || Mathf.Abs(_camLift) > 0.001f))
-                {
-                    PlaceOrbit(cam, local.refs.head.transform, main.transform.forward, 2.4f);
-                    ApplyZoom(cam, main.fieldOfView);
-                    cam.nearClipPlane = 0.08f;
-                    cam.farClipPlane = main.farClipPlane;
-                    cam.cullingMask = main.cullingMask;
-                    cam.clearFlags = main.clearFlags;
-                    cam.backgroundColor = main.backgroundColor;
-                    cam.targetTexture = _rt;
-                    if (_rt != null)
-                        cam.aspect = (float)_rt.width / _rt.height;
-                    return;
-                }
                 if (main == null)
                     return;
-                cam.transform.position = main.transform.position + main.transform.forward * 0.28f;
-                cam.transform.rotation = main.transform.rotation;
+                Quaternion rot = Quaternion.AngleAxis(_camOrbit, Vector3.up)
+                    * main.transform.rotation
+                    * Quaternion.Euler(-_camLift * 40f, 0f, 0f);
+                Vector3 pos = main.transform.position + Vector3.up * (_camLift * 0.35f) + rot * Vector3.forward * 0.28f;
+                cam.transform.SetPositionAndRotation(pos, rot);
                 ApplyZoom(cam, main.fieldOfView);
                 cam.nearClipPlane = 0.08f;
                 cam.farClipPlane = main.farClipPlane;

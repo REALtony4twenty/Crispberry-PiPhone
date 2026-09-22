@@ -78,6 +78,12 @@ namespace Crispberry_PiPhone
             PlayId(PhoneTones.ResolveText(contactId), 1200, 0.12f, 1.6f);
         }
 
+        public static void PlayVibrate(bool call)
+        {
+            MusicPlayer.DuckFor(call ? 2.2f : 0.55f);
+            VoiceIo.Play(MakeBuzz(call ? 0.7f : 0.32f), false);
+        }
+
         public static void PlayNotify()
         {
             PlayApp(null);
@@ -547,6 +553,20 @@ namespace Crispberry_PiPhone
             return new[] { 13, 0 };
         }
 
+        private static object MakeBuzz(float seconds)
+        {
+            int rate = 22050;
+            int n = Mathf.Max(64, (int)(rate * seconds));
+            var data = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)rate;
+                float gate = Mathf.Sin(2f * Mathf.PI * 16f * t) > 0f ? 1f : 0.12f;
+                data[i] = Mathf.Sin(2f * Mathf.PI * 90f * t) * 0.7f * gate;
+            }
+            return ClipFromSamples("PiP_Buzz", data, rate);
+        }
+
         private static object MakeBeep(int hz, float seconds)
         {
             int rate = 22050;
@@ -558,11 +578,16 @@ namespace Crispberry_PiPhone
                 float env = 1f - i / (float)n;
                 data[i] = Mathf.Sin(2f * Mathf.PI * hz * t) * 0.35f * env;
             }
+            return ClipFromSamples("PiP_Beep", data, rate);
+        }
+
+        private static object ClipFromSamples(string name, float[] data, int rate)
+        {
             Type clipType = Type.GetType("UnityEngine.AudioClip, UnityEngine.AudioModule");
-            if (clipType == null)
+            if (clipType == null || data == null)
                 return null;
             MethodInfo create = clipType.GetMethod("Create", new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(bool) });
-            object clip = create.Invoke(null, new object[] { "PiP_Beep", n, 1, rate, false });
+            object clip = create.Invoke(null, new object[] { name, data.Length, 1, rate, false });
             clipType.GetMethod("SetData", new[] { typeof(float[]), typeof(int) }).Invoke(clip, new object[] { data, 0 });
             return clip;
         }

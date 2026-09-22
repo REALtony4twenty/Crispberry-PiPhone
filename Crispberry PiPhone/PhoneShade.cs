@@ -17,6 +17,7 @@ namespace Crispberry_PiPhone
         internal const string RingerId = "pip.shade.ringer";
         internal const string RotateId = "pip.shade.rotate";
         internal const string HomeId = "pip.shade.home";
+        internal const string NavId = "pip.shade.nav";
 
         internal const float Chip = 36f;
         internal const float MediaChip = 32f;
@@ -83,6 +84,8 @@ namespace Crispberry_PiPhone
                     return false;
                 }
             }
+            if (!button.CanHide)
+                return true;
             return PhoneTheme.ShadeButtonOn(button.Id, button.DefaultVisible);
         }
 
@@ -280,6 +283,11 @@ namespace Crispberry_PiPhone
             string an = a != null ? a.Id : string.Empty;
             string bn = b != null ? b.Id : string.Empty;
             return string.Compare(an, bn, StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static void ForgetIcons()
+        {
+            _lockOn = null;
         }
 
         private static void EnsureIcons()

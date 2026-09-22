@@ -1,6 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Crispberry_PiPhone
@@ -42,6 +44,7 @@ namespace Crispberry_PiPhone
             private Image[] _cells;
             private TextMeshProUGUI[] _labels;
             private TextMeshProUGUI _status;
+            private int _keyGen;
 
             private static readonly string[] DiffName = { "Easy", "Medium", "Hard" };
             private static readonly int[] Punch = { 36, 46, 54 };
@@ -72,7 +75,7 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.sudoku", "Sudoku"));
-                PhoneUi.CreateButton(_host.Content, PhoneLang.T("play", "Play"), () => StartAt(0), new Vector2(220f, 48f));
+                PhoneUi.MaterialChip(_host.Content, "play", "Play", () => StartAt(0), new Vector2(40f, 40f));
                 PhoneUi.CreateButton(_host.Content, "Easy", () => StartAt(0), new Vector2(200f, 40f));
                 PhoneUi.CreateButton(_host.Content, "Medium", () => StartAt(1), new Vector2(200f, 40f));
                 PhoneUi.CreateButton(_host.Content, "Hard", () => StartAt(2), new Vector2(200f, 40f));
@@ -139,8 +142,36 @@ namespace Crispberry_PiPhone
                     int v = n;
                     PhoneUi.CreateButton(pad.transform, v.ToString(), () => Enter(v), new Vector2(36f, 36f));
                 }
-                PhoneUi.CreateButton(pad.transform, "C", () => Enter(0), new Vector2(36f, 36f));
+                PhoneUi.MaterialChip(pad.transform, "backspace", "Clear", () => Enter(0), new Vector2(36f, 36f));
                 Draw();
+                _keyGen++;
+                _host.StartHostCoroutine(ReadKeys(_keyGen));
+            }
+
+            private IEnumerator ReadKeys(int gen)
+            {
+                while (gen == _keyGen && _page == "play")
+                {
+                    if (!TypingElsewhere())
+                    {
+                        if (PhoneGames.Down(KeyCode.Backspace) || PhoneGames.Down(KeyCode.Delete))
+                            Enter(0);
+                        for (int n = 0; n <= 9; n++)
+                        {
+                            if (PhoneGames.Down((KeyCode)((int)KeyCode.Alpha0 + n)) || PhoneGames.Down((KeyCode)((int)KeyCode.Keypad0 + n)))
+                                Enter(n);
+                        }
+                    }
+                    yield return null;
+                }
+            }
+
+            private static bool TypingElsewhere()
+            {
+                EventSystem es = EventSystem.current;
+                if (es == null || es.currentSelectedGameObject == null)
+                    return false;
+                return es.currentSelectedGameObject.GetComponent<TMP_InputField>() != null;
             }
 
             private string StatusText()

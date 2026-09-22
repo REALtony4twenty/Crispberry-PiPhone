@@ -17,7 +17,6 @@ namespace Crispberry_PiPhone
                 DisplayName = "Stacker",
                 IconGlyph = "T",
                 IconBackground = new Color(0.18f, 0.72f, 0.82f, 1f),
-                IconSprite = PhoneIcons.PaintStacker(),
                 SortOrder = 74,
                 ShowOnHome = true,
                 OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
@@ -98,7 +97,7 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.tetris", "Stacker"));
-                PhoneUi.CreateButton(_host.Content, PhoneLang.T("play", "Play"), StartGame, new Vector2(220f, 48f));
+                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
                 var high = PhoneUi.CreateLabel(_host.Content, "High", "High score  " + PhoneTheme.HighTetris, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Size(high.gameObject, 28f);
                 var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "WASD or arrows. W/Up rotates. S/Down drops. Space hard-drops.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
@@ -148,9 +147,19 @@ namespace Crispberry_PiPhone
                     _nextCells = PhoneGames.OverlayNext(_scoreLabel.transform.parent, 8f, false);
                     PhoneUi.Size(_scoreLabel.transform.parent.gameObject, 48f);
                 }
-                PhoneGames.Dpad(right, () => TryMove(-1, 0), () => TryMove(1, 0), Rotate, () => TryMove(0, -1));
-                PhoneUi.CreateButton(right, PhoneLang.T("rotate", "Rotate"), Rotate, new Vector2(_host.IsLandscape ? 120f : 140f, 36f));
-                PhoneUi.CreateButton(right, PhoneLang.T("drop", "Drop"), HardDrop, new Vector2(_host.IsLandscape ? 120f : 140f, 36f));
+                var cluster = new GameObject("Controls", typeof(RectTransform));
+                cluster.transform.SetParent(right, false);
+                var clusterLayout = PhoneUi.AddHorizontal(cluster, 4f);
+                clusterLayout.childForceExpandWidth = false;
+                clusterLayout.childForceExpandHeight = false;
+                clusterLayout.childAlignment = TextAnchor.MiddleCenter;
+                var clusterLe = cluster.AddComponent<LayoutElement>();
+                clusterLe.flexibleWidth = 0f;
+                clusterLe.flexibleHeight = 0f;
+                Vector2 pad = PhoneUi.Landscape ? new Vector2(40f, 36f) : new Vector2(48f, 40f);
+                PhoneUi.MaterialChip(cluster.transform, "cached", "Rotate", Rotate, pad);
+                PhoneGames.Dpad(cluster.transform, () => TryMove(-1, 0), () => TryMove(1, 0), Rotate, () => TryMove(0, -1));
+                PhoneUi.MaterialChip(cluster.transform, "keyboard_double_arrow_down", "Drop", HardDrop, pad);
             }
 
             private string ScoreText()
