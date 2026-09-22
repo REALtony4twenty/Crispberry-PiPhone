@@ -1,6 +1,6 @@
 # Crispberry PiPhone
 
-An in-game phone for PEAK. Version 0.17.68.
+An in-game phone for PEAK. Version 0.17.69.
 
 Default open key is **Alt+P**. That key, and the camera and call keys, can be changed in the BepInEx config.
 

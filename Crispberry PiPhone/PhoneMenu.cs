@@ -1623,6 +1623,7 @@ namespace Crispberry_PiPhone
                 if (showBar && _callBarLabel != null)
                     _callBarLabel.text = string.IsNullOrEmpty(CallService.RemoteName) ? "On a call" : CallService.RemoteName;
             }
+            RaiseChrome();
             if (!showFull)
                 return;
             if (_callTitle != null)
@@ -2429,12 +2430,12 @@ namespace Crispberry_PiPhone
 
         private void RaiseChrome()
         {
+            if (_callLayer != null)
+                _callLayer.transform.SetAsLastSibling();
             if (_navImg != null)
                 _navImg.transform.SetAsLastSibling();
             if (_navHandle != null)
                 _navHandle.SetAsLastSibling();
-            if (_callLayer != null)
-                _callLayer.transform.SetAsLastSibling();
             if (_callBar != null)
                 _callBar.transform.SetAsLastSibling();
             if (_shadeRoot != null)
