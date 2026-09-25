@@ -146,6 +146,7 @@
     <Compile Include="DualRangeSlider.cs" />
     <Compile Include="PhoneMenu.cs" />
     <Compile Include="PhoneShade.cs" />
+    <Compile Include="PhoneCast.cs" />
     <Compile Include="PhoneTheme.cs" />
     <Compile Include="PhoneLang.cs" />
     <Compile Include="PhoneStore.cs" />
@@ -183,11 +184,11 @@
     <Compile Include="SnakeApp.cs" />
     <Compile Include="PhoneGames.cs" />
     <Compile Include="Game2048App.cs" />
-    <Compile Include="MinesweeperApp.cs" />
-    <Compile Include="SimonApp.cs" />
-    <Compile Include="TetrisApp.cs" />
-    <Compile Include="BreakoutApp.cs" />
-    <Compile Include="Connect4App.cs" />
+    <Compile Include="MinesApp.cs" />
+    <Compile Include="EchoApp.cs" />
+    <Compile Include="StackerApp.cs" />
+    <Compile Include="BrickBreakApp.cs" />
+    <Compile Include="FourAcrossApp.cs" />
     <Compile Include="SudokuApp.cs" />
     <Compile Include="SolitaireApp.cs" />
     <Compile Include="AppStoreApp.cs" />

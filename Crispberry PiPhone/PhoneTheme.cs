@@ -17,6 +17,9 @@ namespace Crispberry_PiPhone
         public static bool HideDock;
         public static float PhoneScale = 1f;
         public static float PhoneScaleLand = 1.2f;
+
+        /// <summary>While a mod has overridden placement, size and position changes stay in memory.</summary>
+        internal static bool HoldSavedPlacement;
         public static float PhonePosX;
         public static float PhonePosY;
         public static float PhonePosLandX;
@@ -31,6 +34,9 @@ namespace Crispberry_PiPhone
         public static int SnakeHigh;
         public static int High2048;
         public static int HighMines;
+        public static float HighMinesTime;
+        public static float AlertX;
+        public static float AlertY = 28f;
         public static int HighSimon;
         public static int HighTetris;
         public static int HighBreakout;
@@ -154,6 +160,9 @@ namespace Crispberry_PiPhone
                     else if (key == "snakehigh") SnakeHigh = n < 0 ? 0 : n;
                     else if (key == "high2048") High2048 = n < 0 ? 0 : n;
                     else if (key == "highmines") HighMines = n < 0 ? 0 : n;
+                    else if (key == "highminestime") HighMinesTime = f < 0f ? 0f : f;
+                    else if (key == "alertx") AlertX = f;
+                    else if (key == "alerty") AlertY = f;
                     else if (key == "highsimon") HighSimon = n < 0 ? 0 : n;
                     else if (key == "hightetris") HighTetris = n < 0 ? 0 : n;
                     else if (key == "highbreak") HighBreakout = n < 0 ? 0 : n;
@@ -227,6 +236,9 @@ namespace Crispberry_PiPhone
                     + "snakehigh=" + SnakeHigh + "\n"
                     + "high2048=" + High2048 + "\n"
                     + "highmines=" + HighMines + "\n"
+                    + "highminestime=" + HighMinesTime.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "alertx=" + AlertX.ToString("0.#", CultureInfo.InvariantCulture) + "\n"
+                    + "alerty=" + AlertY.ToString("0.#", CultureInfo.InvariantCulture) + "\n"
                     + "highsimon=" + HighSimon + "\n"
                     + "hightetris=" + HighTetris + "\n"
                     + "highbreak=" + HighBreakout + "\n"
@@ -267,14 +279,16 @@ namespace Crispberry_PiPhone
         public static void SetPhoneScale(float value)
         {
             PhoneScale = Mathf.Clamp(value, 0.55f, 1.35f);
-            Save();
+            if (!HoldSavedPlacement)
+                Save();
             PhoneMenu.RefreshLiveChrome();
         }
 
         public static void SetPhoneScaleLand(float value)
         {
             PhoneScaleLand = Mathf.Clamp(value, 0.55f, 1.8f);
-            Save();
+            if (!HoldSavedPlacement)
+                Save();
             PhoneMenu.RefreshLiveChrome();
         }
 
@@ -282,14 +296,16 @@ namespace Crispberry_PiPhone
         {
             PhonePosX = x;
             PhonePosY = y;
-            Save();
+            if (!HoldSavedPlacement)
+                Save();
         }
 
         public static void SetPhonePosLand(float x, float y)
         {
             PhonePosLandX = x;
             PhonePosLandY = y;
-            Save();
+            if (!HoldSavedPlacement)
+                Save();
         }
 
         public static void SetAutoAnswer(bool on)

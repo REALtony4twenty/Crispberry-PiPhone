@@ -44,11 +44,11 @@ namespace Crispberry_PiPhone
             AppStoreApp.Register();
             SnakeApp.Register();
             Game2048App.Register();
-            MinesweeperApp.Register();
-            SimonApp.Register();
-            TetrisApp.Register();
-            BreakoutApp.Register();
-            Connect4App.Register();
+            MinesApp.Register();
+            EchoApp.Register();
+            StackerApp.Register();
+            BrickBreakApp.Register();
+            FourAcrossApp.Register();
             SudokuApp.Register();
             SolitaireApp.Register();
             SettingsApp.Register();

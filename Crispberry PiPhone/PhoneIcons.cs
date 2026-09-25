@@ -67,6 +67,12 @@ namespace Crispberry_PiPhone
                     ?? FindResource("material." + name + ".png")
                     ?? FindResource(name + ".png");
             }
+            if (bytes == null && !outline)
+            {
+                bytes = ReadResource("Crispberry_PiPhone.Icons.material.o_" + name + ".png")
+                    ?? FindResource("material.o_" + name + ".png")
+                    ?? FindResource("o_" + name + ".png");
+            }
             if (bytes == null)
                 return null;
             Texture2D tex = PhoneImages.LoadTexture(bytes);

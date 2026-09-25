@@ -15,7 +15,7 @@ namespace Crispberry_PiPhone
     {
         public const string PluginGuid = "tony4twentys.Crispberry_PiPhone";
         public const string PluginName = "Crispberry PiPhone";
-        public const string PluginVersion = "0.17.69";
+        public const string PluginVersion = "0.17.81";
         public const string OsName = "Crispberry OS";
 
         public static string OsVersionLabel
@@ -69,6 +69,7 @@ namespace Crispberry_PiPhone
             VoiceIo.Ensure();
             MusicPlayer.Ensure();
             PhoneNet.Ensure();
+            PhoneCast.Ensure();
             CallService.Ensure();
             AlertHud.Ensure();
             PhoneMenu.EnsureCreated();
@@ -92,6 +93,7 @@ namespace Crispberry_PiPhone
         private void Update()
         {
             PhoneMenu.TickUseLock();
+            PiPhoneApi.TickApps();
             if (PhoneKeys.TickCapture())
                 return;
             PhoneKeys.FirePressed();

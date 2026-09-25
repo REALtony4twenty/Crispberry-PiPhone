@@ -35,6 +35,11 @@ namespace Crispberry_PiPhone
         internal const byte KindRescueResult = 18;
         internal const byte KindRescueChase = 19;
         internal const byte KindRescueEnd = 20;
+        internal const byte KindCastAsk = 21;
+        internal const byte KindCastGrant = 22;
+        internal const byte KindCastDeny = 23;
+        internal const byte KindCastStop = 24;
+        internal const byte KindCastFrame = 25;
         public const int MaxMediaBytes = 8388608;
 
         public static PhoneNet Instance;
@@ -345,7 +350,27 @@ namespace Crispberry_PiPhone
                         OnMediaEnd(data);
                         break;
                     case KindGame:
-                        Connect4App.OnNet(data);
+                        FourAcrossApp.OnNet(data);
+                        break;
+                    case KindCastAsk:
+                        if (data.Length >= 4)
+                            PhoneCast.OnAsk(photonEvent.Sender, data[3] as string);
+                        break;
+                    case KindCastGrant:
+                        if (data.Length >= 5)
+                            PhoneCast.OnGrant(data[3] as string, ToInt(data[4]));
+                        break;
+                    case KindCastDeny:
+                        if (data.Length >= 4)
+                            PhoneCast.OnDeny(data[3] as string);
+                        break;
+                    case KindCastStop:
+                        if (data.Length >= 5)
+                            PhoneCast.OnStop(data[3] as string, ToInt(data[4]));
+                        break;
+                    case KindCastFrame:
+                        if (data.Length >= 8)
+                            PhoneCast.OnFrame(data[3] as string, photonEvent.Sender, ToInt(data[4]), ToInt(data[5]), ToInt(data[6]), data[7] as byte[]);
                         break;
                 }
             }
@@ -536,6 +561,58 @@ namespace Crispberry_PiPhone
             PhoneStore.AddMessage(msg);
             PhoneNotify.IncomingText(pending.FromId, pending.FromName, msg.Text);
             MessagesApp.RefreshIfOpen();
+        }
+
+        public static void SendCastAsk(string deviceId)
+        {
+            if (!PhotonNetwork.InRoom || PhotonNetwork.MasterClient == null)
+                return;
+            SendTo(PhotonNetwork.MasterClient.ActorNumber, new object[] { Magic, Protocol, KindCastAsk, deviceId ?? string.Empty });
+        }
+
+        public static void SendCastGrant(string deviceId, int actor)
+        {
+            SendOthers(new object[] { Magic, Protocol, KindCastGrant, deviceId ?? string.Empty, actor }, true);
+        }
+
+        public static void SendCastDeny(int actor, string deviceId)
+        {
+            SendTo(actor, new object[] { Magic, Protocol, KindCastDeny, deviceId ?? string.Empty });
+        }
+
+        public static void SendCastStop(string deviceId, int actor)
+        {
+            SendOthers(new object[] { Magic, Protocol, KindCastStop, deviceId ?? string.Empty, actor }, true);
+        }
+
+        public static void SendCastFrame(string deviceId, int seq, byte[] jpg)
+        {
+            if (jpg == null || jpg.Length == 0 || !PhotonNetwork.InRoom)
+                return;
+            int count = (jpg.Length + 5999) / 6000;
+            for (int i = 0; i < count; i++)
+            {
+                int offset = i * 6000;
+                int len = Math.Min(6000, jpg.Length - offset);
+                var chunk = new byte[len];
+                Buffer.BlockCopy(jpg, offset, chunk, 0, len);
+                SendOthers(new object[] { Magic, Protocol, KindCastFrame, deviceId ?? string.Empty, seq, i, count, chunk }, false);
+            }
+        }
+
+        private static void SendOthers(object[] payload, bool reliable)
+        {
+            if (!PhotonNetwork.InRoom)
+                return;
+            try
+            {
+                SendOptions opts = reliable ? SendOptions.SendReliable : SendOptions.SendUnreliable;
+                PhotonNetwork.RaiseEvent(EventCode, payload, new RaiseEventOptions { Receivers = ReceiverGroup.Others }, opts);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogError("Phone send failed: " + ex.Message);
+            }
         }
 
         private static void SendToMany(int[] actors, object[] payload)

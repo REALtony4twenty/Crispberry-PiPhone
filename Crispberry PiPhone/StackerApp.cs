@@ -5,7 +5,7 @@ using UnityEngine.UI;
 
 namespace Crispberry_PiPhone
 {
-    internal static class TetrisApp
+    internal static class StackerApp
     {
         private static Session _live;
 

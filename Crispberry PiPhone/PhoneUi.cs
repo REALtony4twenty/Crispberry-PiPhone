@@ -43,21 +43,32 @@ namespace Crispberry_PiPhone
         private static readonly Dictionary<int, Sprite> RoundedCache = new Dictionary<int, Sprite>();
         private static TMP_FontAsset _cachedFont;
         private static int _cachedSceneHandle = -1;
+        private static RectTransform _tipRoot;
+        private static TextMeshProUGUI _tipLabel;
 
         public static Canvas CreateOverlayCanvas(GameObject root, int sortingOrder)
         {
-            var canvas = root.GetComponent<Canvas>() ?? root.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = sortingOrder;
+            var canvas = root.GetComponent<Canvas>();
+            bool created = canvas == null;
+            if (created)
+                canvas = root.AddComponent<Canvas>();
+            if (created)
+            {
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                canvas.sortingOrder = sortingOrder;
+            }
             canvas.additionalShaderChannels =
                 AdditionalCanvasShaderChannels.TexCoord1
                 | AdditionalCanvasShaderChannels.Normal
                 | AdditionalCanvasShaderChannels.Tangent;
 
             var scaler = root.GetComponent<CanvasScaler>() ?? root.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920f, 1080f);
-            scaler.matchWidthOrHeight = 1f;
+            if (created)
+            {
+                scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+                scaler.referenceResolution = new Vector2(1920f, 1080f);
+                scaler.matchWidthOrHeight = 1f;
+            }
 
             if (root.GetComponent<GraphicRaycaster>() == null)
                 root.AddComponent<GraphicRaycaster>();
@@ -260,7 +271,9 @@ namespace Crispberry_PiPhone
             scroll.horizontal = false;
             scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
-            scroll.scrollSensitivity = 14f;
+            scroll.inertia = true;
+            scroll.decelerationRate = 0.08f;
+            scroll.scrollSensitivity = 28f;
 
             var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
             viewport.transform.SetParent(root, false);
@@ -278,6 +291,51 @@ namespace Crispberry_PiPhone
             content.pivot = new Vector2(0.5f, 1f);
             content.anchoredPosition = Vector2.zero;
             content.sizeDelta = Vector2.zero;
+
+            scroll.viewport = viewport.GetComponent<RectTransform>();
+            scroll.content = content;
+            return scroll;
+        }
+
+        /// <summary>
+        /// Left-to-right flick scroller. The view stays the width of its parent.
+        /// Put pictures in <paramref name="content"/>; a content fitter grows it to the right.
+        /// </summary>
+        public static ScrollRect CreateHorizontalScroll(Transform parent, out RectTransform content)
+        {
+            var root = CreateImage(parent, "HScroll", White(), new Color(1f, 1f, 1f, 0f));
+            var rootLe = root.gameObject.GetComponent<LayoutElement>() ?? root.gameObject.AddComponent<LayoutElement>();
+            rootLe.minWidth = 0f;
+            rootLe.preferredWidth = 0f;
+            rootLe.flexibleWidth = 1f;
+            rootLe.layoutPriority = 2;
+            var scroll = root.gameObject.AddComponent<ScrollRect>();
+            scroll.horizontal = true;
+            scroll.vertical = false;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.inertia = true;
+            scroll.decelerationRate = 0.08f;
+            scroll.scrollSensitivity = 28f;
+
+            var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
+            viewport.transform.SetParent(root, false);
+            Stretch(viewport.GetComponent<RectTransform>(), 0f, 0f);
+            var vpImg = viewport.GetComponent<Image>();
+            vpImg.sprite = White();
+            vpImg.color = new Color(1f, 1f, 1f, 0f);
+            vpImg.raycastTarget = true;
+
+            var contentGo = new GameObject("Content", typeof(RectTransform));
+            contentGo.transform.SetParent(viewport.transform, false);
+            content = contentGo.GetComponent<RectTransform>();
+            content.anchorMin = new Vector2(0f, 0f);
+            content.anchorMax = new Vector2(0f, 1f);
+            content.pivot = new Vector2(0f, 0.5f);
+            content.anchoredPosition = Vector2.zero;
+            content.sizeDelta = Vector2.zero;
+            var fit = contentGo.AddComponent<ContentSizeFitter>();
+            fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fit.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
 
             scroll.viewport = viewport.GetComponent<RectTransform>();
             scroll.content = content;
@@ -1194,6 +1252,127 @@ namespace Crispberry_PiPhone
             }
 
             return _cachedFont;
+        }
+
+        /// <summary>
+        /// Hover text for a button or icon. Empty text removes it.
+        /// Shows the line above the control while the pointer is over it.
+        /// </summary>
+        public static void SetTooltip(GameObject target, string text)
+        {
+            if (target == null)
+                return;
+            var tip = target.GetComponent<PhoneTip>();
+            if (string.IsNullOrEmpty(text))
+            {
+                if (tip != null)
+                {
+                    tip.Text = null;
+                    tip.enabled = false;
+                }
+                return;
+            }
+            if (tip == null)
+                tip = target.AddComponent<PhoneTip>();
+            tip.enabled = true;
+            tip.Text = text;
+        }
+
+        internal static void ShowTooltip(string text, RectTransform around)
+        {
+            if (string.IsNullOrEmpty(text) || around == null)
+                return;
+            Canvas canvas = around.GetComponentInParent<Canvas>();
+            if (canvas == null)
+                return;
+            Canvas rootCanvas = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
+            Transform root = rootCanvas.transform;
+            if (_tipRoot == null)
+            {
+                var bg = CreateImage(root, "Tooltip", Rounded(10), new Color(0.08f, 0.09f, 0.11f, 0.96f));
+                _tipRoot = bg;
+                bg.GetComponent<Image>().raycastTarget = false;
+                _tipLabel = CreateLabel(bg, "T", text, 13f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+                _tipLabel.raycastTarget = false;
+                Wrap(_tipLabel);
+                _tipLabel.gameObject.AddComponent<LayoutElement>();
+                var fit = bg.gameObject.AddComponent<ContentSizeFitter>();
+                fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+                fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+                var v = AddVertical(bg.gameObject, 0f, new RectOffset(10, 10, 6, 6));
+                v.childAlignment = TextAnchor.MiddleLeft;
+                v.childForceExpandWidth = false;
+                v.childForceExpandHeight = false;
+            }
+            else if (_tipRoot.parent != root)
+                _tipRoot.SetParent(root, false);
+            _tipLabel.text = text;
+            Vector2 pref = _tipLabel.GetPreferredValues(text, 220f, 0f);
+            var le = _tipLabel.GetComponent<LayoutElement>();
+            if (le != null)
+            {
+                le.preferredWidth = Mathf.Clamp(Mathf.Ceil(pref.x), 24f, 220f);
+                le.preferredHeight = Mathf.Ceil(Mathf.Max(18f, pref.y));
+            }
+            _tipRoot.gameObject.SetActive(true);
+            _tipRoot.SetAsLastSibling();
+            Canvas.ForceUpdateCanvases();
+            PlaceTooltip(around, rootCanvas);
+        }
+
+        private static void PlaceTooltip(RectTransform around, Canvas canvas)
+        {
+            var rootRt = canvas.transform as RectTransform;
+            if (rootRt == null || _tipRoot == null)
+                return;
+            Vector3[] corners = new Vector3[4];
+            around.GetWorldCorners(corners);
+            Vector3 world = (corners[1] + corners[2]) * 0.5f;
+            Camera cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+            Vector2 screen = RectTransformUtility.WorldToScreenPoint(cam, world);
+            Vector2 local;
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rootRt, screen, cam, out local))
+                return;
+            _tipRoot.anchorMin = _tipRoot.anchorMax = new Vector2(0.5f, 0.5f);
+            _tipRoot.pivot = new Vector2(0.5f, 0f);
+            float tipW = Mathf.Max(24f, _tipRoot.rect.width);
+            float tipH = Mathf.Max(18f, _tipRoot.rect.height);
+            float halfRootW = rootRt.rect.width * 0.5f;
+            float halfRootH = rootRt.rect.height * 0.5f;
+            float x = Mathf.Clamp(local.x, -halfRootW + tipW * 0.5f + 8f, halfRootW - tipW * 0.5f - 8f);
+            float y = local.y + 6f;
+            if (y + tipH > halfRootH - 8f)
+            {
+                _tipRoot.pivot = new Vector2(0.5f, 1f);
+                y = local.y - around.rect.height - 6f;
+            }
+            _tipRoot.anchoredPosition = new Vector2(x, y);
+        }
+
+        internal static void HideTooltip()
+        {
+            if (_tipRoot != null)
+                _tipRoot.gameObject.SetActive(false);
+        }
+    }
+
+    internal sealed class PhoneTip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    {
+        public string Text;
+
+        public void OnPointerEnter(PointerEventData eventData)
+        {
+            PhoneUi.ShowTooltip(Text, transform as RectTransform);
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            PhoneUi.HideTooltip();
+        }
+
+        private void OnDisable()
+        {
+            PhoneUi.HideTooltip();
         }
     }
 }

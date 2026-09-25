@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Crispberry_PiPhone
@@ -23,6 +24,36 @@ namespace Crispberry_PiPhone
         private Button _dndBtn;
         private Button _ringerBtn;
         private Button _playBtn;
+        private bool _placing;
+
+        public static bool Placing
+        {
+            get { return _instance != null && _instance._placing; }
+        }
+
+        public static void TogglePlacement()
+        {
+            Ensure();
+            if (_instance._placing)
+            {
+                _instance.EndPlacement();
+                PhoneMenu.RefreshShade();
+                return;
+            }
+            _instance._placing = true;
+            _instance._call = false;
+            _instance._textId = string.Empty;
+            _instance._banner.gameObject.SetActive(true);
+            _instance._title.text = "Incoming call";
+            _instance._sub.text = "Drag to place alerts";
+            _instance._keys.text = "Press Alert place again when it looks right";
+            _instance.ApplyPos();
+            _instance.PaintTools();
+            _instance.SetPlaceSort(true);
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            PhoneMenu.RefreshShade();
+        }
 
         public static void Ensure()
         {
@@ -80,6 +111,11 @@ namespace Crispberry_PiPhone
         public static void Sync()
         {
             Ensure();
+            if (_instance._placing && !CallService.IsBusy)
+            {
+                _instance._banner.gameObject.SetActive(true);
+                return;
+            }
             if (CallService.State == CallService.Phase.Incoming)
             {
                 if (!PhoneMenu.IsOpen)
@@ -151,6 +187,8 @@ namespace Crispberry_PiPhone
             _banner.pivot = new Vector2(0.5f, 0f);
             _banner.anchoredPosition = new Vector2(0f, 28f);
             _banner.sizeDelta = new Vector2(440f, 168f);
+            ApplyPos();
+            _banner.gameObject.AddComponent<AlertDrag>();
             PhoneUi.AddVertical(_banner.gameObject, 6f, new RectOffset(14, 14, 10, 10));
             _title = PhoneUi.CreateLabel(_banner, "T", string.Empty, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
             PhoneUi.Size(_title.gameObject, 22f);
@@ -196,10 +234,41 @@ namespace Crispberry_PiPhone
             _banner.gameObject.SetActive(false);
         }
 
+        private void ApplyPos()
+        {
+            if (_banner == null)
+                return;
+            _banner.anchoredPosition = new Vector2(PhoneTheme.AlertX, PhoneTheme.AlertY);
+        }
+
+        internal static void Nudge(Vector2 delta)
+        {
+            if (_instance == null || _instance._banner == null || !_instance._placing)
+                return;
+            PhoneTheme.AlertX += delta.x;
+            PhoneTheme.AlertY += delta.y;
+            _instance.ApplyPos();
+        }
+
+        private void EndPlacement()
+        {
+            _placing = false;
+            SetPlaceSort(false);
+            PhoneTheme.Save();
+            if (!_call && string.IsNullOrEmpty(_textId))
+                _banner.gameObject.SetActive(false);
+            else
+                Paint();
+        }
+
         private void Paint()
         {
             if (_banner == null)
                 return;
+            if (_placing && !CallService.IsBusy)
+                return;
+            _placing = false;
+            SetPlaceSort(false);
             if (_call)
             {
                 if (_textId == "__active")
@@ -222,7 +291,15 @@ namespace Crispberry_PiPhone
                 _keys.text = Plugin.FormatAlertKeys(true) + (PhoneTheme.DoNotDisturb ? "  ·  DND" : string.Empty);
             }
             _banner.gameObject.SetActive(true);
+            ApplyPos();
             PaintTools();
+        }
+
+        private void SetPlaceSort(bool placing)
+        {
+            var canvas = GetComponent<Canvas>();
+            if (canvas != null)
+                canvas.sortingOrder = placing ? 28100 : 27950;
         }
 
         private static Sprite RingerIcon()
@@ -255,6 +332,8 @@ namespace Crispberry_PiPhone
 
         private void Accept()
         {
+            if (_placing)
+                return;
             if (_call)
             {
                 if (_textId == "__active")
@@ -277,6 +356,8 @@ namespace Crispberry_PiPhone
 
         private void Dismiss()
         {
+            if (_placing)
+                return;
             if (_call)
             {
                 if (_textId == "__active" || CallService.IsOnCall)
@@ -287,6 +368,28 @@ namespace Crispberry_PiPhone
             else
                 PhoneNotify.ClearLastText();
             Hide();
+        }
+    }
+
+    internal class AlertDrag : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+    {
+        public void OnBeginDrag(PointerEventData eventData) { }
+
+        public void OnDrag(PointerEventData eventData)
+        {
+            if (!AlertHud.Placing)
+                return;
+            float scale = 1f;
+            var canvas = GetComponentInParent<Canvas>();
+            if (canvas != null && canvas.scaleFactor > 0.01f)
+                scale = canvas.scaleFactor;
+            AlertHud.Nudge(eventData.delta / scale);
+        }
+
+        public void OnEndDrag(PointerEventData eventData)
+        {
+            if (AlertHud.Placing)
+                PhoneTheme.Save();
         }
     }
 }

@@ -668,6 +668,7 @@ namespace Crispberry_PiPhone
                     Plugin.SetShowPauseMenuButton(!Plugin.GetShowPauseMenuButton());
                     ShowControls();
                 }, new Vector2(280f, 40f));
+                PhoneUi.CreateButton(content, "Place closed-phone alerts", () => AlertHud.TogglePlacement(), new Vector2(280f, 40f));
 
                 var hint = PhoneUi.CreateLabel(content, "Hint", Plugin.CapturingHotkey
                     ? "Press a key. Hold Ctrl, Alt, or Shift for Open phone. Esc cancels."

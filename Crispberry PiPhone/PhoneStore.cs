@@ -1101,12 +1101,10 @@ namespace Crispberry_PiPhone
                 if (string.IsNullOrEmpty(dir))
                     return;
                 Directory.CreateDirectory(dir);
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "explorer.exe",
-                    Arguments = dir,
-                    UseShellExecute = true
-                });
+                string full = Path.GetFullPath(dir);
+                if (!full.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+                    full += Path.DirectorySeparatorChar;
+                Application.OpenURL(new Uri(full).AbsoluteUri);
             }
             catch (Exception ex)
             {
@@ -1120,16 +1118,6 @@ namespace Crispberry_PiPhone
             {
                 if (string.IsNullOrEmpty(path))
                     return;
-                if (File.Exists(path))
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = "/select,\"" + path + "\"",
-                        UseShellExecute = true
-                    });
-                    return;
-                }
                 OpenFolder(Path.GetDirectoryName(path));
             }
             catch (Exception ex)

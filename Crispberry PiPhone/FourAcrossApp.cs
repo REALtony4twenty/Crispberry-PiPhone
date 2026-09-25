@@ -10,7 +10,7 @@ using PhotonPlayer = Photon.Realtime.Player;
 
 namespace Crispberry_PiPhone
 {
-    internal static class Connect4App
+    internal static class FourAcrossApp
     {
         private const int Cols = 7;
         private const int Rows = 6;

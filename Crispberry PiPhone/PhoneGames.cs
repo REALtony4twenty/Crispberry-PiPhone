@@ -11,11 +11,11 @@ namespace Crispberry_PiPhone
         internal static bool TryGoBack()
         {
             return Game2048App.TryGoBack()
-                || MinesweeperApp.TryGoBack()
-                || SimonApp.TryGoBack()
-                || TetrisApp.TryGoBack()
-                || BreakoutApp.TryGoBack()
-                || Connect4App.TryGoBack()
+                || MinesApp.TryGoBack()
+                || EchoApp.TryGoBack()
+                || StackerApp.TryGoBack()
+                || BrickBreakApp.TryGoBack()
+                || FourAcrossApp.TryGoBack()
                 || SudokuApp.TryGoBack()
                 || SolitaireApp.TryGoBack();
         }

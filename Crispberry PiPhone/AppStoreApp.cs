@@ -273,8 +273,19 @@ namespace Crispberry_PiPhone
                 _host.SetTitle(app.DisplayName ?? "App");
                 PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", ShowList, new Vector2(36f, 32f));
 
+                var pageScroll = PhoneUi.CreateScrollView(_host.Content, out var page);
+                var pageLe = pageScroll.gameObject.GetComponent<LayoutElement>() ?? pageScroll.gameObject.AddComponent<LayoutElement>();
+                pageLe.flexibleWidth = 1f;
+                pageLe.flexibleHeight = 1f;
+                pageLe.minHeight = 160f;
+                pageLe.minWidth = 0f;
+                PhoneUi.AddVertical(page.gameObject, 8f, new RectOffset(0, 0, 0, 12));
+                var pageFit = page.gameObject.AddComponent<ContentSizeFitter>();
+                pageFit.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+                pageFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
                 var head = new GameObject("Head", typeof(RectTransform));
-                head.transform.SetParent(_host.Content, false);
+                head.transform.SetParent(page, false);
                 PhoneUi.Size(head, 72f);
                 var row = PhoneUi.AddHorizontal(head, 10f);
                 row.childAlignment = TextAnchor.MiddleLeft;
@@ -330,18 +341,18 @@ namespace Crispberry_PiPhone
                 Sprite[] shots = app.Screenshots;
                 if (shots != null && shots.Length > 0)
                 {
-                    var strip = new GameObject("Shots", typeof(RectTransform));
-                    strip.transform.SetParent(_host.Content, false);
-                    PhoneUi.Size(strip, 150f);
-                    var shotRow = PhoneUi.AddHorizontal(strip, 8f);
+                    var gallery = PhoneUi.CreateHorizontalScroll(page, out var strip);
+                    PhoneUi.Size(gallery.gameObject, 150f);
+                    var shotRow = PhoneUi.AddHorizontal(strip.gameObject, 8f);
                     shotRow.childForceExpandWidth = false;
+                    shotRow.childControlWidth = true;
                     shotRow.childAlignment = TextAnchor.MiddleLeft;
                     shotRow.padding = new RectOffset(4, 4, 4, 4);
                     for (int i = 0; i < shots.Length; i++)
                     {
                         if (shots[i] == null)
                             continue;
-                        var frame = PhoneUi.CreateImage(strip.transform, "Shot", PhoneUi.Rounded(12), PhoneUi.SurfaceAlt);
+                        var frame = PhoneUi.CreateImage(strip, "Shot", PhoneUi.Rounded(12), PhoneUi.SurfaceAlt);
                         PhoneUi.Size(frame.gameObject, 120f, 140f);
                         var art = PhoneUi.CreateImage(frame, "Art", shots[i], Color.white);
                         PhoneUi.Stretch(art, 4f, 4f);
@@ -353,10 +364,17 @@ namespace Crispberry_PiPhone
                 }
 
                 string body = string.IsNullOrEmpty(app.Description) ? "No description yet." : app.Description;
-                var desc = PhoneUi.CreateLabel(_host.Content, "Desc", body, 15f, FontStyles.Normal, TextAlignmentOptions.TopLeft);
+                var desc = PhoneUi.CreateLabel(page, "Desc", body, 15f, FontStyles.Normal, TextAlignmentOptions.TopLeft);
                 PhoneUi.Wrap(desc);
                 desc.color = PhoneUi.Text;
-                PhoneUi.Size(desc.gameObject, 96f);
+                var descLe = desc.gameObject.GetComponent<LayoutElement>() ?? desc.gameObject.AddComponent<LayoutElement>();
+                descLe.minWidth = 0f;
+                descLe.preferredWidth = 0f;
+                descLe.flexibleWidth = 1f;
+                descLe.minHeight = 40f;
+                var descFit = desc.gameObject.AddComponent<ContentSizeFitter>();
+                descFit.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+                descFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             }
 
             private static string Publisher(PiPhoneApp app)

@@ -18,6 +18,9 @@ namespace Crispberry_PiPhone
         internal const string RotateId = "pip.shade.rotate";
         internal const string HomeId = "pip.shade.home";
         internal const string NavId = "pip.shade.nav";
+        internal const string SettingsId = "pip.shade.settings";
+        internal const string CastId = "pip.shade.cast";
+        internal const string AlertPlaceId = "pip.shade.alertpos";
 
         internal const float Chip = 36f;
         internal const float MediaChip = 32f;
@@ -153,30 +156,54 @@ namespace Crispberry_PiPhone
             return _uninstallIcon;
         }
 
+        internal static int LastRows = 1;
+
         internal static void DrawTiles(Transform parent)
         {
             Sort();
-            var row = new GameObject("Tiles", typeof(RectTransform));
-            row.transform.SetParent(parent, false);
-            PhoneUi.AddHorizontal(row, 6f);
-            var h = row.GetComponent<HorizontalLayoutGroup>();
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = false;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
+            float limit = PhoneMenu.ToolbarInnerWidth();
+            if (limit < Chip + 8f)
+                limit = Chip + 8f;
+            var wrap = new GameObject("Tiles", typeof(RectTransform));
+            wrap.transform.SetParent(parent, false);
+            var column = PhoneUi.AddVertical(wrap, 6f, new RectOffset(0, 0, 0, 0));
+            column.childAlignment = TextAnchor.UpperLeft;
+            column.childForceExpandWidth = true;
+            column.childForceExpandHeight = false;
+            Transform row = null;
+            float x = 0f;
             int shown = 0;
+            int rows = 0;
             for (int i = 0; i < Buttons.Count; i++)
             {
                 PiPhoneShadeButton b = Buttons[i];
                 if (!Visible(b))
                     continue;
-                DrawChip(row.transform, b);
+                float w = b.UseText ? 76f : Chip;
+                if (row == null || (x > 0f && x + w > limit))
+                {
+                    var rowGo = new GameObject("Row", typeof(RectTransform));
+                    rowGo.transform.SetParent(wrap.transform, false);
+                    PhoneUi.AddHorizontal(rowGo, 6f);
+                    var h = rowGo.GetComponent<HorizontalLayoutGroup>();
+                    h.childForceExpandWidth = false;
+                    h.childForceExpandHeight = false;
+                    h.childAlignment = TextAnchor.MiddleLeft;
+                    h.childControlWidth = true;
+                    h.childControlHeight = true;
+                    PhoneUi.Size(rowGo, Chip + 2f);
+                    row = rowGo.transform;
+                    x = 0f;
+                    rows++;
+                }
+                DrawChip(row, b);
+                x += w + 6f;
                 shown++;
             }
-            PhoneUi.Size(row, Chip + 2f);
+            LastRows = Mathf.Max(1, rows);
+            PhoneUi.Size(wrap, LastRows * (Chip + 2f) + Mathf.Max(0, LastRows - 1) * 6f);
             if (shown == 0)
-                PhoneUi.Size(row, 8f);
+                PhoneUi.Size(wrap, 8f);
         }
 
         private static void DrawChip(Transform parent, PiPhoneShadeButton button)
@@ -199,7 +226,9 @@ namespace Crispberry_PiPhone
                 glyph = button.Label;
             string id = button.Id;
             Vector2 size = button.UseText ? new Vector2(76f, Chip) : new Vector2(Chip, Chip);
-            PhoneUi.CreateIconChip(parent, glyph, icon, () => Click(id), lit, size);
+            Button chip = PhoneUi.CreateIconChip(parent, glyph, icon, () => Click(id), lit, size);
+            string tip = string.IsNullOrEmpty(button.Tooltip) ? button.Label : button.Tooltip;
+            PhoneUi.SetTooltip(chip.gameObject, tip);
         }
 
         private static void Click(string id)

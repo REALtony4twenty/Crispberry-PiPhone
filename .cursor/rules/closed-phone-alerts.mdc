@@ -1,0 +1,10 @@
+---
+description: Closed-phone banner look stays as-is. Public notify-while-closed API is still not open.
+alwaysApply: true
+---
+
+# Closed-phone alerts
+
+Do not restyle the closed-phone banner. Andrew does not like how it looks and will change it later. Drag-to-place is already in. Keep the same chrome.
+
+`PiPhoneApi.Notify` still only posts inside the phone. Do not add a public closed-phone alert API until he asks.

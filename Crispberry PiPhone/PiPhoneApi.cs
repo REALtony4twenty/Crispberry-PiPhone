@@ -51,10 +51,33 @@ namespace Crispberry_PiPhone
     /// files in <see cref="AlertsFolder"/> for custom ringtones/text/app alerts. Players
     /// can always reset an app or contact back to the Settings defaults.
     ///
+    /// Startup and power: <see cref="SetStartup"/> runs once the first time the phone
+    /// opens each launch. <see cref="SetPowerOn"/> / <see cref="SetPowerOff"/> cover
+    /// later power cycles. <see cref="PiPhoneApp.BuildLoading"/> plus
+    /// <see cref="PiPhoneApp.LoadingSeconds"/> cover one app opening. Each stage is a
+    /// rectangle and a duration. Parent pictures, GIFs, video, and audio yourself.
+    /// <see cref="FinishStage"/> ends the wait early. <see cref="PhoneUi.CreateHorizontalScroll"/>
+    /// is a left-to-right flick gallery that stays inside the phone width.
+    ///
+    /// Open with data: <see cref="OpenApp(string, object)"/> passes a payload (a thread id,
+    /// an item, anything). Read it from <see cref="IPiPhoneHost.Payload"/> inside <see cref="PiPhoneApp.OnOpen"/>.
+    /// <see cref="PiPhoneApp.Tick"/> runs every frame even while the phone is closed.
+    /// <see cref="SetStatusIcon"/> puts a small icon just left of the battery. Use your plugin GUID in the id.
+    ///
+    /// Hover text: <see cref="PiPhoneApp.Tooltip"/> on the home, dock, and All apps icon.
+    /// Empty falls back to <see cref="PiPhoneApp.Description"/>. <see cref="PhoneUi.SetTooltip"/>
+    /// sets hover text on any button or icon. Shade chips use
+    /// <see cref="PiPhoneShadeButton.Tooltip"/> (or <see cref="PiPhoneShadeButton.Label"/>).
+    /// Nav icons use <see cref="PiPhoneNavButton.Tooltip"/>.
+    ///
     /// Presentation: set <see cref="PiPhoneApp.Landscape"/> (or <see cref="PiPhoneApp.Fullscreen"/>,
     /// kept as an alias) so the phone turns on its side. The bezel keeps the same
     /// 420×860 shape, swapped to 860×420, and uses the landscape size slider — it does
-    /// not stretch to fill the monitor. <see cref="PiPhoneApp.Immersive"/> hides the
+    /// not stretch to fill the monitor. <see cref="SetPhoneScale"/>, <see cref="SetPhonePos"/>,
+    /// and <see cref="SetPhoneOrientation"/> remember the player's size, position, and
+    /// orientation on the first call. <see cref="RestorePhonePlacement"/> puts that
+    /// snapshot back. Those overrides are not written into the player's saved settings.
+    /// <see cref="PiPhoneApp.Immersive"/> hides the
     /// in-app title bar. Players can also rotate any time (shade Wide/Tall or the
     /// landscape keybind); that pins landscape until they rotate back or close the
     /// phone. Status bar and nav bar float over the app. The nav bar does not reserve
@@ -82,7 +105,8 @@ namespace Crispberry_PiPhone
     ///
     /// Nav bar: <see cref="RegisterNavButton"/> adds an icon to the right of Rotate.
     /// Back, Home, All apps, and Rotate stay first. Use your plugin GUID as the id prefix.
-    /// If that row would run off the side of the screen, the bar stacks the icons upward.
+    /// If that row would run off the side of the screen, the icons wrap onto another row.
+    /// On the side edges, a column that would leave the screen gains another column.
     /// Quick settings has a Navigation chip that hides and shows the bar.
     /// Material icons follow the filled or outline choice in Look. Full-color pictures
     /// (emoji, emote scouts) stay untinted.
@@ -90,6 +114,12 @@ namespace Crispberry_PiPhone
     /// Dialer numbers: <see cref="RegisterNumber"/> lets a mod handle a digit string
     /// (like PiPhone's 911 rescue). Return true from <see cref="PiPhoneNumber.OnCall"/>
     /// if you handled it.
+    ///
+    /// Screen cast: <see cref="RegisterCastDevice"/> adds a screen the cast chip can use.
+    /// Built-in screens are the airport flight boards under Map. One phone owns a
+    /// screen at a time. Other players in the room see that phone on the screen.
+    /// The picture keeps the phone's aspect unless the open app sets
+    /// <see cref="PiPhoneApp.CastAspectWidth"/> or calls <see cref="SetCastAspect"/>.
     ///
     /// Networking: texts/calls use Photon RaiseEvent byte 185 with magic
     /// <see cref="PluginGuid"/>. Pick a different byte if you raise your own events.
@@ -150,6 +180,8 @@ namespace Crispberry_PiPhone
         }
 
         internal static readonly List<PiPhoneApp> Apps = new List<PiPhoneApp>(16);
+        internal static readonly List<PiPhoneStatusSlot> StatusIcons = new List<PiPhoneStatusSlot>(4);
+        private static readonly HashSet<string> TickFailures = new HashSet<string>();
 
         public static event Action AppsChanged;
 
@@ -239,7 +271,78 @@ namespace Crispberry_PiPhone
 
         public static bool OpenApp(string id)
         {
-            return PhoneMenu.OpenApp(id);
+            return OpenApp(id, null);
+        }
+
+        /// <summary>
+        /// Open an installed app and hand it <paramref name="payload"/>.
+        /// The app reads it from <see cref="IPiPhoneHost.Payload"/> in <see cref="PiPhoneApp.OnOpen"/>.
+        /// A normal open from the home screen passes null.
+        /// </summary>
+        public static bool OpenApp(string id, object payload)
+        {
+            return PhoneMenu.OpenApp(id, payload);
+        }
+
+        /// <summary>
+        /// Show a small icon just left of the battery. Same id replaces the icon.
+        /// A null <paramref name="icon"/> clears it. The sprite is not tinted.
+        /// </summary>
+        public static void SetStatusIcon(string id, Sprite icon, Action onClick = null)
+        {
+            if (string.IsNullOrEmpty(id))
+                return;
+            if (icon == null)
+            {
+                ClearStatusIcon(id);
+                return;
+            }
+            for (int i = 0; i < StatusIcons.Count; i++)
+            {
+                if (StatusIcons[i] != null && StatusIcons[i].Id == id)
+                {
+                    StatusIcons[i].Icon = icon;
+                    StatusIcons[i].OnClick = onClick;
+                    PhoneMenu.RefreshStatusIcons();
+                    return;
+                }
+            }
+            StatusIcons.Add(new PiPhoneStatusSlot { Id = id, Icon = icon, OnClick = onClick });
+            PhoneMenu.RefreshStatusIcons();
+        }
+
+        /// <summary>Remove a status icon added with <see cref="SetStatusIcon"/>.</summary>
+        public static void ClearStatusIcon(string id)
+        {
+            if (string.IsNullOrEmpty(id))
+                return;
+            for (int i = StatusIcons.Count - 1; i >= 0; i--)
+            {
+                if (StatusIcons[i] != null && StatusIcons[i].Id == id)
+                    StatusIcons.RemoveAt(i);
+            }
+            PhoneMenu.RefreshStatusIcons();
+        }
+
+        internal static void TickApps()
+        {
+            for (int i = 0; i < Apps.Count; i++)
+            {
+                PiPhoneApp app = Apps[i];
+                if (app == null || app.Tick == null || string.IsNullOrEmpty(app.Id))
+                    continue;
+                if (TickFailures.Contains(app.Id))
+                    continue;
+                try
+                {
+                    app.Tick();
+                }
+                catch (Exception ex)
+                {
+                    TickFailures.Add(app.Id);
+                    Plugin.LogError("App '" + app.Id + "' tick failed: " + ex.Message);
+                }
+            }
         }
 
         public static bool IsLandscape
@@ -267,6 +370,215 @@ namespace Crispberry_PiPhone
         public static void SetFullscreen(bool fullscreen)
         {
             PhoneMenu.SetFullscreen(fullscreen);
+        }
+
+        /// <summary>
+        /// True after a mod has moved, resized, or rotated the phone.
+        /// <see cref="OriginalPhonePlacement"/> is the player's placement from before that change.
+        /// </summary>
+        public static bool HasPhonePlacementOverride
+        {
+            get { return _placementHeld; }
+        }
+
+        /// <summary>
+        /// The player's size, screen position, and orientation.
+        /// While <see cref="HasPhonePlacementOverride"/> is set, this is the snapshot from before the override.
+        /// </summary>
+        public static PiPhonePlacement OriginalPhonePlacement
+        {
+            get { return _placementHeld ? CopyPlacement(_originalPlacement) : CapturePhonePlacement(); }
+        }
+
+        /// <summary>Live size, position, and orientation.</summary>
+        public static PiPhonePlacement CurrentPhonePlacement
+        {
+            get { return CapturePhonePlacement(); }
+        }
+
+        /// <summary>Portrait size. The first call remembers the player's placement. Does not write their saved settings.</summary>
+        public static void SetPhoneScale(float value)
+        {
+            RememberPhonePlacement();
+            PhoneTheme.SetPhoneScale(value);
+        }
+
+        /// <summary>Landscape size. The first call remembers the player's placement. Does not write their saved settings.</summary>
+        public static void SetPhoneScaleLand(float value)
+        {
+            RememberPhonePlacement();
+            PhoneTheme.SetPhoneScaleLand(value);
+        }
+
+        /// <summary>Portrait position, in phone pixels from center. The first call remembers the player's placement.</summary>
+        public static void SetPhonePos(float x, float y)
+        {
+            RememberPhonePlacement();
+            PhoneTheme.SetPhonePos(x, y);
+            PhoneMenu.ApplyPlacement();
+        }
+
+        /// <summary>Landscape position, in phone pixels from center. The first call remembers the player's placement.</summary>
+        public static void SetPhonePosLand(float x, float y)
+        {
+            RememberPhonePlacement();
+            PhoneTheme.SetPhonePosLand(x, y);
+            PhoneMenu.ApplyPlacement();
+        }
+
+        /// <summary>
+        /// Turn the phone tall or wide without saving that as the player's rotate choice.
+        /// The first call remembers the player's placement, including orientation.
+        /// While that override is active, closing the phone and opening apps leave this
+        /// orientation, size, and position in place. <see cref="RestorePhonePlacement"/> puts them back.
+        /// </summary>
+        public static void SetPhoneOrientation(bool landscape)
+        {
+            RememberPhonePlacement();
+            PhoneMenu.SetLandscape(landscape);
+        }
+
+        /// <summary>Put size, position, and orientation back to <see cref="OriginalPhonePlacement"/> and forget the snapshot.</summary>
+        public static void RestorePhonePlacement()
+        {
+            if (!_placementHeld)
+                return;
+            PiPhonePlacement original = _originalPlacement;
+            _placementHeld = false;
+            _originalPlacement = null;
+            PhoneTheme.HoldSavedPlacement = false;
+            PhoneTheme.PhoneScale = Mathf.Clamp(original.Scale, 0.55f, 1.35f);
+            PhoneTheme.PhoneScaleLand = Mathf.Clamp(original.ScaleLand, 0.55f, 1.8f);
+            PhoneTheme.PhonePosX = original.X;
+            PhoneTheme.PhonePosY = original.Y;
+            PhoneTheme.PhonePosLandX = original.LandX;
+            PhoneTheme.PhonePosLandY = original.LandY;
+            PhoneTheme.Save();
+            if (original.OrientationPinned)
+                PhoneMenu.SetUserLandscape(original.Landscape);
+            else
+                PhoneMenu.SetLandscape(original.Landscape);
+            PhoneMenu.ApplyPlacement();
+        }
+
+        private static bool _placementHeld;
+        private static PiPhonePlacement _originalPlacement;
+
+        private static void RememberPhonePlacement()
+        {
+            if (_placementHeld)
+                return;
+            _originalPlacement = CapturePhonePlacement();
+            _placementHeld = true;
+            PhoneTheme.HoldSavedPlacement = true;
+        }
+
+        private static PiPhonePlacement CapturePhonePlacement()
+        {
+            return new PiPhonePlacement
+            {
+                Landscape = PhoneMenu.IsLandscape,
+                OrientationPinned = PhoneMenu.OrientationPinned,
+                Scale = PhoneTheme.PhoneScale,
+                ScaleLand = PhoneTheme.PhoneScaleLand,
+                X = PhoneTheme.PhonePosX,
+                Y = PhoneTheme.PhonePosY,
+                LandX = PhoneTheme.PhonePosLandX,
+                LandY = PhoneTheme.PhonePosLandY
+            };
+        }
+
+        private static PiPhonePlacement CopyPlacement(PiPhonePlacement source)
+        {
+            if (source == null)
+                return CapturePhonePlacement();
+            return new PiPhonePlacement
+            {
+                Landscape = source.Landscape,
+                OrientationPinned = source.OrientationPinned,
+                Scale = source.Scale,
+                ScaleLand = source.ScaleLand,
+                X = source.X,
+                Y = source.Y,
+                LandX = source.LandX,
+                LandY = source.LandY
+            };
+        }
+
+        /// <summary>
+        /// First time the phone opens each launch, this page covers the screen while the UI builds.
+        /// </summary>
+        public static void SetStartup(PiPhoneStage stage)
+        {
+            StartupStage = stage;
+        }
+
+        /// <summary>Played when the phone is turned on after <see cref="PowerOff"/>.</summary>
+        public static void SetPowerOn(PiPhoneStage stage)
+        {
+            PowerOnStage = stage;
+        }
+
+        /// <summary>Played when <see cref="PowerOff"/> runs while the phone is open.</summary>
+        public static void SetPowerOff(PiPhoneStage stage)
+        {
+            PowerOffStage = stage;
+        }
+
+        public static bool Powered = false;
+
+        internal static PiPhoneStage StartupStage;
+        internal static PiPhoneStage PowerOnStage;
+        internal static PiPhoneStage PowerOffStage;
+
+        /// <summary>Skip the rest of the current startup, power, or app loading wait.</summary>
+        public static void FinishStage()
+        {
+            PhoneMenu.FinishStage();
+        }
+
+        /// <summary>Turn the phone off. The next open stays dark until the side button is held.</summary>
+        public static void PowerOff()
+        {
+            PhoneMenu.PowerOff();
+        }
+
+        /// <summary>Turn the phone on. A side-button hold does this while the screen is dark. Plays HELLO unless <see cref="SetPowerOn"/> replaced it.</summary>
+        public static void PowerOn()
+        {
+            PhoneMenu.PowerOn();
+        }
+
+        /// <summary>
+        /// Add a screen the cast chip can target. <see cref="PiPhoneCastDevice.Find"/>
+        /// should return that object's transform in the current scene, or null.
+        /// The same id replaces an older entry.
+        /// </summary>
+        public static void RegisterCastDevice(PiPhoneCastDevice device)
+        {
+            PhoneCast.Register(device);
+        }
+
+        /// <summary>Remove a screen added with <see cref="RegisterCastDevice"/>.</summary>
+        public static void UnregisterCastDevice(string id)
+        {
+            PhoneCast.Unregister(id);
+        }
+
+        /// <summary>
+        /// Shape of the cast picture, as width and height (16 and 9, or 4 and 3).
+        /// The phone image stays unstretched inside that shape. Zero either value
+        /// to use the phone's own shape again. Also cleared when the open app closes.
+        /// </summary>
+        public static void SetCastAspect(float width, float height)
+        {
+            PhoneCast.SetAspect(width, height);
+        }
+
+        /// <summary>Cast uses the phone's aspect again, or the open app's <see cref="PiPhoneApp.CastAspectWidth"/> if that is set.</summary>
+        public static void ClearCastAspect()
+        {
+            PhoneCast.ClearAspect();
         }
 
         /// <summary>
@@ -1060,6 +1372,71 @@ namespace Crispberry_PiPhone
     }
 
     /// <summary>
+    /// One icon in the status row, just left of the battery.
+    /// </summary>
+    public sealed class PiPhoneStatusSlot
+    {
+        public string Id;
+        public Sprite Icon;
+        public Action OnClick;
+    }
+
+    /// <summary>
+    /// A timed full-phone page. Put pictures, GIFs, video, or audio under the rectangle
+    /// passed to <see cref="Build"/>. The phone does not decode that media.
+    /// </summary>
+    public sealed class PiPhoneStage
+    {
+        /// <summary>How long the page stays up. <see cref="PiPhoneApi.FinishStage"/> can end it sooner.</summary>
+        public float Seconds = 1.2f;
+
+        /// <summary>Optional. Parent your own UI to this rectangle.</summary>
+        public Action<RectTransform> Build;
+    }
+
+    /// <summary>
+    /// A world screen the phone can cast onto. Airport flight boards are already registered.
+    /// </summary>
+    public sealed class PiPhoneCastDevice
+    {
+        /// <summary>Unique id. Use your plugin GUID as the prefix.</summary>
+        public string Id;
+
+        /// <summary>Name shown in logs.</summary>
+        public string Name;
+
+        /// <summary>Return the live transform, or null when this scene does not have it.</summary>
+        public Func<Transform> Find;
+    }
+
+    /// <summary>
+    /// The player's phone size, screen position, and orientation.
+    /// <see cref="PiPhoneApi.OriginalPhonePlacement"/> is the copy taken before a mod moves the phone.
+    /// </summary>
+    public sealed class PiPhonePlacement
+    {
+        /// <summary>True when the phone is landscape.</summary>
+        public bool Landscape;
+
+        /// <summary>True when the player pinned portrait or landscape with the rotate control.</summary>
+        public bool OrientationPinned;
+
+        /// <summary>Portrait size. 1 is the default. Range 0.55–1.35.</summary>
+        public float Scale;
+
+        /// <summary>Landscape size. 1.2 is the default. Range 0.55–1.8.</summary>
+        public float ScaleLand;
+
+        /// <summary>Portrait position, pixels from the center of the screen.</summary>
+        public float X;
+        public float Y;
+
+        /// <summary>Landscape position, pixels from the center of the screen.</summary>
+        public float LandX;
+        public float LandY;
+    }
+
+    /// <summary>
     /// Descriptor other mods fill in and pass to <see cref="PiPhoneApi.RegisterApp"/>.
     /// </summary>
     public sealed class PiPhoneApp
@@ -1137,6 +1514,12 @@ namespace Crispberry_PiPhone
         /// <summary>Store page text. Built-in apps use this without screenshots.</summary>
         public string Description;
 
+        /// <summary>
+        /// Hover text on the home, dock, and All apps icon.
+        /// Empty uses <see cref="Description"/>.
+        /// </summary>
+        public string Tooltip;
+
         private readonly List<Sprite> _screenshots = new List<Sprite>();
 
         /// <summary>Pictures shown on the store page, in the order they were added. Clamped to 480px.</summary>
@@ -1191,6 +1574,16 @@ namespace Crispberry_PiPhone
         public bool Fullscreen;
 
         /// <summary>
+        /// Cast picture width, in ratio units (16 in 16:9). Zero uses the phone's shape.
+        /// Pair with <see cref="CastAspectHeight"/>. <see cref="PiPhoneApi.SetCastAspect"/>
+        /// overrides this while the app is open.
+        /// </summary>
+        public float CastAspectWidth;
+
+        /// <summary>Cast picture height, in ratio units (9 in 16:9). Zero uses the phone's shape.</summary>
+        public float CastAspectHeight;
+
+        /// <summary>
         /// If true (default), this app covers the wallpaper so the GIF can pause.
         /// Set false for transparent or overlay apps that should keep the wallpaper playing.
         /// </summary>
@@ -1204,6 +1597,12 @@ namespace Crispberry_PiPhone
         /// <see cref="OnOpen"/>. Set false if your app already has its own look.
         /// </summary>
         public bool ApplyPhoneFonts = true;
+
+        /// <summary>Seconds to keep <see cref="BuildLoading"/> up while <see cref="OnOpen"/> runs behind it.</summary>
+        public float LoadingSeconds;
+
+        /// <summary>Optional loading page. Fill the rectangle with any media. Pair with <see cref="LoadingSeconds"/>.</summary>
+        public Action<RectTransform> BuildLoading;
 
         /// <summary>
         /// Called after the phone clears <see cref="IPiPhoneHost.Content"/>.
@@ -1222,13 +1621,18 @@ namespace Crispberry_PiPhone
         /// </summary>
         public Func<bool> OnBack;
 
-        /// <summary>
-        /// Optional. Called when the player (or your app) switches landscape
+        /// <summary>Called when the player (or your app) switches landscape
         /// while this app is open. Rebuild under <see cref="IPiPhoneHost.Content"/>
         /// with <see cref="PhoneUi.SplitIfLandscape"/> / <see cref="PhoneUi.ApplyMediaGrid"/>.
         /// Skip mid-game rebuilds that would reset progress.
         /// </summary>
         public Action OnOrientation;
+
+        /// <summary>
+        /// Called every frame, including while the phone is closed and this app is not on screen.
+        /// Keep it cheap. A thrown tick is logged once and then skipped until the game restarts.
+        /// </summary>
+        public Action Tick;
     }
 
     /// <summary>
@@ -1299,6 +1703,9 @@ namespace Crispberry_PiPhone
 
         public Action OnClick;
 
+        /// <summary>Hover text. Empty uses <see cref="Glyph"/>.</summary>
+        public string Tooltip;
+
         /// <summary>If set and this returns false, the button is left off the bar.</summary>
         public Func<bool> Available;
     }
@@ -1312,8 +1719,11 @@ namespace Crispberry_PiPhone
         /// <summary>Stable id, e.g. "mymod.torch".</summary>
         public string Id;
 
-        /// <summary>Settings row label.</summary>
+        /// <summary>Settings row label. Also the hover text unless <see cref="Tooltip"/> is set.</summary>
         public string Label;
+
+        /// <summary>Hover text. Empty uses <see cref="Label"/>.</summary>
+        public string Tooltip;
 
         /// <summary>Fallback letter if <see cref="Icon"/> / <see cref="IconFn"/> is null.</summary>
         public string Glyph;
@@ -1373,5 +1783,11 @@ namespace Crispberry_PiPhone
         bool IsPlayThrough { get; }
         PiPhonePlayThrough PlayThroughMode { get; }
         void SetWallpaperPaused(bool paused);
+
+        /// <summary>
+        /// Object passed to <see cref="PiPhoneApi.OpenApp(string, object)"/> for this open.
+        /// Null when the player opened the app from the home screen.
+        /// </summary>
+        object Payload { get; }
     }
 }

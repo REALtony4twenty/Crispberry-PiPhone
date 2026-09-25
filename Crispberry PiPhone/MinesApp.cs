@@ -4,7 +4,7 @@ using UnityEngine.UI;
 
 namespace Crispberry_PiPhone
 {
-    internal static class MinesweeperApp
+    internal static class MinesApp
     {
         private static Session _live;
 
@@ -22,6 +22,12 @@ namespace Crispberry_PiPhone
                 OnClose = () => { _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
+        }
+
+        internal static void Tick()
+        {
+            if (_live != null)
+                _live.TickClock();
         }
 
         internal static bool TryGoBack()
@@ -47,6 +53,9 @@ namespace Crispberry_PiPhone
             private bool _started;
             private bool _dead;
             private bool _won;
+            private bool _timed;
+            private bool _clockOn;
+            private float _elapsed;
             private int _revealed;
             private Image[] _cells;
             private TextMeshProUGUI[] _labels;
@@ -80,18 +89,45 @@ namespace Crispberry_PiPhone
                 _page = "menu";
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.mines", "Mines"));
-                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
-                var high = PhoneUi.CreateLabel(_host.Content, "High", "Best clears  " + PhoneTheme.HighMines, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
+                var modes = new GameObject("Modes", typeof(RectTransform));
+                modes.transform.SetParent(_host.Content, false);
+                PhoneUi.Size(modes, 44f);
+                var modeRow = PhoneUi.AddHorizontal(modes, 8f);
+                modeRow.childForceExpandWidth = false;
+                modeRow.childAlignment = TextAnchor.MiddleCenter;
+                PhoneUi.CreateButton(modes.transform, "Play", () => StartGame(false), new Vector2(120f, 40f));
+                PhoneUi.CreateButton(modes.transform, "Timed", () => StartGame(true), new Vector2(120f, 40f));
+                string best = "Best clears  " + PhoneTheme.HighMines;
+                if (PhoneTheme.HighMinesTime > 0.05f)
+                    best += "    Best time  " + Clock(PhoneTheme.HighMinesTime);
+                var high = PhoneUi.CreateLabel(_host.Content, "High", best, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
                 PhoneUi.Size(high.gameObject, 28f);
-                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Tap a cell to open it. Switch to Flag to mark mines. First tap is always safe.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
+                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Play has no clock. Timed starts on the first open. A lower time is better. First tap is always safe.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 hint.color = PhoneUi.TextDim;
                 PhoneUi.Wrap(hint);
                 PhoneUi.Size(hint.gameObject, 52f);
             }
 
-            private void StartGame()
+            internal void TickClock()
             {
+                if (!_timed || !_clockOn || _dead || _won || _page != "play")
+                    return;
+                _elapsed += Time.unscaledDeltaTime;
+                PaintStatus();
+            }
+
+            private static string Clock(float seconds)
+            {
+                int s = Mathf.Max(0, Mathf.FloorToInt(seconds));
+                return (s / 60).ToString() + ":" + (s % 60).ToString("00");
+            }
+
+            private void StartGame(bool timed)
+            {
+                _timed = timed;
                 _tier = 0;
+                _clockOn = false;
+                _elapsed = 0f;
                 BeginRound();
             }
 
@@ -127,9 +163,9 @@ namespace Crispberry_PiPhone
                 Transform right;
                 PhoneGames.PlayLayout(_host, out left, out center, out right);
                 _overParent = left;
-                _status = PhoneGames.HudBar(left, MineCount + " mines   Lv " + (_tier + 1) + "    Best " + PhoneTheme.HighMines, BuildMenu);
+                _status = PhoneGames.HudBar(left, StatusLine(0), BuildMenu);
                 if (_dead || _won)
-                    PhoneGames.OverRow(left, _won ? (UnityEngine.Events.UnityAction)NextRound : StartGame, BuildMenu);
+                    PhoneGames.OverRow(left, _won && !_timed ? (UnityEngine.Events.UnityAction)NextRound : () => StartGame(_timed), BuildMenu);
                 float cell = PhoneGames.FitCell(Cols, Rows, 3f);
                 PhoneGames.Board(center, Cols, Rows, new Vector2(cell, cell), 3f, out _cells, out _labels, false);
                 for (int i = 0; i < _cells.Length; i++)
@@ -186,24 +222,45 @@ namespace Crispberry_PiPhone
                 if (_mine[i])
                 {
                     _dead = true;
+                    _clockOn = false;
                     RevealAll();
                     _host.ShowToast("Boom.");
                     if (_status != null)
-                        _status.text = "Boom.    Best " + PhoneTheme.HighMines;
-                    PhoneGames.OverRow(_overParent != null ? _overParent : _host.Content, StartGame, BuildMenu);
+                        _status.text = "Boom.    " + BestLabel();
+                    PhoneGames.OverRow(_overParent != null ? _overParent : _host.Content, () => StartGame(_timed), BuildMenu);
                     Draw();
                     return;
+                }
+                if (_timed && !_clockOn)
+                {
+                    _clockOn = true;
+                    _elapsed = 0f;
                 }
                 Flood(i);
                 if (_revealed >= Cols * Rows - MineCount)
                 {
                     _won = true;
-                    int best = PhoneTheme.HighMines + 1;
-                    PhoneGames.Remember(ref PhoneTheme.HighMines, best, _host);
-                    if (_status != null)
-                        _status.text = "Cleared!  Lv " + (_tier + 2) + " next    Best " + PhoneTheme.HighMines;
-                    _host.ShowToast("Cleared. Next board has more mines.");
-                    PhoneGames.OverRow(_overParent != null ? _overParent : _host.Content, NextRound, BuildMenu);
+                    _clockOn = false;
+                    if (_timed)
+                    {
+                        if (PhoneTheme.HighMinesTime <= 0.05f || _elapsed < PhoneTheme.HighMinesTime)
+                        {
+                            PhoneTheme.HighMinesTime = _elapsed;
+                            PhoneTheme.Save();
+                        }
+                        if (_status != null)
+                            _status.text = "Cleared in " + Clock(_elapsed) + "    Best " + Clock(PhoneTheme.HighMinesTime);
+                        _host.ShowToast("Cleared in " + Clock(_elapsed) + ".");
+                    }
+                    else
+                    {
+                        int best = PhoneTheme.HighMines + 1;
+                        PhoneGames.Remember(ref PhoneTheme.HighMines, best, _host);
+                        if (_status != null)
+                            _status.text = "Cleared!  Lv " + (_tier + 2) + " next    Best " + PhoneTheme.HighMines;
+                        _host.ShowToast("Cleared. Next board has more mines.");
+                    }
+                    PhoneGames.OverRow(_overParent != null ? _overParent : _host.Content, _timed ? (UnityEngine.Events.UnityAction)(() => StartGame(true)) : NextRound, BuildMenu);
                 }
                 Draw();
             }
@@ -297,7 +354,18 @@ namespace Crispberry_PiPhone
                     _open[i] = true;
             }
 
-            private void Draw()
+            private void PaintStatus()
+            {
+                PaintStatus(CountFlags());
+            }
+
+            private void PaintStatus(int flags)
+            {
+                if (_status != null && !_dead && !_won)
+                    _status.text = StatusLine(flags);
+            }
+
+            private int CountFlags()
             {
                 int flags = 0;
                 for (int i = 0; i < _flag.Length; i++)
@@ -305,8 +373,31 @@ namespace Crispberry_PiPhone
                     if (_flag[i])
                         flags++;
                 }
-                if (_status != null && !_dead && !_won)
-                    _status.text = Mathf.Max(0, MineCount - flags) + " mines    Best " + PhoneTheme.HighMines;
+                return flags;
+            }
+
+            private string StatusLine(int flags)
+            {
+                string line = Mathf.Max(0, MineCount - flags) + " mines";
+                if (_timed)
+                    line += "    " + Clock(_elapsed);
+                else
+                    line += "   Lv " + (_tier + 1);
+                line += "    " + BestLabel();
+                return line;
+            }
+
+            private string BestLabel()
+            {
+                if (_timed)
+                    return PhoneTheme.HighMinesTime > 0.05f ? "Best " + Clock(PhoneTheme.HighMinesTime) : "Best --";
+                return "Best " + PhoneTheme.HighMines;
+            }
+
+            private void Draw()
+            {
+                int flags = CountFlags();
+                PaintStatus(flags);
                 if (_cells == null)
                     return;
                 for (int i = 0; i < _cells.Length; i++)

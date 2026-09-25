@@ -26,6 +26,28 @@ namespace Crispberry_PiPhone
 
         private bool _visible;
         private bool _built;
+        private bool _booted;
+        private bool _openingStage;
+        private enum StageKind
+        {
+            Startup,
+            Hello,
+            Goodbye,
+            Plain
+        }
+        private string _pendingApp;
+        private object _queuedPayload;
+        private object _openPayload;
+        private RectTransform _statusCluster;
+        private RectTransform _statusIconRow;
+        private GameObject _stageRoot;
+        private GameObject _bootShell;
+        private RectTransform _stageHost;
+        private GameObject _offCover;
+        private TextMeshProUGUI _offBattery;
+        private Coroutine _batteryFlash;
+        private bool _stageDone;
+        private Coroutine _stageRoutine;
         private string _openAppId;
         private readonly List<string> _recents = new List<string>(8);
 
@@ -128,9 +150,40 @@ namespace Crispberry_PiPhone
             get { return _instance != null && _instance._landscape; }
         }
 
+        internal static bool OrientationPinned
+        {
+            get { return _instance != null && _instance._userPinned; }
+        }
+
         public static bool IsFullscreen
         {
             get { return _instance != null && _instance._fullscreen; }
+        }
+
+        internal static RectTransform BezelRt
+        {
+            get { return _instance != null ? _instance._bezel : null; }
+        }
+
+        internal static Canvas RootCanvas
+        {
+            get { return _instance != null ? _instance.GetComponent<Canvas>() : null; }
+        }
+
+        internal static PiPhoneApp OpenApp()
+        {
+            if (_instance == null || string.IsNullOrEmpty(_instance._openAppId))
+                return null;
+            PiPhoneApp app;
+            if (!PiPhoneApi.TryGetApp(_instance._openAppId, out app))
+                return null;
+            return app;
+        }
+
+        internal static float ToolbarInnerWidth()
+        {
+            float bezel = IsLandscape ? PhoneHeight : PhoneWidth;
+            return bezel - 60f;
         }
 
         internal static float InnerWidth
@@ -245,6 +298,11 @@ namespace Crispberry_PiPhone
             get { return _appContent; }
         }
 
+        public object Payload
+        {
+            get { return _openPayload; }
+        }
+
         public bool IsMasterClient
         {
             get
@@ -312,7 +370,14 @@ namespace Crispberry_PiPhone
             _toggleFrame = Time.frameCount;
             EnsureCreated();
             if (_instance._visible)
+            {
+                if (_instance._openingStage)
+                {
+                    _instance._stageDone = true;
+                    return;
+                }
                 _instance.CloseInternal();
+            }
             else if (!CanUsePhone())
                 Toast("You're unconscious.");
             else
@@ -351,15 +416,31 @@ namespace Crispberry_PiPhone
 
         public static bool OpenApp(string id)
         {
+            return OpenApp(id, null);
+        }
+
+        public static bool OpenApp(string id, object payload)
+        {
             if (!CanUsePhone())
             {
                 Toast("You're unconscious.");
                 return false;
             }
             EnsureCreated();
+            _instance._queuedPayload = payload;
             if (!_instance._visible)
                 _instance.OpenInternal();
-            return _instance.OpenAppInternal(id);
+            if (_instance._stageRoutine != null)
+            {
+                _instance._pendingApp = id;
+                return true;
+            }
+            if (!PiPhoneApi.Powered)
+            {
+                _instance._pendingApp = id;
+                return true;
+            }
+            return _instance.OpenAppInternal(id, true);
         }
 
         public static void OnAppsChanged()
@@ -418,6 +499,7 @@ namespace Crispberry_PiPhone
                 if (_instance._visible)
                     _instance.CloseInternal();
                 CallService.HangUp();
+                PhoneCast.OnSceneLoaded();
             }
             catch
             {
@@ -552,16 +634,65 @@ namespace Crispberry_PiPhone
 
         private void OpenInternal()
         {
+            if (_stageRoutine != null)
+                return;
+            if (!PiPhoneApi.Powered)
+            {
+                OpenOff();
+                return;
+            }
+            if (!_booted)
+            {
+                _booted = true;
+                ArmOpen();
+                _stageRoutine = StartCoroutine(OpenWithStage(PiPhoneApi.StartupStage, StageKind.Startup));
+                return;
+            }
+            OpenReady();
+        }
+
+        private void OpenOff()
+        {
+            ArmOpen();
             if (!_built)
                 Build();
-            _visible = true;
-            gameObject.SetActive(true);
+            ApplyPresentation();
+            ShowOffCover();
+        }
+
+        private void ArmOpen()
+        {
+            if (!gameObject.activeSelf)
+                gameObject.SetActive(true);
+            PhoneUi.CreateOverlayCanvas(gameObject, SortOrder);
+            Canvas.ForceUpdateCanvases();
+            if (_visible)
+                return;
             _prevLock = Cursor.lockState;
             _prevCursorVisible = Cursor.visible;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             ApplyInputBlock(true);
             CaptureLook();
+            _visible = true;
+        }
+
+        private void OpenReady()
+        {
+            if (!_built)
+                Build();
+            bool arm = !_visible;
+            _visible = true;
+            gameObject.SetActive(true);
+            if (arm)
+            {
+                _prevLock = Cursor.lockState;
+                _prevCursorVisible = Cursor.visible;
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                ApplyInputBlock(true);
+                CaptureLook();
+            }
             _navPeek = false;
             _lastLand = !_landscape;
             ApplyPresentation();
@@ -574,6 +705,288 @@ namespace Crispberry_PiPhone
             EnsureEmojiWarm();
             SyncCallLayer();
             AlertHud.Sync();
+            HideOffCover();
+            if (!string.IsNullOrEmpty(_pendingApp))
+            {
+                string pending = _pendingApp;
+                _pendingApp = null;
+                OpenAppInternal(pending, true);
+            }
+        }
+
+        private IEnumerator OpenWithStage(PiPhoneStage stage, StageKind kind)
+        {
+            _openingStage = true;
+            if (!_built)
+            {
+                Canvas.ForceUpdateCanvases();
+                ShowBootShell();
+                ShowStage(stage, kind);
+                yield return null;
+                if (!_visible)
+                {
+                    _openingStage = false;
+                    _stageRoutine = null;
+                    yield break;
+                }
+                try
+                {
+                    Build();
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogError("Phone build failed: " + ex.Message);
+                }
+                MoveStageToScreen();
+                HideBootShell();
+            }
+            else
+            {
+                ApplyPresentation();
+                ShowStage(stage, kind);
+                yield return null;
+            }
+            HideOffCover();
+            float seconds = stage != null && stage.Seconds > 0.05f ? stage.Seconds : 1.2f;
+            float t = 0f;
+            _stageDone = false;
+            while (t < seconds && !_stageDone && _visible)
+            {
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            HideStage();
+            HideBootShell();
+            _stageRoutine = null;
+            _openingStage = false;
+            if (_visible)
+                OpenReady();
+        }
+
+        private void MoveStageToScreen()
+        {
+            if (_stageRoot == null || _bezel == null)
+                return;
+            Transform screen = _bezel.Find("Screen");
+            if (screen == null)
+                return;
+            _stageRoot.transform.SetParent(screen, false);
+            PhoneUi.Stretch(_stageRoot.GetComponent<RectTransform>(), 0f, 0f);
+            _stageRoot.transform.SetAsLastSibling();
+        }
+
+        public static void FinishStage()
+        {
+            if (_instance != null)
+                _instance._stageDone = true;
+        }
+
+        public static void PowerOn()
+        {
+            EnsureCreated();
+            if (PiPhoneApi.Powered)
+            {
+                if (!_instance._visible)
+                    _instance.OpenInternal();
+                return;
+            }
+            if (_instance._stageRoutine != null)
+                return;
+            PiPhoneApi.Powered = true;
+            _instance._booted = true;
+            if (!_instance._visible)
+                _instance.ArmOpen();
+            _instance._stageRoutine = _instance.StartCoroutine(_instance.OpenWithStage(PiPhoneApi.PowerOnStage, StageKind.Hello));
+        }
+
+        public static void PowerOff()
+        {
+            EnsureCreated();
+            PhoneCast.ClosePicker();
+            PiPhoneApi.Powered = false;
+            if (_instance._stageRoutine != null)
+            {
+                _instance.StopCoroutine(_instance._stageRoutine);
+                _instance._stageRoutine = null;
+                _instance._openingStage = false;
+                _instance.HideStage();
+                _instance.HideBootShell();
+            }
+            if (_instance._visible)
+                _instance._stageRoutine = _instance.StartCoroutine(_instance.PowerOffRoutine());
+            else
+                _instance.gameObject.SetActive(false);
+        }
+
+        private IEnumerator PowerOffRoutine()
+        {
+            ShowStage(PiPhoneApi.PowerOffStage, StageKind.Goodbye);
+            float seconds = PiPhoneApi.PowerOffStage != null && PiPhoneApi.PowerOffStage.Seconds > 0.05f
+                ? PiPhoneApi.PowerOffStage.Seconds
+                : 1.2f;
+            float t = 0f;
+            _stageDone = false;
+            while (t < seconds && !_stageDone)
+            {
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            HideStage();
+            _stageRoutine = null;
+            CloseInternal(true);
+        }
+
+        private void ShowStage(PiPhoneStage stage, StageKind kind)
+        {
+            HideStage();
+            Transform parent = transform;
+            if (_bezel != null)
+            {
+                Transform screen = _bezel.Find("Screen");
+                if (screen != null)
+                    parent = screen;
+            }
+            else if (_bootShell != null)
+            {
+                Transform screen = _bootShell.transform.Find("Screen");
+                if (screen != null)
+                    parent = screen;
+            }
+            _stageRoot = PhoneUi.CreateImage(parent, "Stage", PhoneUi.White(), PhoneUi.Screen).gameObject;
+            PhoneUi.Stretch(_stageRoot.GetComponent<RectTransform>(), 0f, 0f);
+            var hostGo = new GameObject("Host", typeof(RectTransform));
+            hostGo.transform.SetParent(_stageRoot.transform, false);
+            _stageHost = hostGo.GetComponent<RectTransform>();
+            PhoneUi.Stretch(_stageHost, 0f, 0f);
+            if (stage != null && stage.Build != null)
+            {
+                try { stage.Build(_stageHost); }
+                catch (Exception ex) { Plugin.LogError("Stage failed: " + ex.Message); }
+            }
+            else if (kind == StageKind.Goodbye)
+                BuildSplash(_stageHost, PhoneLang.T("goodbye", "GOODBYE!"), 28f);
+            else if (kind == StageKind.Hello)
+                BuildSplash(_stageHost, PhoneLang.T("hello", "HELLO!"), 28f);
+            else if (kind == StageKind.Startup)
+                BuildDefaultBoot(_stageHost);
+            _stageRoot.transform.SetAsLastSibling();
+        }
+
+        private static void BuildDefaultBoot(RectTransform host)
+        {
+            BuildSplash(host, Plugin.OsVersionLabel, 18f);
+        }
+
+        private static void BuildSplash(RectTransform host, string line, float size)
+        {
+            var col = new GameObject("Boot", typeof(RectTransform));
+            col.transform.SetParent(host, false);
+            PhoneUi.Stretch(col.GetComponent<RectTransform>(), 24f, 24f);
+            var layout = PhoneUi.AddVertical(col, 12f, new RectOffset(12, 12, 40, 40));
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childForceExpandHeight = false;
+            Sprite logo = PhoneIcons.Logo();
+            if (logo != null)
+            {
+                var art = PhoneUi.CreateImage(col.transform, "Logo", logo, Color.white);
+                PhoneUi.Size(art.gameObject, 96f, 96f);
+                art.GetComponent<Image>().preserveAspect = true;
+            }
+            var label = PhoneUi.CreateLabel(col.transform, "Os", line ?? string.Empty, size, FontStyles.Bold, TextAlignmentOptions.Center);
+            PhoneUi.Size(label.gameObject, 36f);
+        }
+
+        private void BuildOffCover(RectTransform screen)
+        {
+            var cover = PhoneUi.CreateImage(screen, "OffCover", PhoneUi.White(), Color.black);
+            PhoneUi.Stretch(cover, 0f, 0f);
+            cover.GetComponent<Image>().raycastTarget = true;
+            _offCover = cover.gameObject;
+            _offBattery = PhoneUi.CreateLabel(cover, "Battery", string.Empty, 36f, FontStyles.Bold, TextAlignmentOptions.Center);
+            PhoneUi.Stretch(_offBattery.rectTransform, 24f, 24f);
+            _offBattery.gameObject.SetActive(false);
+            _offCover.SetActive(false);
+        }
+
+        private void ShowOffCover()
+        {
+            if (_offCover == null)
+                return;
+            if (_shadeRoot != null)
+                _shadeRoot.SetActive(false);
+            _offCover.SetActive(true);
+            _offCover.transform.SetAsLastSibling();
+            if (_offBattery != null)
+                _offBattery.gameObject.SetActive(false);
+        }
+
+        private void HideOffCover()
+        {
+            if (_batteryFlash != null)
+            {
+                StopCoroutine(_batteryFlash);
+                _batteryFlash = null;
+            }
+            if (_offCover != null)
+                _offCover.SetActive(false);
+        }
+
+        private void FlashBattery()
+        {
+            if (PiPhoneApi.Powered || _offBattery == null || _offCover == null || !_offCover.activeSelf)
+                return;
+            int pct = Mathf.Clamp(PiPhoneApi.BatteryPercent, 0, 100);
+            string charge = PiPhoneApi.BatteryCharging ? "+" : string.Empty;
+            _offBattery.text = PhoneLang.T("battery", "Battery") + "  " + pct + "%" + charge;
+            _offBattery.gameObject.SetActive(true);
+            if (_batteryFlash != null)
+                StopCoroutine(_batteryFlash);
+            _batteryFlash = StartCoroutine(HideBatteryFlash());
+        }
+
+        private IEnumerator HideBatteryFlash()
+        {
+            yield return new WaitForSecondsRealtime(2f);
+            if (_offBattery != null)
+                _offBattery.gameObject.SetActive(false);
+            _batteryFlash = null;
+        }
+
+        private void HideStage()
+        {
+            if (_stageRoot != null)
+                UObject.Destroy(_stageRoot);
+            _stageRoot = null;
+            _stageHost = null;
+        }
+
+        private void ShowBootShell()
+        {
+            HideBootShell();
+            bool land = _landscape;
+            float scale = land
+                ? Mathf.Clamp(PhoneTheme.PhoneScaleLand, 0.55f, 1.8f)
+                : Mathf.Clamp(PhoneTheme.PhoneScale, 0.55f, 1.35f);
+            Vector2 size = land ? new Vector2(PhoneHeight, PhoneWidth) : new Vector2(PhoneWidth, PhoneHeight);
+            Vector2 pos = land
+                ? new Vector2(PhoneTheme.PhonePosLandX, PhoneTheme.PhonePosLandY)
+                : new Vector2(PhoneTheme.PhonePosX, PhoneTheme.PhonePosY);
+            var shell = PhoneUi.CreateImage(transform, "BootShell", PhoneUi.Rounded(42), PhoneUi.Bezel);
+            shell.anchorMin = shell.anchorMax = new Vector2(0.5f, 0.5f);
+            shell.pivot = new Vector2(0.5f, 0.5f);
+            shell.sizeDelta = size;
+            shell.anchoredPosition = pos;
+            shell.localScale = new Vector3(scale, scale, 1f);
+            var screen = PhoneUi.CreateImage(shell, "Screen", PhoneUi.Rounded(34), PhoneUi.Screen);
+            PhoneUi.Stretch(screen, 14f, 14f);
+            _bootShell = shell.gameObject;
+        }
+
+        private void HideBootShell()
+        {
+            if (_bootShell != null)
+                UObject.Destroy(_bootShell);
+            _bootShell = null;
         }
 
         private void OnEnable()
@@ -606,6 +1019,8 @@ namespace Crispberry_PiPhone
 
         private void OnDimmerClick()
         {
+            if (_openingStage)
+                return;
             if (EffectivePlayMode() != PiPhonePlayThrough.Off)
                 return;
             CloseInternal();
@@ -619,21 +1034,42 @@ namespace Crispberry_PiPhone
         private void CloseInternal(bool force)
         {
             if (!_visible)
+            {
+            if (_stageRoutine != null)
+            {
+                StopCoroutine(_stageRoutine);
+                _stageRoutine = null;
+                _openingStage = false;
+                HideStage();
+                HideBootShell();
+            }
+                gameObject.SetActive(false);
                 return;
+            }
             if (!force && (CallService.State == CallService.Phase.Incoming || CallService.State == CallService.Phase.Dialing))
             {
                 ShowToast("Answer, decline, or hang up first.");
                 return;
+            }
+            if (_stageRoutine != null)
+            {
+                StopCoroutine(_stageRoutine);
+                _stageRoutine = null;
+                _openingStage = false;
+                HideStage();
             }
             LeaveCurrentApp();
             CallVideo.DropToVoice();
             PhoneVideo.StopAll();
             VoiceIo.StopPlay();
             PhoneSounds.StopPreview();
-            _userPinned = false;
-            _userLandscape = false;
-            _landscape = false;
-            _fullscreen = false;
+            if (!PiPhoneApi.HasPhonePlacementOverride)
+            {
+                _userPinned = false;
+                _userLandscape = false;
+                _landscape = false;
+                _fullscreen = false;
+            }
             _navPeek = false;
             _wallpaperForcedPause = false;
             _playMode = PiPhonePlayThrough.Off;
@@ -649,6 +1085,9 @@ namespace Crispberry_PiPhone
             Cursor.visible = _prevCursorVisible;
             gameObject.SetActive(false);
             AlertHud.Sync();
+            PhoneCast.ClosePicker();
+            if (!PiPhoneApi.Powered || force)
+                PhoneCast.Release();
         }
 
         private void OnDisable()
@@ -665,6 +1104,13 @@ namespace Crispberry_PiPhone
 
         private void HandleBack(bool dismissNav)
         {
+            if (!PiPhoneApi.Powered)
+            {
+                CloseInternal();
+                return;
+            }
+            if (PhoneCast.ClosePicker())
+                return;
             if (HoldCallScreen())
                 return;
             if (dismissNav && _navPeek && !NavPinnedByDock())
@@ -789,14 +1235,25 @@ namespace Crispberry_PiPhone
 
         private bool OpenAppInternal(string id)
         {
+            return OpenAppInternal(id, false);
+        }
+
+        private bool OpenAppInternal(string id, bool takePayload)
+        {
             PiPhoneApp app;
             if (!PiPhoneApi.TryGetApp(id, out app) || app == null)
                 return false;
+            object payload = null;
+            if (takePayload)
+            {
+                payload = _queuedPayload;
+                _queuedPayload = null;
+            }
             if (!PhoneStore.IsInstalled(id))
             {
                 ShowToast("Install it from Apps first.");
                 if (id != BuiltinApps.StoreId)
-                    return OpenAppInternal(BuiltinApps.StoreId);
+                    return OpenAppInternal(BuiltinApps.StoreId, false);
                 return false;
             }
 
@@ -811,10 +1268,50 @@ namespace Crispberry_PiPhone
 
             LeaveCurrentApp();
             _openAppId = app.Id;
+            _openPayload = payload;
             RememberRecent(app.Id);
             SetTitle(PhoneLang.AppName(app));
             ApplyAppPresentation(app);
             ClearContent();
+            if (app.BuildLoading != null || app.LoadingSeconds > 0.05f)
+            {
+                _stageRoutine = StartCoroutine(OpenBehindLoading(app));
+                return true;
+            }
+            FinishOpenApp(app);
+            return true;
+        }
+
+        private IEnumerator OpenBehindLoading(PiPhoneApp app)
+        {
+            PiPhoneStage stage = new PiPhoneStage
+            {
+                Seconds = app.LoadingSeconds > 0.05f ? app.LoadingSeconds : 0.6f,
+                Build = app.BuildLoading
+            };
+            ShowStage(stage, StageKind.Plain);
+            yield return null;
+            if (_openAppId != app.Id || !_visible)
+            {
+                HideStage();
+                _stageRoutine = null;
+                yield break;
+            }
+            FinishOpenApp(app);
+            float t = 0f;
+            _stageDone = false;
+            while (t < stage.Seconds && !_stageDone && _openAppId == app.Id)
+            {
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (_openAppId == app.Id)
+                HideStage();
+            _stageRoutine = null;
+        }
+
+        private void FinishOpenApp(PiPhoneApp app)
+        {
             try
             {
                 if (app.OnOpen != null)
@@ -830,7 +1327,8 @@ namespace Crispberry_PiPhone
             SyncPlayThrough();
             SyncBackgroundWork();
             ApplyChromeInsets();
-            return true;
+            if (_stageRoot != null)
+                _stageRoot.transform.SetAsLastSibling();
         }
 
         private void LeaveCurrentApp()
@@ -844,7 +1342,10 @@ namespace Crispberry_PiPhone
                 catch (Exception ex) { Plugin.LogError("App '" + _openAppId + "' OnClose: " + ex.Message); }
             }
             _openAppId = null;
+            _openPayload = null;
             _wallpaperForcedPause = false;
+            PhoneCast.ClearAspect();
+            HideStage();
             ResetAppPresentation();
             ClearContent();
         }
@@ -910,6 +1411,7 @@ namespace Crispberry_PiPhone
             BuildPunchHole(_bezel);
             BuildToast(screen);
             BuildCallLayer(screen);
+            BuildOffCover(screen);
             RaiseChrome();
             ApplyChrome();
             ApplyPlacement();
@@ -932,17 +1434,115 @@ namespace Crispberry_PiPhone
 
             _statusTime = PhoneUi.CreateLabel(bar, "Time", "12:00", 13f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
             _statusTime.rectTransform.anchorMin = new Vector2(0f, 0f);
-            _statusTime.rectTransform.anchorMax = new Vector2(0.68f, 1f);
+            _statusTime.rectTransform.anchorMax = new Vector2(1f, 1f);
             _statusTime.rectTransform.offsetMin = new Vector2(16f, 0f);
-            _statusTime.rectTransform.offsetMax = new Vector2(0f, 0f);
+            _statusTime.rectTransform.offsetMax = new Vector2(-16f, 0f);
             _statusTime.overflowMode = TextOverflowModes.Ellipsis;
 
-            _statusRight = PhoneUi.CreateLabel(bar, "Right", "LTE  84%", 13f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
-            _statusRight.rectTransform.anchorMin = new Vector2(0.68f, 0f);
-            _statusRight.rectTransform.anchorMax = new Vector2(1f, 1f);
-            _statusRight.rectTransform.offsetMin = Vector2.zero;
-            _statusRight.rectTransform.offsetMax = new Vector2(-16f, 0f);
+            var cluster = new GameObject("StatusRight", typeof(RectTransform));
+            cluster.transform.SetParent(bar, false);
+            _statusCluster = cluster.GetComponent<RectTransform>();
+            _statusCluster.anchorMin = new Vector2(1f, 0f);
+            _statusCluster.anchorMax = new Vector2(1f, 1f);
+            _statusCluster.pivot = new Vector2(1f, 0.5f);
+            _statusCluster.anchoredPosition = new Vector2(-8f, 0f);
+            var fit = cluster.AddComponent<ContentSizeFitter>();
+            fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fit.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+            var row = PhoneUi.AddHorizontal(cluster, 4f);
+            row.childAlignment = TextAnchor.MiddleRight;
+            row.childForceExpandWidth = false;
+            row.childForceExpandHeight = false;
+            row.padding = new RectOffset(0, 2, 0, 0);
+
+            var icons = new GameObject("Icons", typeof(RectTransform));
+            icons.transform.SetParent(cluster.transform, false);
+            _statusIconRow = icons.GetComponent<RectTransform>();
+            var iconRow = PhoneUi.AddHorizontal(icons, 3f);
+            iconRow.childAlignment = TextAnchor.MiddleRight;
+            iconRow.childForceExpandWidth = false;
+            iconRow.childForceExpandHeight = false;
+            var iconLe = icons.AddComponent<LayoutElement>();
+            iconLe.preferredHeight = 18f;
+            iconLe.flexibleWidth = 0f;
+
+            _statusRight = PhoneUi.CreateLabel(cluster.transform, "Right", "LTE  84%", 13f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
             _statusRight.color = PhoneUi.TextDim;
+            var textLe = _statusRight.gameObject.AddComponent<LayoutElement>();
+            textLe.preferredHeight = 32f;
+            textLe.flexibleWidth = 0f;
+            RefreshStatusIcons();
+        }
+
+        public static void RefreshStatusIcons()
+        {
+            if (_instance != null)
+                _instance.RebuildStatusIcons();
+        }
+
+        private void RebuildStatusIcons()
+        {
+            if (_statusIconRow == null)
+                return;
+            for (int i = _statusIconRow.childCount - 1; i >= 0; i--)
+                UObject.Destroy(_statusIconRow.GetChild(i).gameObject);
+            List<PiPhoneStatusSlot> slots = PiPhoneApi.StatusIcons;
+            bool any = false;
+            int shown = 0;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                PiPhoneStatusSlot slot = slots[i];
+                if (slot == null || slot.Icon == null)
+                    continue;
+                any = true;
+                shown++;
+                Action click = slot.OnClick;
+                var art = PhoneUi.CreateImage(_statusIconRow, "I", slot.Icon, Color.white);
+                PhoneUi.Size(art.gameObject, 18f, 18f);
+                var img = art.GetComponent<Image>();
+                img.preserveAspect = true;
+                if (click == null)
+                {
+                    img.raycastTarget = false;
+                    continue;
+                }
+                img.raycastTarget = true;
+                var btn = art.gameObject.AddComponent<Button>();
+                btn.transition = Selectable.Transition.None;
+                btn.onClick.AddListener(() =>
+                {
+                    try { click(); }
+                    catch (Exception ex) { Plugin.LogError("Status icon failed: " + ex.Message); }
+                });
+            }
+            _statusIconRow.gameObject.SetActive(any);
+            var iconLe = _statusIconRow.GetComponent<LayoutElement>();
+            if (iconLe != null)
+            {
+                iconLe.preferredWidth = shown > 0 ? shown * 18f + Mathf.Max(0, shown - 1) * 3f : 0f;
+                iconLe.minWidth = iconLe.preferredWidth;
+            }
+            FitStatusCluster();
+        }
+
+        private void FitStatusCluster()
+        {
+            if (_statusRight != null)
+            {
+                Vector2 pref = _statusRight.GetPreferredValues(_statusRight.text ?? string.Empty, 360f, 32f);
+                var le = _statusRight.GetComponent<LayoutElement>();
+                if (le != null)
+                {
+                    le.preferredWidth = Mathf.Ceil(Mathf.Max(24f, pref.x));
+                    le.minWidth = le.preferredWidth;
+                }
+            }
+            if (_statusTime != null && _statusCluster != null)
+            {
+                Canvas.ForceUpdateCanvases();
+                float gap = _statusCluster.rect.width > 1f ? _statusCluster.rect.width + 16f : 120f;
+                _statusTime.rectTransform.offsetMax = new Vector2(-gap, 0f);
+            }
         }
 
         public static void RefreshMusicBar()
@@ -1005,10 +1605,10 @@ namespace Crispberry_PiPhone
             _navGlyphs.Clear();
             for (int i = _navImg.transform.childCount - 1; i >= 0; i--)
                 UObject.DestroyImmediate(_navImg.transform.GetChild(i).gameObject);
-            CreateNavKey(_navImg.rectTransform, PhoneIcons.Material("arrow_back"), "<", NavBack, true);
-            CreateNavKey(_navImg.rectTransform, PhoneIcons.Material("home"), "○", NavHome, true);
-            CreateNavKey(_navImg.rectTransform, PhoneIcons.Material("apps"), "▢", NavDrawer, true);
-            _navRotate = CreateNavKey(_navImg.rectTransform, PhoneIcons.Material("screen_rotation"), "R", ToggleUserLandscape, true);
+            CreateNavKey(_navImg.rectTransform, PhoneIcons.Material("arrow_back"), "<", NavBack, true, "Back");
+            CreateNavKey(_navImg.rectTransform, PhoneIcons.Material("home"), "○", NavHome, true, "Home");
+            CreateNavKey(_navImg.rectTransform, PhoneIcons.Material("apps"), "▢", NavDrawer, true, "All apps");
+            _navRotate = CreateNavKey(_navImg.rectTransform, PhoneIcons.Material("screen_rotation"), "R", ToggleUserLandscape, true, "Rotate");
             var extras = new List<PiPhoneNavButton>(_navExtras);
             extras.Sort((a, b) =>
             {
@@ -1025,11 +1625,12 @@ namespace Crispberry_PiPhone
                     continue;
                 Sprite icon = extra.IconFn != null ? extra.IconFn() : extra.Icon;
                 Action click = extra.OnClick;
+                string tip = string.IsNullOrEmpty(extra.Tooltip) ? extra.Glyph : extra.Tooltip;
                 CreateNavKey(_navImg.rectTransform, icon, string.IsNullOrEmpty(extra.Glyph) ? "+" : extra.Glyph, () =>
                 {
                     if (click != null)
                         click();
-                }, extra.TintIcon);
+                }, extra.TintIcon, tip);
             }
             PaintNavKeys();
             ApplyChromeInsets();
@@ -1099,9 +1700,11 @@ namespace Crispberry_PiPhone
             ApplyChromeInsets();
         }
 
-        private Button CreateNavKey(Transform parent, Sprite icon, string fallback, UnityAction action, bool tintIcon)
+        private Button CreateNavKey(Transform parent, Sprite icon, string fallback, UnityAction action, bool tintIcon, string tip = null)
         {
             var btn = PhoneUi.CreateIconChip(parent, fallback, icon, action, false, new Vector2(40f, 32f));
+            if (!string.IsNullOrEmpty(tip))
+                PhoneUi.SetTooltip(btn.gameObject, tip);
             var le = btn.GetComponent<LayoutElement>();
             if (le != null)
             {
@@ -1222,7 +1825,6 @@ namespace Crispberry_PiPhone
                     n++;
             }
             float rowW = 16f + n * 40f + Mathf.Max(0, n - 1) * 6f;
-            float stackH = 12f + n * 32f + Mathf.Max(0, n - 1) * 6f;
             float w;
             float h;
             NavScreen(out w, out h);
@@ -1232,15 +1834,44 @@ namespace Crispberry_PiPhone
             bool side = edge != 0;
             float along = _navDocked && PhoneTheme.NavEdge != 0 ? 0f : PhoneTheme.NavHandleX;
             float halfW = w * 0.5f;
-            bool stack = side || (n > 1 && (along - rowW * 0.5f < -halfW + 6f || along + rowW * 0.5f > halfW - 6f));
-            float barH = stack ? stackH : 44f;
-            float barW = stack ? 56f : rowW;
-            if (side && stack && barH > h - 56f)
+            const float cellW = 40f;
+            const float cellH = 32f;
+            const float gap = 6f;
+            int cols = Mathf.Max(1, n);
+            int rows = 1;
+            bool grid = false;
+            if (side)
             {
-                stack = false;
-                barH = 44f;
-                barW = rowW;
+                cols = 1;
+                rows = Mathf.Max(1, n);
+                float maxH = Mathf.Max(cellH + 16f, h - 56f);
+                float colH = 12f + rows * cellH + Mathf.Max(0, rows - 1) * gap;
+                while (cols < n && colH > maxH)
+                {
+                    cols++;
+                    rows = Mathf.CeilToInt(n / (float)cols);
+                    colH = 12f + rows * cellH + Mathf.Max(0, rows - 1) * gap;
+                }
+                grid = cols > 1;
             }
+            else
+            {
+                float maxW = Mathf.Max(cellW + 16f, w - 12f);
+                int fit = Mathf.Max(1, Mathf.FloorToInt((maxW - 16f + gap) / (cellW + gap)));
+                if (n > fit)
+                {
+                    grid = true;
+                    cols = fit;
+                    rows = Mathf.CeilToInt(n / (float)cols);
+                }
+            }
+            float barW = grid || side
+                ? 16f + cols * cellW + Mathf.Max(0, cols - 1) * gap
+                : rowW;
+            float barH = grid || (side && rows > 1)
+                ? 12f + rows * cellH + Mathf.Max(0, rows - 1) * gap
+                : (side ? 12f + rows * cellH + Mathf.Max(0, rows - 1) * gap : 44f);
+            bool stack = side || grid;
             bool open = _navImg.gameObject.activeSelf;
             float extent = open ? (side ? barH * 0.5f : barW * 0.5f) : 14f;
             if (!_navDocked)
@@ -1265,15 +1896,34 @@ namespace Crispberry_PiPhone
             _navBarWidth = barW;
             bool hasStack = _navImg.GetComponent<VerticalLayoutGroup>() != null;
             bool hasRow = _navImg.GetComponent<HorizontalLayoutGroup>() != null;
-            if (stack != _navStacked || (stack ? !hasStack : !hasRow))
+            bool hasGrid = _navImg.GetComponent<GridLayoutGroup>() != null;
+            bool wantGrid = grid;
+            bool wantColumn = side && !grid;
+            bool layoutOk = wantGrid ? hasGrid : (wantColumn ? hasStack : hasRow);
+            if (!layoutOk)
             {
                 _navStacked = stack;
                 var row = _navImg.GetComponent<HorizontalLayoutGroup>();
                 var column = _navImg.GetComponent<VerticalLayoutGroup>();
-                if (stack)
+                var cells = _navImg.GetComponent<GridLayoutGroup>();
+                if (row != null)
+                    UObject.DestroyImmediate(row);
+                if (column != null)
+                    UObject.DestroyImmediate(column);
+                if (cells != null)
+                    UObject.DestroyImmediate(cells);
+                if (wantGrid)
                 {
-                    if (row != null)
-                        UObject.DestroyImmediate(row);
+                    var g = _navImg.gameObject.AddComponent<GridLayoutGroup>();
+                    g.cellSize = new Vector2(cellW, cellH);
+                    g.spacing = new Vector2(gap, gap);
+                    g.padding = new RectOffset(8, 8, 6, 6);
+                    g.childAlignment = TextAnchor.MiddleCenter;
+                    g.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+                    g.constraintCount = Mathf.Max(1, cols);
+                }
+                else if (wantColumn)
+                {
                     column = _navImg.gameObject.AddComponent<VerticalLayoutGroup>();
                     column.spacing = 6f;
                     column.padding = new RectOffset(8, 8, 6, 6);
@@ -1285,8 +1935,6 @@ namespace Crispberry_PiPhone
                 }
                 else
                 {
-                    if (column != null)
-                        UObject.DestroyImmediate(column);
                     row = _navImg.gameObject.AddComponent<HorizontalLayoutGroup>();
                     row.spacing = 6f;
                     row.padding = new RectOffset(8, 8, 6, 6);
@@ -1296,6 +1944,12 @@ namespace Crispberry_PiPhone
                     row.childForceExpandWidth = false;
                     row.childForceExpandHeight = false;
                 }
+            }
+            else if (wantGrid)
+            {
+                var g = _navImg.GetComponent<GridLayoutGroup>();
+                if (g != null && g.constraintCount != cols)
+                    g.constraintCount = Mathf.Max(1, cols);
             }
             var le = _navImg.GetComponent<LayoutElement>() ?? _navImg.gameObject.AddComponent<LayoutElement>();
             le.minWidth = barW;
@@ -1928,6 +2582,11 @@ namespace Crispberry_PiPhone
             hold.Id = id;
             hold.Dock = dock;
             hold.Drawer = drawer;
+            string tip = PhoneLang.AppName(app);
+            string hover = !string.IsNullOrEmpty(app.Tooltip) ? app.Tooltip : app.Description;
+            if (!string.IsNullOrEmpty(hover))
+                tip += "\n" + hover;
+            PhoneUi.SetTooltip(icon.gameObject, tip);
 
             if (!dock)
             {
@@ -1941,7 +2600,7 @@ namespace Crispberry_PiPhone
         internal void LaunchApp(string id)
         {
             HideIconMenu();
-            OpenAppInternal(id);
+            OpenAppInternal(id, false);
         }
 
         internal void AddToHomeOrDock(string id)
@@ -2101,6 +2760,7 @@ namespace Crispberry_PiPhone
                 _nextStatus = Time.unscaledTime + 1f;
                 RefreshStatus();
             }
+            MinesApp.Tick();
             if (_toastUntil > 0f && Time.unscaledTime >= _toastUntil)
             {
                 if (_toastRoot != null)
@@ -2284,11 +2944,20 @@ namespace Crispberry_PiPhone
             _instance.RebuildShade();
         }
 
+        internal static void CloseShade()
+        {
+            if (_instance == null || _instance._shadeRoot == null)
+                return;
+            _instance._shadeRoot.SetActive(false);
+        }
+
         private static void ApplyAppPresentation(PiPhoneApp app)
         {
             if (app == null || _instance == null)
                 return;
-            if (_instance._userPinned)
+            if (PiPhoneApi.HasPhonePlacementOverride)
+                _instance._fullscreen = false;
+            else if (_instance._userPinned)
             {
                 _instance._landscape = _instance._userLandscape;
                 _instance._fullscreen = false;
@@ -2306,15 +2975,18 @@ namespace Crispberry_PiPhone
         private void ResetAppPresentation()
         {
             SetImmersive(false);
-            if (_userPinned)
+            if (!PiPhoneApi.HasPhonePlacementOverride)
             {
-                _landscape = _userLandscape;
-                _fullscreen = false;
-            }
-            else
-            {
-                _landscape = false;
-                _fullscreen = false;
+                if (_userPinned)
+                {
+                    _landscape = _userLandscape;
+                    _fullscreen = false;
+                }
+                else
+                {
+                    _landscape = false;
+                    _fullscreen = false;
+                }
             }
             ApplyPresentation();
         }
@@ -2510,6 +3182,7 @@ namespace Crispberry_PiPhone
                 }
                 PiPhoneApi.RaiseOrientation();
                 ApplyGridLayout();
+                RefreshShade();
             }
             finally
             {
@@ -2631,11 +3304,29 @@ namespace Crispberry_PiPhone
                 return;
             _volUpRt = MakeSideKey(_bezel, "VolUp", new Vector2(PhoneWidth * 0.5f + 5f, 280f), new Vector2(7f, 32f), () => NudgeVolume(0.1f)).transform as RectTransform;
             _volDnRt = MakeSideKey(_bezel, "VolDn", new Vector2(PhoneWidth * 0.5f + 5f, 236f), new Vector2(7f, 32f), () => NudgeVolume(-0.1f)).transform as RectTransform;
-            _ringerRt = MakeSideKey(_bezel, "Ringer", new Vector2(-PhoneWidth * 0.5f - 5f, 258f), new Vector2(7f, 44f), () =>
+            _ringerRt = MakeSideKey(_bezel, "Ringer", new Vector2(-PhoneWidth * 0.5f - 5f, 258f), new Vector2(7f, 44f), null).transform as RectTransform;
+            var ringerHold = _ringerRt.gameObject.AddComponent<SideHold>();
+            ringerHold.OnTap = () =>
             {
+                if (_openingStage || _stageRoutine != null)
+                    return;
+                if (!PiPhoneApi.Powered)
+                {
+                    FlashBattery();
+                    return;
+                }
                 PhoneTheme.CycleRinger();
                 PhoneNotify.Quiet("Sound", PhoneTheme.RingerLabel());
-            }).transform as RectTransform;
+            };
+            ringerHold.OnHold = () =>
+            {
+                if (_stageRoutine != null)
+                    return;
+                if (!PiPhoneApi.Powered)
+                    PowerOn();
+                else
+                    PowerOff();
+            };
         }
 
         private static Button MakeSideKey(Transform parent, string name, Vector2 pos, Vector2 size, UnityAction click)
@@ -2647,7 +3338,8 @@ namespace Crispberry_PiPhone
             var btn = rt.gameObject.AddComponent<Button>();
             btn.targetGraphic = rt.GetComponent<Image>();
             btn.colors = PhoneUi.TintColors();
-            btn.onClick.AddListener(click);
+            if (click != null)
+                btn.onClick.AddListener(click);
             return btn;
         }
 
@@ -2732,6 +3424,13 @@ namespace Crispberry_PiPhone
             }
 
             PhoneShade.DrawTiles(_shadeRoot.transform);
+            int tileRows = PhoneShade.LastRows;
+            var shadeRt = _shadeRoot.GetComponent<RectTransform>();
+            if (shadeRt != null)
+            {
+                float extra = Mathf.Max(0, tileRows - 1) * (PhoneShade.Chip + 8f);
+                shadeRt.sizeDelta = new Vector2(0f, 420f + extra);
+            }
 
             int shown = 0;
             for (int i = 0; i < PhoneStore.Notices.Count && shown < 8; i++)
@@ -2843,6 +3542,41 @@ namespace Crispberry_PiPhone
             });
             PhoneShade.Register(new PiPhoneShadeButton
             {
+                Id = PhoneShade.AlertPlaceId,
+                Label = "Alert place",
+                SortOrder = 58,
+                IconFn = () => PhoneIcons.Material("toast"),
+                IsActive = () => AlertHud.Placing,
+                OnClick = () => AlertHud.TogglePlacement()
+            });
+            PhoneShade.Register(new PiPhoneShadeButton
+            {
+                Id = PhoneShade.SettingsId,
+                Label = "Settings",
+                SortOrder = 56,
+                IconFn = () => PhoneIcons.Material("settings"),
+                OnClick = () =>
+                {
+                    if (_shadeRoot != null)
+                        _shadeRoot.SetActive(false);
+                    OpenApp(BuiltinApps.SettingsId);
+                }
+            });
+            PhoneShade.Register(new PiPhoneShadeButton
+            {
+                Id = PhoneShade.CastId,
+                Label = "Screen cast",
+                SortOrder = 57,
+                IconFn = () => PhoneIcons.Material("cast"),
+                IsActive = () => PhoneCast.IsOn,
+                OnClick = () =>
+                {
+                    CloseShade();
+                    PhoneCast.Toggle();
+                }
+            });
+            PhoneShade.Register(new PiPhoneShadeButton
+            {
                 Id = PhoneShade.HomeId,
                 Label = "Home",
                 SortOrder = 60,
@@ -2886,6 +3620,7 @@ namespace Crispberry_PiPhone
                 string charge = PiPhoneApi.BatteryCharging ? "+" : "";
                 int unseen = PhoneStore.UnseenNoticeCount();
                 _statusRight.text = (unseen > 0 ? unseen + "  " : "") + bars + " " + net + "  " + battery + charge + "%";
+                FitStatusCluster();
             }
         }
 
@@ -2966,7 +3701,15 @@ namespace Crispberry_PiPhone
             {
                 try
                 {
-                    if (__instance == null || !IsOpen)
+                    if (__instance == null)
+                        return;
+                    if (AlertHud.Placing)
+                    {
+                        __instance.windowBlockingInput = true;
+                        __instance.windowShowingCursor = true;
+                        return;
+                    }
+                    if (!IsOpen)
                         return;
                     __instance.windowBlockingInput = !WantsPlayThrough;
                     __instance.windowShowingCursor = WantsPlayCursor;
@@ -3015,7 +3758,7 @@ namespace Crispberry_PiPhone
             {
                 try
                 {
-                    if (IsOpen && !WantsPlayThrough)
+                    if (AlertHud.Placing || (IsOpen && !WantsPlayThrough))
                     {
                         __result = false;
                         return false;
@@ -3031,7 +3774,7 @@ namespace Crispberry_PiPhone
             {
                 try
                 {
-                    if (IsOpen && !WantsPlayThrough)
+                    if (AlertHud.Placing || (IsOpen && !WantsPlayThrough))
                         __result = false;
                 }
                 catch (Exception ex)
@@ -3053,6 +3796,12 @@ namespace Crispberry_PiPhone
             {
                 try
                 {
+                    if (AlertHud.Placing)
+                    {
+                        Cursor.lockState = CursorLockMode.None;
+                        Cursor.visible = true;
+                        return;
+                    }
                     if (!IsOpen)
                         return;
                     if (EmoteWheelOpen())
@@ -3141,6 +3890,41 @@ namespace Crispberry_PiPhone
                 if (scale < 0.01f)
                     scale = 1f;
                 Menu.NudgePosition(eventData.delta / scale);
+            }
+        }
+
+        private sealed class SideHold : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
+        {
+            internal Action OnTap;
+            internal Action OnHold;
+            private bool _down;
+            private bool _fired;
+            private float _downAt;
+
+            public void OnPointerDown(PointerEventData eventData)
+            {
+                _down = true;
+                _fired = false;
+                _downAt = Time.unscaledTime;
+            }
+
+            public void OnPointerUp(PointerEventData eventData)
+            {
+                if (_down && !_fired && OnTap != null)
+                    OnTap();
+                _down = false;
+            }
+
+            private void Update()
+            {
+                if (!_down || _fired)
+                    return;
+                if (Time.unscaledTime - _downAt < 0.5f)
+                    return;
+                _fired = true;
+                _down = false;
+                if (OnHold != null)
+                    OnHold();
             }
         }
 

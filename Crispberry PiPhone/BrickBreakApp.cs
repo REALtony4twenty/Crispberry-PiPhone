@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 namespace Crispberry_PiPhone
 {
-    internal static class BreakoutApp
+    internal static class BrickBreakApp
     {
         private static Session _live;
 

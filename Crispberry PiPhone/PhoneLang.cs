@@ -278,6 +278,13 @@ namespace Crispberry_PiPhone
             Add("app.pip.store", "Apps");
             Add("app.pip.sudoku", "Sudoku");
             Add("app.pip.solitaire", "Solitaire");
+            Add("hello", "HELLO!");
+            Add("goodbye", "GOODBYE!");
+            Add("battery", "Battery");
+            Add("cannot_cast", "Cannot cast to this device");
+            Add("no_cast_screen", "No screen nearby");
+            Add("screen_cast", "Screen cast");
+            Add("cast_on", "On");
         }
 
         private static void PackEs()
@@ -314,7 +321,14 @@ namespace Crispberry_PiPhone
                 "app.pip.store", "Apps",
                 "app.pip.settings", "Ajustes",
                 "app.pip.phone", "Teléfono",
-                "app.pip.messages", "Mensajes");
+                "app.pip.messages", "Mensajes",
+                "hello", "¡HOLA!",
+                "goodbye", "¡ADIÓS!",
+                "battery", "Batería",
+                "cannot_cast", "No se puede transmitir a este dispositivo",
+                "no_cast_screen", "No hay una pantalla cerca",
+                "screen_cast", "Transmitir",
+                "cast_on", "Activo");
         }
 
         private static void PackFr()
@@ -351,7 +365,14 @@ namespace Crispberry_PiPhone
                 "app.pip.store", "Apps",
                 "app.pip.settings", "Réglages",
                 "app.pip.phone", "Téléphone",
-                "app.pip.messages", "Messages");
+                "app.pip.messages", "Messages",
+                "hello", "BONJOUR !",
+                "goodbye", "AU REVOIR !",
+                "battery", "Batterie",
+                "cannot_cast", "Impossible de diffuser sur cet appareil",
+                "no_cast_screen", "Aucun écran à proximité",
+                "screen_cast", "Diffusion",
+                "cast_on", "Actif");
         }
 
         private static void Pack(string code, string name, params string[] kv)
