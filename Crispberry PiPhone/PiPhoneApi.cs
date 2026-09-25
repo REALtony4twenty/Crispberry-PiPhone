@@ -950,6 +950,30 @@ namespace Crispberry_PiPhone
             return true;
         }
 
+        /// <summary>Set the Phone's position on the screen.</summary>
+        public static void SetPhonePos(float x, float y)
+        {
+            PhoneTheme.SetPhonePos(x, y);
+        }
+
+        /// <summary>Set the Phone's landscape position on the screen.</summary>
+        public static void SetPhonePosLand(float x, float y)
+        {
+            PhoneTheme.SetPhonePosLand(x, y);
+        }
+
+        /// <summary>Set the Phone's landscape scale on the screen.</summary>
+        public static void SetPhoneScaleLand(float value)
+        {
+            PhoneTheme.SetPhoneScaleLand(value);
+        }
+
+        /// <summary>Set the Phone's scale on the screen.</summary>
+        public static void SetScale(float value)
+        {
+            PhoneTheme.SetPhoneScale(value);
+        }
+
         internal static int IndexOf(string id)
         {
             if (string.IsNullOrEmpty(id))
