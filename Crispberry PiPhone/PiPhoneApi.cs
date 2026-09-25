@@ -969,7 +969,7 @@ namespace Crispberry_PiPhone
         }
 
         /// <summary>Set the Phone's scale on the screen.</summary>
-        public static void SetScale(float value)
+public static void SetPhoneScale(float value) {
         {
             PhoneTheme.SetPhoneScale(value);
         }
