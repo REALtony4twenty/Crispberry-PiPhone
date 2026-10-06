@@ -9,17 +9,64 @@ Earlier releases stay up:
 
 ## Since 0.17.81
 
-- The side volume buttons are the phone volume. That level is the master for button clicks, app hover, games, music, power on and off, and clips a mod plays through the phone. The shade slider is labeled Volume. Music keeps its own slider under that.
-- Personalize, then Sounds, has a row for each interface sound: on or off, its own level, and which file it plays. Volume up and volume down follow the phone volume and are not on that page.
-- New interface sounds: button, back, app hover, camera shutter, record start, record stop, slider, trash, toggle on, toggle off, vibrate, typing, and backspace. Games have their own instant-mix panel with a slider per effect.
-- The shipped clips are leveled so a quiet tap and a loud beep sit near the same loudness.
-- Leaving an app stops its sounds and its running work. Calls, messages, and music can keep going. Other apps do not.
-- While a closed-phone alert is on screen, the walk-around key (Left Alt unless you changed it) unlocks the cursor so those buttons can be clicked. You can still move, look, and climb. Press the key again and the game takes the cursor back. That key does this only while the alert is up. With the phone open it is the usual walk steps.
-- A cast of a built-in game draws that game's board for everyone in the room. Camera and Closet can show the world view. The phone can sit on the cast, or stay in your hand, and the app keeps running either way. The side volume buttons, the ringer key, and the front camera hole are not drawn on the cast. Another mod's app shows as the phone picture, so the UI that mod built is what people see.
-- Four Across flashes the four that won.
-- Mines is one timed board. The clock starts on the first safe reveal. The best time is kept.
-- Toggles are switch icons. Their on and off colors can be chosen under Buttons.
-- Sliders use a flat track. A start-and-end range is used where a clip has a start and an end.
+This is the player-facing list for 0.17.124. Where an older note below disagrees, this section is the current behavior.
+
+### Power, closing, and the cursor
+
+- Hold the side button to turn the phone on. The screen says HELLO and plays a short chime. Hold it again to turn the phone off. The screen says GOODBYE and plays a lower chime. A short press while the phone is off shows the battery for 2 seconds. HELLO and GOODBYE follow the language setting. The screens were in 0.17.81. The chimes are new.
+- Left-clicking the dark area around the phone does not close it. Right-click that area to close it. The open/close key still works.
+- While a closed-phone alert is on screen, the walk-around key (Left Alt unless you changed it) unlocks the cursor so you can click the alert buttons. You can still move, look, and climb. Press the key again and the game takes the cursor back. That only happens while the alert is up. With the phone open, the same key is the usual walk steps: look around, then walk with the cursor, then phone only.
+- F4 (unless you changed it) puts the open phone on the cast, or brings it back to your hand. The app stays open either way.
+
+### Volume and sounds
+
+- The side volume buttons, and the shade slider now labeled Volume, are the phone volume. That level is the master for button clicks, app hover, games, music, the power chimes, and clips a mod plays through the phone. Pressing volume up plays the up sound louder. Pressing volume down plays the down sound quieter. Music keeps its own slider under that master.
+- Personalize, then Sounds, has a row for each interface sound. Each row can be turned off, turned down, or pointed at any other phone sound. The rows are Button, Toggle off, Toggle on, Back, App hover, Camera, Record start, Record stop, Slider, Trash, Vibrate, Typing, and Backspace. Volume up and volume down follow the phone volume and are not on that page. The power chimes are not on that page either.
+- The shipped clips were leveled so a quiet tap and a loud beep sit near the same loudness.
+- Notification and ringtone pickers show which sound is in use.
+- Almost every phone clip can also be chosen as an alert, a ringtone, or a button sound.
+- Leaving an app stops its sounds and the work it started. Calls, messages, and the music player can keep going. Games and the other built-in apps do not.
+
+### Look, toolbar, and settings
+
+- In portrait, the quick-settings toolbar fits 9 icons across, then wraps the 10th onto the next line. The icons stayed the same size. The gap between them got smaller so the ninth one fits.
+- Toggles are switch icons, tinted with the on color and the off color. Those two colors are chosen on the Buttons page. Resetting Look or Buttons does not reset them.
+- Settings opens into Controls and Personalize. Personalize holds Style, Language, Clock, Buttons, Display, Home screen, Sounds, and Notifications.
+- Display has a live preview of vertical and landscape, the size slider, brightness, and a reset for the phone's position. You can still drag the phone by its rim.
+- Home screen has the dock, the navigation bar, and Wallpaper. Wallpaper can be the default background or a photo or GIF from Photos.
+- Style colors include the clock, the battery, and the signal, along with the rest of the look. The color picker is a field and a hue bar, and each color has its own reset.
+- Clock options stay as words next to their switches: 24-hour or AM/PM, PEAK time or real-world time, and whether the date is hidden.
+- Place closed-phone alerts is on the Controls page, with a reset that puts the banner back at its start. The banner itself looks the same.
+- MakeNoti uses one editor. In portrait the start/end range is vertical. In landscape it is horizontal. The file line names the kind of clip. Preview, save, and the ringtone/alert switch sit at the bottom.
+- Sliders use a flat track and play a tick while you drag. A start-and-end range is the control used when a clip has a start and an end.
+
+### Games
+
+Snake, Stacker, Brick Break, Echo, 2048, Mines, Sudoku, and Solitaire open straight into play. Their old front menus are gone. Restart is the New button on the game bar, next to exit. Four Across still has its lobby. Each of those games has a Sound button (the instant-mix icon) with one volume slider per effect, not one slider for the whole game.
+
+Landscape boards sit lower on the phone, closer to the navigation, and they are taller than in 0.17.81. The score stays on the left and the controls stay on the right, on screen, instead of piled on the outer edge. Portrait layout for those boards is the same size it was.
+
+- Snake food is the Crispberry PiPhone logo. Filling the board wins. Turning, eating, and winning have their own sounds. Hitting the wall or yourself is still a short tone.
+- Stacker's next piece sits at the top-right of the playfield.
+- Brick Break, Echo, 2048, Sudoku, and Solitaire use the same play bar. Echo plays a short song on a win and on a loss. Solitaire cards slide. Sudoku starts on Easy, and Easy / Medium / Hard stay as words. Solitaire is still draw-1. Kings still only go on empty columns. Aces still start the foundations.
+- Mines is one timed board. There is no separate Play mode that counts boards. The clock starts on the first safe reveal, and that first tap is safe. The best time is kept.
+- Four Across plays a falling disc. When four connect, those four flash so the win is easy to see, including on a cast.
+
+### Messages, camera, photos, and the store
+
+- Messages rebuilds when you rotate the phone, and keeps the open thread. Bubbles use the wider landscape width.
+- The camera plays a shutter sound for a photo, a start sound when recording begins, and a stop sound when recording ends.
+- App Store tiles, screenshots, and the install row play the button click. A screenshot opens large, and another tap closes it. App names under the icons can wrap.
+
+### Screen cast
+
+- Built-in games draw their board on the cast for everyone in the room. That replaced sending a photo of the phone for those games.
+- Camera and Closet can show the world view.
+- The phone can sit on the cast, or stay in your hand. F4 switches that. The app keeps running either way.
+- The side volume buttons, the ringer key, and the front camera hole are not drawn on the cast.
+- Messages, the dialer, voicemail, notes, and voice memos stay private on a shared cast.
+- Another mod's app shows as the phone picture, so the UI that mod built is what people see.
+- You can still cast to airport flight boards that are in the scene, and mods can still register more screens.
 
 ## For other mods
 
@@ -51,9 +98,9 @@ Cast, in addition to `RegisterCastDevice` and `SetCastAspect`:
 - The phone starts off. Hold the side button to turn it on (HELLO). A short press while it is off shows the battery for 2 seconds. Holding the side button while it is on turns it off (GOODBYE). Those words follow the language setting.
 - Toolbar icons fill the width, then wrap, in portrait and landscape.
 - Alert Place toggles on and off without closing the phone.
-- Screen cast lists airport flight boards that are in the scene. Other players in the room see the cast. Mods can register more screens, and an app can set the cast aspect. The picture still covers the whole board and is mirrored.
+- Screen cast lists airport flight boards that are in the scene. Other players in the room see the cast. Mods can register more screens, and an app can set the cast aspect. 0.17.124 draws built-in game boards instead of a photo of the phone. See the cast section above.
 - Built-in games show as Stacker, Brick Break, Echo, Four Across, and Mines. Their saved app ids are unchanged.
-- Mines Play mode counts boards cleared. Timed mode is one board and keeps the best time.
+- 0.17.81 had a Mines Play mode that counted boards, plus a Timed mode. 0.17.124 is one timed board. The best time is kept.
 - Store pages scroll, and screenshots sit in a sideways gallery.
 - `PiPhoneApp.Tooltip` is the icon hover text. If it is empty, the store description is used.
 - Mods can set startup, power, and loading pages, open an app with data, add a status icon, snapshot and restore phone placement, and run a tick while the phone is closed.
