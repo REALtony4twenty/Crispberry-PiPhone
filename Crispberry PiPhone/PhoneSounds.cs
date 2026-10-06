@@ -36,8 +36,7 @@ namespace Crispberry_PiPhone
 
         public static void PlayPower(bool on)
         {
-            MusicPlayer.DuckFor(0.9f);
-            VoiceIo.Play(on ? MakeChord(523, 784, 0.16f, "PiP_On") : MakeChord(659, 392, 0.18f, "PiP_Off"));
+            PhoneAudio.Play(PhoneAudioChannel.System, on ? MakeChord(523, 784, 0.16f, "PiP_On") : MakeChord(659, 392, 0.18f, "PiP_Off"), false, 0.9f);
         }
 
         public static void PlayRingtone()
@@ -47,12 +46,12 @@ namespace Crispberry_PiPhone
 
         public static void PlayRingtoneFor(string contactId)
         {
-            PlayId(PhoneTones.ResolveRing(contactId), 880, 0.45f, 20f, true);
+            PlayId(PhoneAudioChannel.Ringtone, PhoneTones.ResolveRing(contactId), 880, 0.45f, 20f, true);
         }
 
         public static void StopRing()
         {
-            StopPreview();
+            PhoneAudio.Stop(PhoneAudioChannel.Ringtone);
         }
 
         public static bool IsPreviewing(string path)
@@ -73,15 +72,15 @@ namespace Crispberry_PiPhone
                 return;
             _previewPath = path;
             if (PhoneMenu.InstanceHost != null)
-                VoiceIo.Run(LoadAndPlay(path, false));
+                VoiceIo.Run(LoadAndPlay(PhoneAudioChannel.System, path, false));
             else
-                PlayFileImmediate(path, false);
+                PlayFileImmediate(PhoneAudioChannel.System, path, false);
         }
 
         public static void StopPreview()
         {
             _previewPath = null;
-            VoiceIo.StopPlay();
+            PhoneAudio.Stop(PhoneAudioChannel.System);
         }
 
         public static void PlayText()
@@ -91,18 +90,22 @@ namespace Crispberry_PiPhone
 
         public static void PlayTextFor(string contactId)
         {
-            PlayId(PhoneTones.ResolveText(contactId), 1200, 0.12f, 1.6f);
+            PlayId(PhoneAudioChannel.Notification, PhoneTones.ResolveText(contactId), 1200, 0.12f, 1.6f);
         }
 
         public static void PlayVibrate(bool call)
         {
-            MusicPlayer.DuckFor(call ? 2.2f : 0.55f);
             if (PhoneSfx.GetClip("vibrate") != null)
             {
+                MusicPlayer.DuckFor(call ? 2.2f : 0.55f);
                 PhoneSfx.PlayUi("vibrate");
                 return;
             }
-            VoiceIo.Play(MakeBuzz(call ? 0.7f : 0.32f), false);
+            PhoneAudio.Play(
+                call ? PhoneAudioChannel.Ringtone : PhoneAudioChannel.Notification,
+                MakeBuzz(call ? 0.7f : 0.32f),
+                false,
+                call ? 2.2f : 0.55f);
         }
 
         public static void PlayNotify()
@@ -112,26 +115,26 @@ namespace Crispberry_PiPhone
 
         public static void PlayApp(string appId)
         {
-            PlayId(PhoneTones.ResolveApp(appId), 990, 0.16f, 1.6f);
+            PlayId(PhoneAudioChannel.Notification, PhoneTones.ResolveApp(appId), 990, 0.16f, 1.6f);
         }
 
-        public static void PlayId(string id, int fallbackHz, float fallbackSec)
+        public static void PlayId(PhoneAudioChannel channel, string id, int fallbackHz, float fallbackSec)
         {
-            PlayId(id, fallbackHz, fallbackSec, 1.6f, false);
+            PlayId(channel, id, fallbackHz, fallbackSec, 1.6f, false);
         }
 
-        public static void PlayId(string id, int fallbackHz, float fallbackSec, float duckSec)
+        public static void PlayId(PhoneAudioChannel channel, string id, int fallbackHz, float fallbackSec, float duckSec)
         {
-            PlayId(id, fallbackHz, fallbackSec, duckSec, false);
+            PlayId(channel, id, fallbackHz, fallbackSec, duckSec, false);
         }
 
-        public static void PlayId(string id, int fallbackHz, float fallbackSec, float duckSec, bool loop)
+        public static void PlayId(PhoneAudioChannel channel, string id, int fallbackHz, float fallbackSec, float duckSec, bool loop)
         {
             MusicPlayer.DuckFor(duckSec);
             object builtIn = PhoneSfx.GetClip(id);
             if (builtIn != null)
             {
-                VoiceIo.Play(builtIn, loop);
+                PhoneAudio.Play(channel, builtIn, loop);
                 return;
             }
             SoundItem item = PhoneStore.FindSound(id);
@@ -140,12 +143,12 @@ namespace Crispberry_PiPhone
                 string path = PhoneStore.SoundPath(item.File);
                 if (!string.IsNullOrEmpty(path) && File.Exists(path))
                 {
-                    if (VoiceIo.Run(LoadAndPlay(path, loop)) == null)
-                        PlayFileImmediate(path, loop);
+                    if (VoiceIo.Run(LoadAndPlay(channel, path, loop)) == null)
+                        PlayFileImmediate(channel, path, loop);
                     return;
                 }
             }
-            VoiceIo.Play(MakeBeep(fallbackHz, fallbackSec), loop);
+            PhoneAudio.Play(channel, MakeBeep(fallbackHz, fallbackSec), loop);
         }
 
         public static IEnumerator LoadClip(string path, Action<object> done)
@@ -175,7 +178,7 @@ namespace Crispberry_PiPhone
                 }
             }
 
-            yield return TryWwwClip(path, false, false);
+            yield return TryWwwClip(PhoneAudioChannel.Media, path, false, false);
             if (_wwwPlayed)
             {
                 if (done != null)
@@ -232,12 +235,12 @@ namespace Crispberry_PiPhone
                 done(clip);
         }
 
-        public static IEnumerator LoadAndPlay(string path)
+        public static IEnumerator LoadAndPlay(PhoneAudioChannel channel, string path)
         {
-            yield return LoadAndPlay(path, false);
+            yield return LoadAndPlay(channel, path, false);
         }
 
-        public static IEnumerator LoadAndPlay(string path, bool loop)
+        public static IEnumerator LoadAndPlay(PhoneAudioChannel channel, string path, bool loop)
         {
             object clip = null;
             if (path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
@@ -246,7 +249,7 @@ namespace Crispberry_PiPhone
             }
             if (clip != null)
             {
-                VoiceIo.Play(clip, loop);
+                PhoneAudio.Play(channel, clip, loop);
                 yield break;
             }
 
@@ -257,12 +260,12 @@ namespace Crispberry_PiPhone
                 try { clip = VoiceIo.FromWav(wav); } catch { }
                 if (clip != null)
                 {
-                    VoiceIo.Play(clip, loop);
+                    PhoneAudio.Play(channel, clip, loop);
                     yield break;
                 }
             }
 
-            yield return TryWwwClip(path, true, loop);
+            yield return TryWwwClip(channel, path, true, loop);
             if (_wwwPlayed)
                 yield break;
             if (EnsureWebAudio())
@@ -312,7 +315,7 @@ namespace Crispberry_PiPhone
                         object loaded = ReadAudioClip(req);
                         if (loaded != null)
                         {
-                            VoiceIo.Play(loaded, loop);
+                            PhoneAudio.Play(channel, loaded, loop);
                             played = true;
                         }
                         else
@@ -334,7 +337,7 @@ namespace Crispberry_PiPhone
         private static bool _wwwPlayed;
         private static object _wwwClip;
 
-        private static IEnumerator TryWwwClip(string path, bool play, bool loop)
+        private static IEnumerator TryWwwClip(PhoneAudioChannel channel, string path, bool play, bool loop)
         {
             _wwwPlayed = false;
             _wwwClip = null;
@@ -380,7 +383,7 @@ namespace Crispberry_PiPhone
                 if (clip != null)
                 {
                     if (play)
-                        VoiceIo.Play(clip, loop);
+                        PhoneAudio.Play(channel, clip, loop);
                     _wwwClip = clip;
                     _wwwPlayed = true;
                 }
@@ -480,18 +483,13 @@ namespace Crispberry_PiPhone
             return clipProp != null ? clipProp.GetValue(handler, null) : null;
         }
 
-        private static void PlayFileImmediate(string path)
-        {
-            PlayFileImmediate(path, false);
-        }
-
-        private static void PlayFileImmediate(string path, bool loop)
+        private static void PlayFileImmediate(PhoneAudioChannel channel, string path, bool loop)
         {
             if (path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
             {
                 object clip = VoiceIo.FromWav(File.ReadAllBytes(path));
                 if (clip != null)
-                    VoiceIo.Play(clip, loop);
+                    PhoneAudio.Play(channel, clip, loop);
             }
         }
 

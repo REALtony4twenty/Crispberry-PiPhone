@@ -43,7 +43,7 @@ namespace Crispberry_PiPhone
                 OnClose = () =>
                 {
                     PhoneVideo.StopAll();
-                    VoiceIo.StopPlay();
+                    PhoneAudio.Stop(PhoneAudioChannel.Media);
                     if (_live != null)
                         _live.Shutdown();
                     _live = null;
@@ -2244,7 +2244,7 @@ namespace Crispberry_PiPhone
                         if (!string.IsNullOrEmpty(msg.AudioFile))
                             VoiceIo.PlayFile(msg.AudioFile);
                         else if (!string.IsNullOrEmpty(path))
-                            _host.StartHostCoroutine(PhoneSounds.LoadAndPlay(path));
+                            _host.StartHostCoroutine(PhoneSounds.LoadAndPlay(PhoneAudioChannel.Media, path));
                     }, new Vector2(36f, 32f));
                     PhoneUi.CreateButton(_pickPage.transform, "Save as song", () =>
                     {

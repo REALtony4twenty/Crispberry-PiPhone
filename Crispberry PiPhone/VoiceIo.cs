@@ -30,7 +30,7 @@ namespace Crispberry_PiPhone
         private static readonly PropertyInfo MicDevices = MicType.GetProperty("devices");
         private static readonly FieldInfo RecorderVoice = typeof(Recorder).GetField("voice", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        private static Component _source;
+        private static GameObject _host;
         private static Component _shots;
         private static MethodInfo _oneShot;
         private static string _device;
@@ -77,22 +77,12 @@ namespace Crispberry_PiPhone
 
         public static void Ensure()
         {
-            if (_source != null)
+            if (_host != null)
                 return;
             var go = new GameObject("PiP_Voice");
             UnityEngine.Object.DontDestroyOnLoad(go);
-            _source = go.AddComponent(SourceType);
+            _host = go;
             _pump = go.AddComponent<VoiceTapPump>();
-            TrySet(_source, "playOnAwake", false);
-            TrySet(_source, "spatialBlend", 0f);
-            TrySet(_source, "ignoreListenerPause", true);
-            TrySet(_source, "ignoreListenerVolume", true);
-            TrySet(_source, "bypassEffects", true);
-            TrySet(_source, "bypassListenerEffects", true);
-            TrySet(_source, "mute", false);
-            TrySet(_source, "volume", 1f);
-            TrySet(_source, "pitch", 1f);
-            TrySet(_source, "outputAudioMixerGroup", null);
         }
 
         internal static int CaptureRate
@@ -262,13 +252,6 @@ namespace Crispberry_PiPhone
             return Boost(Trim(clip, pos));
         }
 
-        public static void ApplyVolume()
-        {
-            if (_source == null)
-                return;
-            TrySet(_source, "volume", PhoneTheme.RingVolume);
-        }
-
         public static void PlayOneShot(object clip, float volume)
         {
             Ensure();
@@ -304,43 +287,6 @@ namespace Crispberry_PiPhone
             }
         }
 
-        public static void Play(object clip)
-        {
-            Play(clip, false);
-        }
-
-        public static void Play(object clip, bool loop)
-        {
-            Ensure();
-            if (clip == null || _source == null)
-            {
-                Plugin.LogError("Voice play skipped: no clip.");
-                return;
-            }
-            TrySet(_source, "ignoreListenerPause", true);
-            TrySet(_source, "ignoreListenerVolume", true);
-            TrySet(_source, "bypassEffects", true);
-            TrySet(_source, "bypassListenerEffects", true);
-            TrySet(_source, "mute", false);
-            TrySet(_source, "volume", PhoneTheme.RingVolume);
-            TrySet(_source, "pitch", 1f);
-            TrySet(_source, "spatialBlend", 0f);
-            TrySet(_source, "outputAudioMixerGroup", null);
-            if (!loop)
-                FadeEdges(clip);
-            try
-            {
-                SourceType.GetMethod("Stop", Type.EmptyTypes).Invoke(_source, null);
-                TrySet(_source, "loop", loop);
-                SourceType.GetProperty("clip").SetValue(_source, clip, null);
-                SourceType.GetMethod("Play", Type.EmptyTypes).Invoke(_source, null);
-            }
-            catch (Exception ex)
-            {
-                Plugin.LogError("Voice play failed: " + ex.Message);
-            }
-        }
-
         public static void StopOneShots()
         {
             if (_shots == null)
@@ -351,36 +297,6 @@ namespace Crispberry_PiPhone
             }
             catch
             {
-            }
-        }
-
-        public static void StopPlay()
-        {
-            if (_source == null)
-                return;
-            try
-            {
-                SourceType.GetMethod("Stop", Type.EmptyTypes).Invoke(_source, null);
-            }
-            catch
-            {
-            }
-        }
-
-        public static bool IsPlaying()
-        {
-            if (_source == null)
-                return false;
-            try
-            {
-                var prop = SourceType.GetProperty("isPlaying");
-                if (prop == null)
-                    return false;
-                return (bool)prop.GetValue(_source, null);
-            }
-            catch
-            {
-                return false;
             }
         }
 
@@ -412,8 +328,7 @@ namespace Crispberry_PiPhone
                 Plugin.LogError("Voice wav could not be read: " + path);
                 return;
             }
-            MusicPlayer.DuckFor(ClipSeconds(clip) + 0.45f);
-            Play(clip);
+            PhoneAudio.Play(PhoneAudioChannel.Media, clip, false, ClipSeconds(clip) + 0.45f);
         }
 
         public static float ClipSeconds(object clip)
@@ -1073,7 +988,21 @@ namespace Crispberry_PiPhone
             }
         }
 
-        private static void TrySet(object source, string property, object value)
+        internal static GameObject Host
+        {
+            get
+            {
+                Ensure();
+                return _host;
+            }
+        }
+
+        internal static Type AudioSourceType
+        {
+            get { return SourceType; }
+        }
+
+        internal static void TrySet(object source, string property, object value)
         {
             if (source == null)
                 return;
@@ -1084,7 +1013,7 @@ namespace Crispberry_PiPhone
             catch { }
         }
 
-        private static void FadeEdges(object clip)
+        internal static void FadeEdges(object clip)
         {
             if (clip == null)
                 return;

@@ -471,8 +471,7 @@ namespace Crispberry_PiPhone
         public static void SetRingVolume(float value)
         {
             RingVolume = Mathf.Clamp01(value);
-            VoiceIo.ApplyVolume();
-            MusicPlayer.ApplyVolume();
+            PhoneAudio.ApplyVolume();
             Save();
         }
 

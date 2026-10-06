@@ -664,7 +664,7 @@ namespace Crispberry_PiPhone
             _fgRoutines.Clear();
             VoiceIo.StopOneShots();
             if (!CallService.IsBusy)
-                VoiceIo.StopPlay();
+                PhoneAudio.StopAll();
         }
 
         public Button CreateButton(Transform parent, string label, UnityAction onClick, Vector2 size)
@@ -1170,7 +1170,7 @@ namespace Crispberry_PiPhone
             LeaveCurrentApp();
             CallVideo.DropToVoice();
             PhoneVideo.StopAll();
-            VoiceIo.StopPlay();
+            PhoneAudio.StopAll();
             PhoneSounds.StopPreview();
             if (!PiPhoneApi.HasPhonePlacementOverride)
             {

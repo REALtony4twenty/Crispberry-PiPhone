@@ -384,10 +384,10 @@ namespace Crispberry_PiPhone
 
             private void TogglePreview()
             {
-                if (VoiceIo.IsPlaying())
+                if (PhoneAudio.IsPlaying(PhoneAudioChannel.System))
                 {
                     _previewGen++;
-                    VoiceIo.StopPlay();
+                    PhoneAudio.Stop(PhoneAudioChannel.System);
                     SetPreviewLabel(false);
                     return;
                 }
@@ -413,8 +413,8 @@ namespace Crispberry_PiPhone
                     SetPreviewLabel(false);
                     yield break;
                 }
-                VoiceIo.Play(sliced);
-                while (gen == _previewGen && VoiceIo.IsPlaying())
+                PhoneAudio.Play(PhoneAudioChannel.System, sliced, false);
+                while (gen == _previewGen && PhoneAudio.IsPlaying(PhoneAudioChannel.System))
                     yield return null;
                 if (gen == _previewGen)
                     SetPreviewLabel(false);
@@ -482,7 +482,7 @@ namespace Crispberry_PiPhone
             {
                 string path = PhoneStore.SoundPath(sound.File);
                 if (!string.IsNullOrEmpty(path))
-                    _host.StartHostCoroutine(PhoneSounds.LoadAndPlay(path));
+                    _host.StartHostCoroutine(PhoneSounds.LoadAndPlay(PhoneAudioChannel.System, path));
             }
 
             private void Empty(string text)

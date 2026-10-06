@@ -178,6 +178,7 @@
     <Compile Include="AlertHud.cs" />
     <Compile Include="PhoneNotify.cs" />
     <Compile Include="PhoneSounds.cs" />
+    <Compile Include="PhoneAudio.cs" />
     <Compile Include="SoundsApp.cs" />
     <Compile Include="MakeNotiApp.cs" />
     <Compile Include="MusicPlayer.cs" />
