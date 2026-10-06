@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Text;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -21,8 +22,8 @@ namespace Crispberry_PiPhone
                 IconBackground = new Color(0.22f, 0.48f, 0.62f, 1f),
                 SortOrder = 76,
                 ShowOnHome = true,
-                OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
-                OnClose = () => { _live = null; },
+                OnOpen = host => { _live = new Session(host); _live.StartAt(0); },
+                OnClose = () => { if (_live != null) _live.Halt(); _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
         }
@@ -30,6 +31,11 @@ namespace Crispberry_PiPhone
         internal static bool TryGoBack()
         {
             return _live != null && _live.GoBack();
+        }
+
+        internal static string CastState()
+        {
+            return _live == null ? "menu" : _live.ExportCast();
         }
 
         private sealed class Session
@@ -56,34 +62,36 @@ namespace Crispberry_PiPhone
 
             public bool GoBack()
             {
-                if (_page == "menu")
-                    return false;
-                BuildMenu();
-                return true;
+                return false;
+            }
+
+            internal void Halt()
+            {
+                _keyGen++;
+                _page = "off";
+            }
+
+            internal string ExportCast()
+            {
+                if (_page != "play")
+                    return "menu";
+                var sb = new StringBuilder();
+                sb.Append("play|");
+                for (int i = 0; i < _val.Length; i++)
+                    sb.Append((char)('0' + Mathf.Clamp(_val[i], 0, 9)));
+                sb.Append('|');
+                for (int i = 0; i < _given.Length; i++)
+                    sb.Append(_given[i] != 0 ? '1' : '0');
+                return sb.ToString();
             }
 
             public void Relayout()
             {
                 if (_page == "play")
                     BuildPlayUi();
-                else
-                    BuildMenu();
             }
 
-            public void BuildMenu()
-            {
-                _page = "menu";
-                PhoneGames.Clear(_host);
-                _host.SetTitle(PhoneLang.T("app.pip.sudoku", "Sudoku"));
-                PhoneUi.MaterialChip(_host.Content, "play", "Play", () => StartAt(0), new Vector2(40f, 40f));
-                PhoneUi.CreateButton(_host.Content, "Easy", () => StartAt(0), new Vector2(200f, 40f));
-                PhoneUi.CreateButton(_host.Content, "Medium", () => StartAt(1), new Vector2(200f, 40f));
-                PhoneUi.CreateButton(_host.Content, "Hard", () => StartAt(2), new Vector2(200f, 40f));
-                var high = PhoneUi.CreateLabel(_host.Content, "High", "Solved  " + PhoneTheme.HighSudoku, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(high.gameObject, 28f);
-            }
-
-            private void StartAt(int diff)
+            internal void StartAt(int diff)
             {
                 _diff = diff < 0 ? 0 : (diff > 2 ? 2 : diff);
                 _won = false;
@@ -91,13 +99,6 @@ namespace Crispberry_PiPhone
                 NewPuzzle();
                 _page = "play";
                 BuildPlayUi();
-            }
-
-            private void NextPuzzle()
-            {
-                if (_diff < 2)
-                    _diff++;
-                StartAt(_diff);
             }
 
             private void BuildPlayUi()
@@ -108,13 +109,35 @@ namespace Crispberry_PiPhone
                 Transform center;
                 Transform right;
                 PhoneGames.PlayLayout(_host, out left, out center, out right);
-                _status = PhoneGames.HudBar(left, StatusText(), BuildMenu);
-                if (_won)
-                    PhoneGames.OverRow(left, NextPuzzle, BuildMenu);
+                _status = PhoneGames.HudBar(left, StatusText(), () => _host.GoBack());
+                var diffs = new GameObject("Diff", typeof(RectTransform));
+                diffs.transform.SetParent(left, false);
+                if (_host.IsLandscape)
+                {
+                    PhoneUi.Size(diffs, 108f);
+                    var diffCol = PhoneUi.AddVertical(diffs, 4f, new RectOffset(0, 0, 0, 0));
+                    diffCol.childForceExpandWidth = false;
+                    diffCol.childForceExpandHeight = false;
+                    diffCol.childAlignment = TextAnchor.UpperCenter;
+                }
+                else
+                {
+                    PhoneUi.Size(diffs, 36f);
+                    var diffRow = PhoneUi.AddHorizontal(diffs, 6f);
+                    diffRow.childForceExpandWidth = false;
+                    diffRow.childAlignment = TextAnchor.MiddleCenter;
+                }
+                Vector2 diffSize = _host.IsLandscape ? new Vector2(112f, 28f) : new Vector2(88f, 32f);
+                PhoneUi.CreateButton(diffs.transform, "Easy", () => StartAt(0), diffSize);
+                PhoneUi.CreateButton(diffs.transform, "Medium", () => StartAt(1), diffSize);
+                PhoneUi.CreateButton(diffs.transform, "Hard", () => StartAt(2), diffSize);
 
-                float cell = PhoneGames.FitCell(9, 9, 2f, _host.IsLandscape ? 0f : 96f);
-                if (cell > 38f)
-                    cell = 38f;
+                bool land = _host.IsLandscape;
+                float gap = 2f;
+                float availW = land ? 500f : 372f;
+                float availH = land ? PhoneGames.LandscapeBoardH : 560f;
+                float cell = Mathf.Floor(Mathf.Min((availW - 10f * gap) / 9f, (availH - 10f * gap) / 9f));
+                cell = Mathf.Clamp(cell, 24f, 48f);
                 PhoneGames.Board(center, 9, 9, new Vector2(cell, cell), 2f, out _cells, out _labels, false);
                 for (int i = 0; i < 81; i++)
                 {
@@ -185,6 +208,8 @@ namespace Crispberry_PiPhone
             {
                 if (_won || _given[i] != 0)
                     return;
+                if (_sel != i)
+                    PhoneSfx.Play("sudo-sel");
                 _sel = i;
                 Draw();
             }
@@ -194,10 +219,16 @@ namespace Crispberry_PiPhone
                 if (_won || _sel < 0 || _given[_sel] != 0)
                     return;
                 _val[_sel] = n;
+                bool bad = n != 0 && Conflict(_sel, n, _val);
                 Draw();
                 if (!Complete())
+                {
+                    if (n != 0)
+                        PhoneSfx.Play(bad ? "sudo-bad" : "sudo-ok");
                     return;
+                }
                 _won = true;
+                PhoneSfx.Play("sudo-win");
                 PhoneGames.Remember(ref PhoneTheme.HighSudoku, PhoneTheme.HighSudoku + 1, _host);
                 _host.ShowToast(_diff < 2 ? "Next is harder." : "Another hard puzzle.");
                 BuildPlayUi();

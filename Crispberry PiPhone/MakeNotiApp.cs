@@ -24,7 +24,7 @@ namespace Crispberry_PiPhone
                 ShowOnHome = true,
                 Preinstalled = true,
                 OnOpen = host => { _live = new Session(host); _live.ShowHome(); },
-                OnClose = () => { _live = null; },
+                OnClose = () => { if (_live != null) _live.Halt(); _live = null; },
                 OnBack = TryGoBack,
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
@@ -47,6 +47,9 @@ namespace Crispberry_PiPhone
             private bool _ringtone = true;
             private DualRangeSlider _range;
             private TextMeshProUGUI _times;
+            private TextMeshProUGUI _startRead;
+            private TextMeshProUGUI _endRead;
+            private Button _kindBtn;
             private TMP_InputField _nameInput;
             private Button _previewBtn;
             private int _previewGen;
@@ -56,6 +59,11 @@ namespace Crispberry_PiPhone
             public Session(IPiPhoneHost host)
             {
                 _host = host;
+            }
+
+            internal void Halt()
+            {
+                _previewGen++;
             }
 
             public bool GoBack()
@@ -233,102 +241,50 @@ namespace Crispberry_PiPhone
                 Clear();
                 _host.SetTitle("Trim  " + _editName);
                 _range = null;
-                _times = PhoneUi.CreateLabel(_host.Content, "Times", TimesText(), 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Wrap(_times);
-                PhoneUi.Size(_times.gameObject, 40f);
+                _times = null;
+                _startRead = null;
+                _endRead = null;
                 _nameInput = PhoneUi.CreateInput(_host.Content, "Name this clip", 48);
                 _nameInput.text = string.IsNullOrEmpty(_editName) ? "Clip" : _editName;
-                if (PhoneUi.Landscape)
-                    DrawEditorLand();
-                else
-                    DrawEditorPort();
+                PhoneSfx.BindKeys(_nameInput);
+
+                bool vertical = !PhoneUi.Landscape;
+                if (!vertical)
+                {
+                    var top = new GameObject("TopSpace", typeof(RectTransform));
+                    top.transform.SetParent(_host.Content, false);
+                    var topLe = top.AddComponent<LayoutElement>();
+                    topLe.flexibleHeight = 1f;
+                    topLe.minHeight = 8f;
+                }
+
+                AddRange(_host.Content, vertical);
+
+                if (!vertical)
+                {
+                    var bottom = new GameObject("BotSpace", typeof(RectTransform));
+                    bottom.transform.SetParent(_host.Content, false);
+                    var botLe = bottom.AddComponent<LayoutElement>();
+                    botLe.flexibleHeight = 1f;
+                    botLe.minHeight = 8f;
+                }
+
+                _times = PhoneUi.CreateLabel(_host.Content, "Times", FileClipText(), 13f, FontStyles.Normal, TextAlignmentOptions.Center);
+                PhoneUi.Size(_times.gameObject, 20f);
+
+                var btns = new GameObject("Btns", typeof(RectTransform));
+                btns.transform.SetParent(_host.Content, false);
+                PhoneUi.Size(btns, 40f);
+                var bt = PhoneUi.AddHorizontal(btns, 8f);
+                bt.childAlignment = TextAnchor.MiddleCenter;
+                bt.childForceExpandWidth = false;
+                AddPreviewSave(btns.transform);
+                SyncSliders();
             }
 
             private float WindowSeconds()
             {
                 return _ringtone ? 20f : 10f;
-            }
-
-            private void DrawEditorPort()
-            {
-                var body = new GameObject("TrimBody", typeof(RectTransform));
-                body.transform.SetParent(_host.Content, false);
-                var bodyLe = body.AddComponent<LayoutElement>();
-                bodyLe.flexibleHeight = 1f;
-                bodyLe.minHeight = 260f;
-                var bodyH = PhoneUi.AddHorizontal(body, 10f);
-                bodyH.padding = new RectOffset(4, 4, 4, 4);
-                bodyH.childAlignment = TextAnchor.MiddleCenter;
-                bodyH.childForceExpandWidth = false;
-                bodyH.childForceExpandHeight = true;
-
-                var slideCol = new GameObject("SlideCol", typeof(RectTransform));
-                slideCol.transform.SetParent(body.transform, false);
-                var slideLe = slideCol.AddComponent<LayoutElement>();
-                slideLe.minWidth = 52f;
-                slideLe.preferredWidth = 56f;
-                slideLe.flexibleWidth = 0f;
-                slideLe.flexibleHeight = 1f;
-                var slideV = PhoneUi.AddVertical(slideCol, 4f, new RectOffset(0, 0, 0, 0));
-                slideV.childAlignment = TextAnchor.MiddleCenter;
-                slideV.childForceExpandHeight = false;
-                var endLab = PhoneUi.CreateLabel(slideCol.transform, "End", "END", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(endLab.gameObject, 18f);
-                AddRange(slideCol.transform, true);
-                var startLab = PhoneUi.CreateLabel(slideCol.transform, "Start", "START", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(startLab.gameObject, 18f);
-
-                var optCol = new GameObject("Opts", typeof(RectTransform));
-                optCol.transform.SetParent(body.transform, false);
-                var optLe = optCol.AddComponent<LayoutElement>();
-                optLe.flexibleWidth = 1f;
-                optLe.flexibleHeight = 1f;
-                var optV = PhoneUi.AddVertical(optCol, 10f, new RectOffset(8, 4, 8, 4));
-                optV.childAlignment = TextAnchor.UpperCenter;
-                optV.childForceExpandHeight = false;
-                AddKindChecks(optCol.transform);
-                var spacer = new GameObject("Spacer", typeof(RectTransform));
-                spacer.transform.SetParent(optCol.transform, false);
-                var spLe = spacer.AddComponent<LayoutElement>();
-                spLe.flexibleHeight = 1f;
-                spLe.minHeight = 8f;
-                AddPreviewSave(optCol.transform, 200f);
-            }
-
-            private void DrawEditorLand()
-            {
-                var band = new GameObject("RangeRow", typeof(RectTransform));
-                band.transform.SetParent(_host.Content, false);
-                var bandLe = band.AddComponent<LayoutElement>();
-                bandLe.flexibleHeight = 1f;
-                bandLe.minHeight = 56f;
-                bandLe.preferredHeight = 72f;
-                var bh = PhoneUi.AddHorizontal(band, 8f);
-                bh.padding = new RectOffset(4, 4, 8, 8);
-                bh.childAlignment = TextAnchor.MiddleCenter;
-                bh.childForceExpandWidth = false;
-                bh.childForceExpandHeight = true;
-                var startLab = PhoneUi.CreateLabel(band.transform, "Start", "START", 13f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
-                RangeLabelSize(startLab.gameObject);
-                AddRange(band.transform, false);
-                var endLab = PhoneUi.CreateLabel(band.transform, "End", "END", 13f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
-                RangeLabelSize(endLab.gameObject);
-
-                var checks = new GameObject("Checks", typeof(RectTransform));
-                checks.transform.SetParent(_host.Content, false);
-                PhoneUi.Size(checks, 40f);
-                var ch = PhoneUi.AddHorizontal(checks, 16f);
-                ch.childAlignment = TextAnchor.MiddleCenter;
-                ch.childForceExpandWidth = false;
-                AddKindChecks(checks.transform);
-
-                var btns = new GameObject("Btns", typeof(RectTransform));
-                btns.transform.SetParent(_host.Content, false);
-                PhoneUi.Size(btns, 48f);
-                var bt = PhoneUi.AddHorizontal(btns, 10f);
-                bt.childAlignment = TextAnchor.MiddleCenter;
-                bt.childForceExpandWidth = false;
-                AddPreviewSave(btns.transform, 180f);
             }
 
             private void AddRange(Transform parent, bool vertical)
@@ -342,29 +298,21 @@ namespace Crispberry_PiPhone
                     _end,
                     OnStartDrag,
                     OnEndDrag);
+                if (_range == null)
+                    return;
+                _startRead = PhoneUi.CreateLabel(_range.transform, "StartRead", _start.ToString("0.0") + "s", 11f, FontStyles.Normal, TextAlignmentOptions.Center);
+                _endRead = PhoneUi.CreateLabel(_range.transform, "EndRead", _end.ToString("0.0") + "s", 11f, FontStyles.Normal, TextAlignmentOptions.Center);
+                PhoneUi.IgnoreLayout(_startRead.gameObject);
+                PhoneUi.IgnoreLayout(_endRead.gameObject);
+                _range.Readouts(_startRead.rectTransform, _endRead.rectTransform);
             }
 
-            private static void RangeLabelSize(GameObject go)
+            private void AddPreviewSave(Transform parent)
             {
-                var le = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
-                le.minWidth = 52f;
-                le.preferredWidth = 56f;
-                le.flexibleWidth = 0f;
-                le.minHeight = 18f;
-                le.preferredHeight = 22f;
-                le.flexibleHeight = 0f;
-            }
-
-            private void AddKindChecks(Transform parent)
-            {
-                PhoneUi.CreateCheckRow(parent, "RINGTONE", _ringtone, () => SetKind(true));
-                PhoneUi.CreateCheckRow(parent, "ALERT", !_ringtone, () => SetKind(false));
-            }
-
-            private void AddPreviewSave(Transform parent, float width)
-            {
-                _previewBtn = PhoneUi.CreateIconChip(parent, "Preview", PhoneIcons.Material("play"), TogglePreview, false, new Vector2(44f, 40f));
+                _previewBtn = PhoneUi.CreateIconChip(parent, "Preview", PhoneIcons.Material("play"), TogglePreview, false, new Vector2(36f, 32f));
                 PhoneUi.MaterialChip(parent, "save", "Save", () => _host.StartHostCoroutine(SaveTrim(WindowSeconds(), _ringtone ? "ringtone" : "text")), new Vector2(36f, 32f));
+                _kindBtn = PhoneUi.CreateToggleChip(parent, _ringtone, () => SetKind(!_ringtone));
+                PhoneUi.SetTooltip(_kindBtn.gameObject, _ringtone ? "Ringtone" : "Notification");
             }
 
             private void SetKind(bool ringtone)
@@ -417,17 +365,21 @@ namespace Crispberry_PiPhone
             private void SyncSliders()
             {
                 _syncing = true;
+                if (_startRead != null)
+                    _startRead.text = _start.ToString("0.0") + "s";
+                if (_endRead != null)
+                    _endRead.text = _end.ToString("0.0") + "s";
+                if (_times != null)
+                    _times.text = FileClipText();
                 if (_range != null)
                     _range.Set(_start, _end);
-                if (_times != null)
-                    _times.text = TimesText();
                 _syncing = false;
             }
 
-            private string TimesText()
+            private string FileClipText()
             {
                 float clip = Mathf.Max(0f, _end - _start);
-                return "File  " + _clipLen.ToString("0.0") + "s   ·   Clip  " + clip.ToString("0.0") + "s  (max " + WindowSeconds().ToString("0") + "s)\nStart  " + _start.ToString("0.0") + "s   ·   End  " + _end.ToString("0.0") + "s";
+                return "File  " + _clipLen.ToString("0.0") + "s    Clip  " + clip.ToString("0.0") + "s    " + (_ringtone ? "Ringtone" : "Notification");
             }
 
             private void TogglePreview()

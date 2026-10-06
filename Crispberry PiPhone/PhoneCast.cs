@@ -10,8 +10,11 @@ using UnityEngine.UI;
 namespace Crispberry_PiPhone
 {
     /// <summary>
-    /// Mirrors the phone onto allow-listed screens (airport flight boards, plus
-    /// anything a mod registers). Other players in the room get a JPEG of that screen.
+    /// Draws a live copy of this player's phone onto a flight board or a screen
+    /// a mod registered. The phone itself stays put. Only me keeps the copy on
+    /// this PC. Let others watch sends a short description, and their phone
+    /// builds the same screen from the apps they already have.
+    /// Either way the screen is reserved so nobody else can cast to it.
     /// </summary>
     internal sealed class PhoneCast : MonoBehaviour
     {
@@ -19,6 +22,7 @@ namespace Crispberry_PiPhone
         private const float NearRange = 5f;
         private const int Chunk = 6000;
         private const int MaxJpg = 180000;
+        private const float CaptureInterval = 1f / 30f;
 
         private static PhoneCast _instance;
         private static readonly List<PiPhoneCastDevice> Devices = new List<PiPhoneCastDevice>();
@@ -33,7 +37,19 @@ namespace Crispberry_PiPhone
         private static float _waitUntil;
         private static int _seq;
         private static float _nextAnnounce;
+        private static float _netWait;
+        private static int _netHash;
         private static Coroutine _routine;
+        private static float _nextCapture;
+        private static bool _sharePick;
+        private static bool _share;
+        private static float _nextState;
+        private static float _nextPose;
+        private static string _stateSig = string.Empty;
+        private static string _statePose = string.Empty;
+        private static string _watchId = string.Empty;
+        private static readonly HashSet<int> _watcherIds = new HashSet<int>();
+        private static readonly Dictionary<string, bool> Shared = new Dictionary<string, bool>(StringComparer.Ordinal);
         private static Shader _shader;
         private static bool _shaderLogged;
 
@@ -54,6 +70,8 @@ namespace Crispberry_PiPhone
             public Renderer Quad;
             public Texture2D Tex;
             public Texture2D Picture;
+            public Renderer Source;
+            public Material[] OriginalMats;
             public Material ScreenMat;
             public RenderTexture Screen;
             public float FaceW;
@@ -122,12 +140,16 @@ namespace Crispberry_PiPhone
         public static void OnSceneLoaded()
         {
             ClosePicker();
+            _discoverScene = int.MinValue;
             _waiting = false;
             if (_casting)
                 Release();
+            EndWatch();
             ClearShows();
             Owners.Clear();
+            Shared.Clear();
             Frames.Clear();
+            _watcherIds.Clear();
         }
 
         public static void Toggle()
@@ -167,14 +189,50 @@ namespace Crispberry_PiPhone
                 return;
             PhoneMenu.CloseShade();
             var root = PhoneUi.CreateImage(screen, "CastList", PhoneUi.White(), new Color(0.06f, 0.07f, 0.09f, 0.98f));
+            root.GetComponent<Image>().raycastTarget = true;
             PhoneUi.Stretch(root, 0f, 0f);
             root.SetAsLastSibling();
             _picker = root.gameObject;
             PhoneUi.AddVertical(_picker, 8f, new RectOffset(16, 16, 36, 16));
-            var title = PhoneUi.CreateLabel(root, "Title", PhoneLang.T("screen_cast", "Screen cast"), 20f, FontStyles.Bold, TextAlignmentOptions.Center);
+            var head = new GameObject("Head", typeof(RectTransform));
+            head.transform.SetParent(root, false);
+            PhoneUi.Size(head, 40f);
+            var headRow = PhoneUi.AddHorizontal(head, 8f);
+            headRow.childAlignment = TextAnchor.MiddleLeft;
+            headRow.childForceExpandWidth = false;
+            headRow.childForceExpandHeight = false;
+            PhoneUi.MaterialChip(head.transform, "arrow_back", "Back", () => ClosePicker(), new Vector2(36f, 32f));
+            var title = PhoneUi.CreateLabel(head.transform, "Title", PhoneLang.T("screen_cast", "Screen cast"), 20f, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
             var titleLe = title.gameObject.AddComponent<LayoutElement>();
+            titleLe.flexibleWidth = 1f;
             titleLe.preferredHeight = 36f;
             titleLe.minHeight = 36f;
+            var modeGo = new GameObject("Who", typeof(RectTransform));
+            modeGo.transform.SetParent(root, false);
+            PhoneUi.AddHorizontal(modeGo, 8f);
+            var modeRow = modeGo.GetComponent<HorizontalLayoutGroup>();
+            modeRow.childAlignment = TextAnchor.MiddleCenter;
+            modeRow.childForceExpandWidth = false;
+            modeRow.childForceExpandHeight = false;
+            var modeLe = modeGo.AddComponent<LayoutElement>();
+            modeLe.preferredHeight = 44f;
+            modeLe.minHeight = 44f;
+            Button onlyMe = PhoneUi.CreateButton(modeGo.transform, PhoneLang.T("cast_only_me", "Only me"), () =>
+            {
+                _sharePick = false;
+                OpenPicker();
+            }, new Vector2(130f, 36f));
+            Button letWatch = PhoneUi.CreateButton(modeGo.transform, PhoneLang.T("cast_let_watch", "Let others watch"), () =>
+            {
+                _sharePick = true;
+                OpenPicker();
+            }, new Vector2(160f, 36f));
+            Image onlyImg = onlyMe.GetComponent<Image>();
+            Image watchImg = letWatch.GetComponent<Image>();
+            if (onlyImg != null)
+                onlyImg.color = _sharePick ? PhoneUi.SurfaceAlt : new Color(0.16f, 0.42f, 0.30f, 1f);
+            if (watchImg != null)
+                watchImg.color = _sharePick ? new Color(0.16f, 0.42f, 0.30f, 1f) : PhoneUi.SurfaceAlt;
             RectTransform rows;
             ScrollRect scroll = PhoneUi.CreateScrollView(root, out rows);
             var scrollLe = scroll.gameObject.AddComponent<LayoutElement>();
@@ -190,13 +248,28 @@ namespace Crispberry_PiPhone
                 string id = device.Id;
                 string label = string.IsNullOrEmpty(device.Name) ? id : device.Name;
                 bool mine = _casting && _deviceId == id;
+                bool taken = OwnedByOther(id);
+                bool shared = IsShared(id);
+                bool watching = _watchId == id;
                 if (mine)
                     label = label + "  ·  " + PhoneLang.T("cast_on", "On");
-                Button btn = PhoneUi.CreateButton(rows, label, () => Choose(id), new Vector2(280f, 48f));
+                else if (watching)
+                    label = label + "  ·  " + PhoneLang.T("cast_watching", "Watching");
+                else if (taken && shared)
+                    label = label + "  ·  " + PhoneLang.T("cast_watch", "Watch");
+                else if (taken)
+                    label = label + "  ·  " + PhoneLang.T("cast_in_use", "In use");
+                Button btn = PhoneUi.CreateButton(rows, label, () =>
+                {
+                    if (!mine && taken && shared)
+                        ToggleWatch(id);
+                    else
+                        Choose(id);
+                }, new Vector2(280f, 48f));
                 var le = btn.gameObject.AddComponent<LayoutElement>();
                 le.preferredHeight = 48f;
                 le.minHeight = 48f;
-                if (mine)
+                if (mine || watching)
                 {
                     Image img = btn.GetComponent<Image>();
                     if (img != null)
@@ -207,6 +280,7 @@ namespace Crispberry_PiPhone
 
         private static List<PiPhoneCastDevice> Available()
         {
+            Discover(true);
             var list = new List<PiPhoneCastDevice>();
             for (int i = 0; i < Devices.Count; i++)
             {
@@ -225,14 +299,14 @@ namespace Crispberry_PiPhone
             ClosePicker();
             if (string.IsNullOrEmpty(id))
                 return;
+            if (OwnedByOther(id))
+            {
+                PhoneMenu.Toast(PhoneLang.T("cast_in_use", "That screen is in use"));
+                return;
+            }
             if (_casting && _deviceId == id)
             {
                 Release();
-                return;
-            }
-            if (OwnedByOther(id))
-            {
-                PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
                 return;
             }
             if (_casting)
@@ -242,27 +316,34 @@ namespace Crispberry_PiPhone
 
         private static void StartCast(string id)
         {
-            int me = Actor();
-            if (!PhotonNetwork.InRoom)
+            bool share = _sharePick;
+            bool room = PhotonNetwork.InRoom && PhotonNetwork.CurrentRoom != null;
+            if (!room)
             {
+                _share = false;
                 BeginLocal(id);
                 return;
             }
             if (PhotonNetwork.IsMasterClient)
             {
-                if (!MasterClaim(id, me))
+                if (!MasterClaim(id, Actor()))
                 {
-                    PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
+                    PhoneMenu.Toast(PhoneLang.T("cast_in_use", "That screen is in use"));
                     return;
                 }
+                PhoneNet.SendCastGrant(id, Actor(), share);
+                _share = share;
+                _stateSig = string.Empty;
+                _statePose = string.Empty;
+                _nextState = 0f;
+                _nextPose = 0f;
                 BeginLocal(id);
-                PhoneNet.SendCastGrant(id, me);
                 return;
             }
             _waiting = true;
             _waitId = id;
-            _waitUntil = Time.unscaledTime + 2f;
-            PhoneNet.SendCastAsk(id);
+            _waitUntil = Time.unscaledTime + 2.5f;
+            PhoneNet.SendCastAsk(id, share);
         }
 
         public static void Release()
@@ -270,6 +351,11 @@ namespace Crispberry_PiPhone
             _waiting = false;
             string id = _deviceId;
             bool was = _casting;
+            if (_parked)
+            {
+                _parked = false;
+                PhoneMenu.ReturnFromCast();
+            }
             StopRoutine();
             _casting = false;
             _deviceId = string.Empty;
@@ -278,14 +364,22 @@ namespace Crispberry_PiPhone
                 DropShow(id);
                 int owner;
                 if (Owners.TryGetValue(id, out owner) && owner == Actor())
+                {
                     Owners.Remove(id);
-                if (PhotonNetwork.InRoom)
-                    PhoneNet.SendCastStop(id, Actor());
+                    if (PhotonNetwork.InRoom)
+                        PhoneNet.SendCastStop(id, Actor());
+                }
             }
+            _share = false;
+            _stateSig = string.Empty;
+            _statePose = string.Empty;
+            _watcherIds.Clear();
+            if (!string.IsNullOrEmpty(id))
+                Shared.Remove(id);
             PhoneMenu.RefreshShade();
         }
 
-        public static void OnAsk(int actor, string id)
+        public static void OnAsk(int actor, string id, bool share)
         {
             if (!PhotonNetwork.IsMasterClient || string.IsNullOrEmpty(id) || actor <= 0)
                 return;
@@ -294,15 +388,15 @@ namespace Crispberry_PiPhone
                 PhoneNet.SendCastDeny(actor, id);
                 return;
             }
-            ApplyGrant(id, actor);
-            PhoneNet.SendCastGrant(id, actor);
+            ApplyGrant(id, actor, share);
+            PhoneNet.SendCastGrant(id, actor, share);
         }
 
-        public static void OnGrant(string id, int actor)
+        public static void OnGrant(string id, int actor, bool share)
         {
             if (string.IsNullOrEmpty(id) || actor <= 0)
                 return;
-            ApplyGrant(id, actor);
+            ApplyGrant(id, actor, share);
         }
 
         public static void OnDeny(string id)
@@ -331,57 +425,59 @@ namespace Crispberry_PiPhone
                 PhoneMenu.RefreshShade();
             }
             DropShow(id);
+            Shared.Remove(id);
+            if (_watchId == id)
+                EndWatch();
         }
 
         public static void OnFrame(string id, int actor, int seq, int index, int count, byte[] chunk)
         {
-            if (string.IsNullOrEmpty(id) || chunk == null || chunk.Length == 0 || count < 1 || count > 40 || index < 0 || index >= count)
+            if (string.IsNullOrEmpty(id) || chunk == null || count <= 0 || index < 0 || index >= count)
                 return;
             if (actor == Actor())
                 return;
             int owner;
-            if (!Owners.TryGetValue(id, out owner))
-                Owners[id] = actor;
-            else if (owner != actor)
+            if (!Owners.TryGetValue(id, out owner) || owner != actor)
                 return;
             FrameBuf buf;
-            if (!Frames.TryGetValue(id, out buf) || buf.Seq != seq || buf.Count != count)
+            if (!Frames.TryGetValue(id, out buf) || buf == null || buf.Seq != seq || buf.Count != count || buf.Parts == null)
             {
-                buf = new FrameBuf
-                {
-                    Seq = seq,
-                    Count = count,
-                    Parts = new byte[count][],
-                    Got = 0
-                };
+                buf = new FrameBuf();
+                buf.Seq = seq;
+                buf.Count = count;
+                buf.Parts = new byte[count][];
+                buf.Got = 0;
                 Frames[id] = buf;
             }
             if (buf.Parts[index] != null)
                 return;
             buf.Parts[index] = chunk;
             buf.Got++;
-            if (buf.Got < buf.Count)
+            if (buf.Got < count)
                 return;
-            int total = 0;
-            for (int i = 0; i < buf.Parts.Length; i++)
+            int len = 0;
+            for (int i = 0; i < count; i++)
             {
                 if (buf.Parts[i] == null)
                     return;
-                total += buf.Parts[i].Length;
+                len += buf.Parts[i].Length;
             }
-            if (total <= 0 || total > MaxJpg)
-                return;
-            var jpg = new byte[total];
-            int offset = 0;
-            for (int i = 0; i < buf.Parts.Length; i++)
+            var jpg = new byte[len];
+            int at = 0;
+            for (int i = 0; i < count; i++)
             {
-                Buffer.BlockCopy(buf.Parts[i], 0, jpg, offset, buf.Parts[i].Length);
-                offset += buf.Parts[i].Length;
+                Buffer.BlockCopy(buf.Parts[i], 0, jpg, at, buf.Parts[i].Length);
+                at += buf.Parts[i].Length;
             }
             Frames.Remove(id);
-            Texture2D tex = PhoneImages.LoadTexture(jpg);
-            if (tex == null)
+            var tex = new Texture2D(2, 2, TextureFormat.RGB24, false);
+            if (!PhoneImages.LoadImage(tex, jpg))
+            {
+                UnityEngine.Object.Destroy(tex);
                 return;
+            }
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
             Show(id, tex);
         }
 
@@ -392,39 +488,70 @@ namespace Crispberry_PiPhone
                 _waiting = false;
                 PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
             }
-            if (!_casting || !PhotonNetwork.InRoom)
-                return;
-            if (Time.unscaledTime < _nextAnnounce)
-                return;
-            _nextAnnounce = Time.unscaledTime + 2f;
-            PhoneNet.SendCastGrant(_deviceId, Actor());
+            if (_casting && !string.IsNullOrEmpty(_deviceId) && PhotonNetwork.InRoom && Time.unscaledTime >= _nextAnnounce)
+            {
+                _nextAnnounce = Time.unscaledTime + 3f;
+                if (PhotonNetwork.IsMasterClient)
+                    PhoneNet.SendCastGrant(_deviceId, Actor(), _share);
+                else if (PhotonNetwork.MasterClient != null)
+                    PhoneNet.SendCastAsk(_deviceId, _share);
+            }
         }
 
-        private static void ApplyGrant(string id, int actor)
+        private void LateUpdate()
+        {
+            PublishWatch();
+        }
+
+        private static int _pictureHides;
+
+        internal static void SuspendPicture()
+        {
+            _pictureHides++;
+            if (_pictureHides == 1)
+                SetPictureShown(false);
+        }
+
+        internal static void ResumePicture()
+        {
+            if (_pictureHides <= 0)
+                return;
+            _pictureHides--;
+            if (_pictureHides == 0)
+                SetPictureShown(true);
+        }
+
+        private static void SetPictureShown(bool shown)
+        {
+            foreach (var kv in Shows)
+            {
+                Display show = kv.Value;
+                if (show != null && show.Quad != null)
+                    show.Quad.enabled = shown;
+            }
+            PhoneMenu.SetCastCanvasDrawn(shown);
+        }
+
+        private static void ApplyGrant(string id, int actor, bool share)
         {
             Owners[id] = actor;
             int me = Actor();
-            if (actor == me)
+            Shared[id] = share;
+            if (actor != me)
             {
-                _waiting = false;
-                if (!_casting)
-                    BeginLocal(id);
+                if (!share && _watchId == id)
+                    EndWatch();
                 return;
             }
-            if (_waiting && _waitId == id)
-            {
-                _waiting = false;
-                PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
-            }
-            if (_casting && _deviceId == id)
-            {
-                StopRoutine();
-                _casting = false;
-                _deviceId = string.Empty;
-                PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
-                PhoneMenu.RefreshShade();
-            }
-            EnsureShow(id);
+            _waiting = false;
+            _share = share;
+            if (_casting)
+                return;
+            _stateSig = string.Empty;
+            _statePose = string.Empty;
+            _nextState = 0f;
+            _nextPose = 0f;
+            BeginLocal(id);
         }
 
         private static bool MasterClaim(string id, int actor)
@@ -478,16 +605,17 @@ namespace Crispberry_PiPhone
             if (!EnsureShow(id))
             {
                 Owners.Remove(id);
-                if (PhotonNetwork.InRoom)
-                    PhoneNet.SendCastStop(id, Actor());
                 PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
                 return;
             }
             _casting = true;
             _deviceId = id;
             _seq = 0;
+            _netWait = 0f;
+            _netHash = 0;
             _nextAnnounce = Time.unscaledTime + 2f;
             StopRoutine();
+            _nextCapture = 0f;
             if (_instance != null)
                 _routine = _instance.StartCoroutine(_instance.CaptureLoop());
             PhoneMenu.RefreshShade();
@@ -498,35 +626,16 @@ namespace Crispberry_PiPhone
         {
             while (_casting)
             {
+                float wait = _nextCapture - Time.unscaledTime;
+                if (wait > 0.01f)
+                    yield return new WaitForSecondsRealtime(wait);
                 yield return new WaitForEndOfFrame();
                 if (!_casting)
                     yield break;
-                if (PhoneMenu.IsOpen && PiPhoneApi.Powered)
-                {
-                    Texture2D shot = Grab();
-                    if (shot != null)
-                    {
-                        Show(_deviceId, shot);
-                        byte[] jpg = PhoneImages.EncodeJpg(shot, 45);
-                        if (jpg != null && jpg.Length > MaxJpg)
-                        {
-                            Texture2D smaller = Downscale(shot, 960);
-                            if (smaller != null)
-                            {
-                                jpg = PhoneImages.EncodeJpg(smaller, 40);
-                                UnityEngine.Object.Destroy(smaller);
-                            }
-                        }
-                        if (jpg != null && jpg.Length > 32 && jpg.Length <= MaxJpg && PhotonNetwork.InRoom)
-                            PhoneNet.SendCastFrame(_deviceId, NextSeq(), jpg);
-                    }
-                }
-                float t = 0f;
-                while (t < 0.3f && _casting)
-                {
-                    t += Time.unscaledDeltaTime;
-                    yield return null;
-                }
+                if (Time.unscaledTime < _nextCapture)
+                    continue;
+                _nextCapture = Time.unscaledTime + CaptureInterval;
+                PaintLive(_deviceId);
             }
         }
 
@@ -538,6 +647,294 @@ namespace Crispberry_PiPhone
             return _seq;
         }
 
+        private static bool _parked;
+
+        public static bool PhoneIsOnBoard
+        {
+            get { return _parked; }
+        }
+
+        public static bool UseBoard(bool on)
+        {
+            if (!on)
+            {
+                if (!_parked)
+                    return true;
+                _parked = false;
+                PhoneMenu.ReturnFromCast();
+                _nextCapture = 0f;
+                if (_casting && _instance != null && _routine == null)
+                    _routine = _instance.StartCoroutine(_instance.CaptureLoop());
+                return true;
+            }
+            if (!_casting)
+                return false;
+            if (PhoneMenu.IsPhoneMounted)
+                return false;
+            Display show;
+            if (!Shows.TryGetValue(_deviceId, out show) || show == null || show.Host == null)
+                return false;
+            StopRoutine();
+            _parked = true;
+            if (show.Quad != null)
+                show.Quad.enabled = true;
+            if (show.ScreenMat != null)
+            {
+                show.ScreenMat.mainTexture = null;
+                show.ScreenMat.color = Color.black;
+            }
+            PhoneMenu.PlaceOnCast(show.Host.transform, show.FaceW, show.FaceH);
+            Plugin.LogInfo("Cast is the phone on " + _deviceId);
+            return true;
+        }
+
+        private static void PaintLive(string id)
+        {
+            if (_parked)
+                return;
+            Display show;
+            if (!Shows.TryGetValue(id, out show) || show == null || show.ScreenMat == null)
+                return;
+            EnsureScreenTarget(show);
+            RenderTexture phone = RenderLive();
+            if (phone == null)
+            {
+                ClearTarget(show.Screen);
+                show.ScreenMat.mainTexture = show.Screen;
+                return;
+            }
+            float phoneAspect = phone.height > 0 ? phone.width / (float)phone.height : 1f;
+            Letterbox(phone, show.Screen, phoneAspect, show.ScreenAspect);
+            show.ScreenMat.mainTexture = show.Screen;
+            show.ScreenMat.color = Color.white;
+        }
+
+        private static bool CastIsPrivate()
+        {
+            if (CallService.IsBusy)
+                return true;
+            PiPhoneApp app = PhoneMenu.OpenApp();
+            if (app == null || string.IsNullOrEmpty(app.Id))
+                return false;
+            string id = app.Id;
+            return id == BuiltinApps.MessagesId
+                || id == BuiltinApps.PhoneId
+                || id == BuiltinApps.VoicemailId
+                || id == BuiltinApps.NotesId
+                || id == BuiltinApps.VoiceMemosId;
+        }
+
+        private static void EnsureScreenTarget(Display show)
+        {
+            int w;
+            int h;
+            FitPixels(show.ScreenAspect, 960, out w, out h);
+            if (show.Screen != null && show.Screen.width == w && show.Screen.height == h)
+                return;
+            if (show.Screen != null)
+            {
+                show.Screen.Release();
+                UnityEngine.Object.Destroy(show.Screen);
+            }
+            show.Screen = new RenderTexture(w, h, 0, RenderTextureFormat.ARGB32);
+            show.Screen.wrapMode = TextureWrapMode.Clamp;
+            show.Screen.filterMode = FilterMode.Bilinear;
+            show.Screen.Create();
+        }
+
+        private static void FitPixels(float aspect, int longSide, out int w, out int h)
+        {
+            if (aspect < 0.05f)
+                aspect = 1f;
+            if (aspect >= 1f)
+            {
+                w = longSide;
+                h = Mathf.Max(8, Mathf.RoundToInt(longSide / aspect));
+            }
+            else
+            {
+                h = longSide;
+                w = Mathf.Max(8, Mathf.RoundToInt(longSide * aspect));
+            }
+        }
+
+        private static void ClearTarget(RenderTexture rt)
+        {
+            if (rt == null)
+                return;
+            RenderTexture prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            GL.Clear(true, true, Color.black);
+            RenderTexture.active = prev;
+        }
+
+        private static void Letterbox(RenderTexture phone, RenderTexture screen, float phoneAspect, float screenAspect)
+        {
+            if (phone == null || screen == null)
+                return;
+            float sx = 1f;
+            float sy = 1f;
+            if (phoneAspect > 0.05f && screenAspect > 0.05f)
+            {
+                if (phoneAspect < screenAspect)
+                    sx = phoneAspect / screenAspect;
+                else
+                    sy = screenAspect / phoneAspect;
+            }
+            RenderTexture prev = RenderTexture.active;
+            RenderTexture.active = screen;
+            GL.PushMatrix();
+            GL.LoadPixelMatrix(0f, screen.width, 0f, screen.height);
+            GL.Clear(true, true, Color.black);
+            float dw = screen.width * sx;
+            float dh = screen.height * sy;
+            Graphics.DrawTexture(new Rect((screen.width - dw) * 0.5f, (screen.height - dh) * 0.5f, dw, dh), phone);
+            GL.PopMatrix();
+            RenderTexture.active = prev;
+        }
+
+        private static RenderTexture RenderLive()
+        {
+            Canvas canvas = PhoneMenu.RootCanvas;
+            RectTransform bezel = PhoneMenu.BezelRt;
+            if (canvas == null || bezel == null || !canvas.gameObject.activeInHierarchy)
+                return null;
+            if (canvas.renderMode == RenderMode.WorldSpace)
+                return RenderWorld(canvas, bezel);
+            return RenderOverlay(canvas, bezel);
+        }
+
+        private static RenderTexture RenderOverlay(Canvas canvas, RectTransform bezel)
+        {
+            float bw = Mathf.Abs(bezel.rect.width);
+            float bh = Mathf.Abs(bezel.rect.height);
+            if (bw < 8f)
+                bw = Mathf.Abs(bezel.sizeDelta.x);
+            if (bh < 8f)
+                bh = Mathf.Abs(bezel.sizeDelta.y);
+            if (bw < 8f || bh < 8f)
+                return null;
+            int w;
+            int h;
+            FitPixels(bw / bh, 960, out w, out h);
+            RenderTexture rt = EnsureGrabRt(w, h);
+            Camera cam = EnsureGrabCam();
+            cam.targetTexture = rt;
+            cam.orthographic = true;
+            cam.orthographicSize = h * 0.5f;
+            cam.aspect = w / (float)h;
+            cam.pixelRect = new Rect(0f, 0f, w, h);
+            cam.rect = new Rect(0f, 0f, 1f, 1f);
+            cam.transform.position = new Vector3(0f, 0f, -10f);
+            cam.transform.rotation = Quaternion.identity;
+            cam.nearClipPlane = 0.3f;
+            cam.farClipPlane = 100f;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = Color.black;
+            cam.cullingMask = 1 << 31;
+
+            RenderMode prevMode = canvas.renderMode;
+            Camera prevCam = canvas.worldCamera;
+            float prevDist = canvas.planeDistance;
+            var scaler = canvas.GetComponent<CanvasScaler>();
+            bool scalerOn = scaler != null && scaler.enabled;
+            Vector2 anchorMin = bezel.anchorMin;
+            Vector2 anchorMax = bezel.anchorMax;
+            Vector2 pivot = bezel.pivot;
+            Vector2 anchored = bezel.anchoredPosition;
+            Vector2 size = bezel.sizeDelta;
+            Vector3 scale = bezel.localScale;
+            PushLayers(canvas.transform, 31);
+            PhoneMenu.ShowHardware(false);
+            try
+            {
+                if (scaler != null)
+                    scaler.enabled = false;
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = cam;
+                canvas.planeDistance = 10f;
+                bezel.anchorMin = Vector2.zero;
+                bezel.anchorMax = Vector2.one;
+                bezel.pivot = new Vector2(0.5f, 0.5f);
+                bezel.anchoredPosition = Vector2.zero;
+                bezel.sizeDelta = Vector2.zero;
+                bezel.localScale = Vector3.one;
+                Canvas.ForceUpdateCanvases();
+                cam.enabled = true;
+                cam.Render();
+            }
+            finally
+            {
+                cam.enabled = false;
+                bezel.anchorMin = anchorMin;
+                bezel.anchorMax = anchorMax;
+                bezel.pivot = pivot;
+                bezel.anchoredPosition = anchored;
+                bezel.sizeDelta = size;
+                bezel.localScale = scale;
+                canvas.renderMode = prevMode;
+                canvas.worldCamera = prevCam;
+                canvas.planeDistance = prevDist;
+                if (scaler != null)
+                    scaler.enabled = scalerOn;
+                PopLayers();
+                if (!PhoneMenu.OnCast)
+                    PhoneMenu.ShowHardware(true);
+                Canvas.ForceUpdateCanvases();
+            }
+            return rt;
+        }
+
+        private static RenderTexture RenderWorld(Canvas canvas, RectTransform bezel)
+        {
+            var corners = new Vector3[4];
+            bezel.GetWorldCorners(corners);
+            float width = Vector3.Distance(corners[0], corners[3]);
+            float height = Vector3.Distance(corners[0], corners[1]);
+            if (width < 0.01f || height < 0.01f)
+                return null;
+            int w;
+            int h;
+            FitPixels(width / height, 960, out w, out h);
+            RenderTexture rt = EnsureGrabRt(w, h);
+            Camera cam = EnsureGrabCam();
+            cam.targetTexture = rt;
+            cam.orthographic = true;
+            cam.orthographicSize = height * 0.5f;
+            cam.aspect = width / height;
+            cam.pixelRect = new Rect(0f, 0f, w, h);
+            Vector3 center = (corners[0] + corners[2]) * 0.5f;
+            Vector3 normal = Vector3.Cross(corners[1] - corners[0], corners[3] - corners[0]);
+            if (normal.sqrMagnitude < 0.0001f)
+                normal = Vector3.forward;
+            normal.Normalize();
+            Camera view = Camera.main;
+            if (view != null && Vector3.Dot(normal, view.transform.position - center) < 0f)
+                normal = -normal;
+            cam.transform.position = center + normal * 0.25f;
+            cam.transform.rotation = Quaternion.LookRotation(-normal, (corners[1] - corners[0]).normalized);
+            cam.nearClipPlane = 0.01f;
+            cam.farClipPlane = 0.5f;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = Color.black;
+            PushLayers(canvas.transform, 31);
+            cam.cullingMask = 1 << 31;
+            PhoneMenu.ShowHardware(false);
+            try
+            {
+                cam.enabled = true;
+                cam.Render();
+            }
+            finally
+            {
+                cam.enabled = false;
+                PopLayers();
+                if (!PhoneMenu.OnCast)
+                    PhoneMenu.ShowHardware(true);
+            }
+            return rt;
+        }
+
         private static Texture2D Grab()
         {
             RectTransform bezel = PhoneMenu.BezelRt;
@@ -546,7 +943,9 @@ namespace Crispberry_PiPhone
                 return null;
             if (canvas.renderMode == RenderMode.WorldSpace)
                 return GrabFramed(canvas, bezel);
-            return GrabOverlay(canvas, bezel);
+            var corners = new Vector3[4];
+            bezel.GetWorldCorners(corners);
+            return ReadBezel(null, corners);
         }
 
         private static Texture2D GrabOverlay(Canvas canvas, RectTransform bezel)
@@ -669,8 +1068,10 @@ namespace Crispberry_PiPhone
             int srcY = Mathf.Max(0, ry);
             int dstX = srcX - rx;
             int dstY = srcY - ry;
-            int copyW = Mathf.Min(rt.width, rx + w) - srcX;
-            int copyH = Mathf.Min(rt.height, ry + h) - srcY;
+            int rtW = rt != null ? rt.width : Screen.width;
+            int rtH = rt != null ? rt.height : Screen.height;
+            int copyW = Mathf.Min(rtW, rx + w) - srcX;
+            int copyH = Mathf.Min(rtH, ry + h) - srcY;
             var black = new Color32[w * h];
             var solid = new Color32(0, 0, 0, 255);
             for (int i = 0; i < black.Length; i++)
@@ -773,7 +1174,7 @@ namespace Crispberry_PiPhone
                 if (show == null)
                     return false;
                 Shows[id] = show;
-                Plugin.LogInfo("Cast screen quad shader " + show.ScreenMat.shader.name + " aspect " + show.ScreenAspect.ToString("0.00"));
+                Plugin.LogInfo("Cast local on " + board.name + " aspect " + show.ScreenAspect.ToString("0.00"));
                 return true;
             }
             Renderer fallback = Largest(board);
@@ -797,7 +1198,7 @@ namespace Crispberry_PiPhone
             var filter = quadGo.GetComponent<MeshFilter>();
             filter.sharedMesh = CastQuad();
             quadGo.transform.SetParent(host.transform, false);
-            Bounds local = slot >= 0 ? SlotBounds(source, slot) : MeshBounds(source);
+            Bounds local = ScreenBounds(source, slot);
             float faceW;
             float faceH;
             FitBounds(source.transform, local, host, quadGo.transform, out faceW, out faceH);
@@ -813,10 +1214,12 @@ namespace Crispberry_PiPhone
             show.Quad.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             show.Quad.receiveShadows = false;
             show.ScreenMat = new Material(shader);
-            show.ScreenMat.color = Color.white;
-            if (show.ScreenMat.HasProperty("_Color"))
-                show.ScreenMat.SetColor("_Color", Color.white);
+            MakeOpaque(show.ScreenMat);
+            show.ScreenMat.renderQueue = 4000;
             show.Quad.sharedMaterial = show.ScreenMat;
+            int layer = source.gameObject.layer;
+            host.layer = layer;
+            quadGo.layer = layer;
             return show;
         }
 
@@ -833,7 +1236,7 @@ namespace Crispberry_PiPhone
             if (show.Tex != null && show.Tex != tex)
                 UnityEngine.Object.Destroy(show.Tex);
             show.Tex = tex;
-            if (show.Quad != null && show.ScreenMat != null)
+            if (show.ScreenMat != null)
                 PaintScreen(show, tex);
         }
 
@@ -856,8 +1259,43 @@ namespace Crispberry_PiPhone
             }
             PaintFit(show.Screen, phone);
             BakePicture(show);
-            show.ScreenMat.color = Color.white;
-            show.ScreenMat.mainTexture = show.Picture;
+            AssignPicture(show.ScreenMat, show.Picture);
+        }
+
+        private static void AssignPicture(Material mat, Texture tex)
+        {
+            if (mat == null || tex == null)
+                return;
+            mat.mainTexture = tex;
+            SetTex(mat, "_BaseTexture", tex);
+            SetTex(mat, "_MainTex", tex);
+            SetTex(mat, "_BaseMap", tex);
+            SetTex(mat, "_BaseColorMap", tex);
+            SetTex(mat, "_EmissionMap", tex);
+            Shader shader = mat.shader;
+            if (shader == null)
+                return;
+            int count = shader.GetPropertyCount();
+            for (int i = 0; i < count; i++)
+            {
+                if (shader.GetPropertyType(i) != UnityEngine.Rendering.ShaderPropertyType.Texture)
+                    continue;
+                string prop = shader.GetPropertyName(i);
+                if (string.IsNullOrEmpty(prop))
+                    continue;
+                string n = prop.ToLowerInvariant();
+                if (n.Contains("normal") || n.Contains("bump") || n.Contains("metal") || n.Contains("occlus") || n.Contains("mask"))
+                    continue;
+                if (mat.GetTexture(prop) == null && n.IndexOf("tex", StringComparison.Ordinal) < 0 && n.IndexOf("base", StringComparison.Ordinal) < 0)
+                    continue;
+                mat.SetTexture(prop, tex);
+            }
+        }
+
+        private static void SetTex(Material mat, string prop, Texture tex)
+        {
+            if (mat.HasProperty(prop))
+                mat.SetTexture(prop, tex);
         }
 
         private static void BakePicture(Display show)
@@ -1062,91 +1500,24 @@ namespace Crispberry_PiPhone
 
         private static bool IsDeparture(Material mat)
         {
-            if (mat == null)
-                return false;
-            string blob = ((mat.name ?? string.Empty) + " " + (mat.shader != null ? mat.shader.name : string.Empty)).ToLowerInvariant();
-            if (blob.Contains("departure"))
-                return true;
-            Texture tex = BaseTex(mat);
-            return tex != null && tex.name != null && tex.name.ToLowerInvariant().Contains("departure");
+            return IsNamedScreen(mat);
         }
 
         private static bool IsScreen(Material mat)
         {
-            if (mat == null)
+            return IsNamedScreen(mat);
+        }
+
+        private static bool IsNamedScreen(Material mat)
+        {
+            if (mat == null || string.IsNullOrEmpty(mat.name))
                 return false;
-            if (IsDeparture(mat))
+            string n = mat.name.ToLowerInvariant();
+            if (n.Contains("kiosk"))
+                return false;
+            if (n.Contains("departure"))
                 return true;
-            if (mat.HasProperty("_Columns") && mat.HasProperty("_TextureScroll"))
-                return true;
-            return mat.HasProperty("_BaseTexture");
-        }
-
-        private static Texture BaseTex(Material mat)
-        {
-            if (mat == null)
-                return null;
-            if (mat.HasProperty("_BaseTexture"))
-            {
-                Texture tex = mat.GetTexture("_BaseTexture");
-                if (tex != null)
-                    return tex;
-            }
-            if (mat.HasProperty("_MainTex"))
-            {
-                Texture tex = mat.GetTexture("_MainTex");
-                if (tex != null)
-                    return tex;
-            }
-            return mat.mainTexture;
-        }
-
-        private static void FitAspect(Display show, float ratioW, float ratioH)
-        {
-            if (show == null || show.Host == null || show.Quad == null || ratioW < 0.01f || ratioH < 0.01f)
-                return;
-            bool portrait = ratioH >= ratioW;
-            float bw = Mathf.Max(0.05f, show.FaceW);
-            float bh = Mathf.Max(0.05f, show.FaceH);
-            float qw;
-            float qh;
-            if (portrait)
-            {
-                qh = bh;
-                qw = bh * (ratioW / ratioH);
-                if (qw > bw)
-                {
-                    qw = bw;
-                    qh = bw * (ratioH / ratioW);
-                }
-            }
-            else
-            {
-                qw = bw;
-                qh = bw * (ratioH / ratioW);
-                if (qh > bh)
-                {
-                    qh = bh;
-                    qw = bh * (ratioW / ratioH);
-                }
-            }
-            Transform quad = show.Quad.transform;
-            Vector3 parentScale = show.Host.transform.lossyScale;
-            float sx = Mathf.Abs(parentScale.x) < 0.0001f ? 1f : Mathf.Abs(parentScale.x);
-            float sy = Mathf.Abs(parentScale.y) < 0.0001f ? 1f : Mathf.Abs(parentScale.y);
-            quad.localScale = new Vector3(qw / sx, qh / sy, 1f);
-        }
-
-        private static void FaceSize(Renderer source, out float width, out float height)
-        {
-            Transform t = source.transform;
-            Bounds local = MeshBounds(source);
-            int thin = Thin(local.size);
-            int ax = (thin + 1) % 3;
-            int ay = (thin + 2) % 3;
-            Vector3 lossy = t.lossyScale;
-            width = Mathf.Abs(lossy[ax]) * Mathf.Abs(local.size[ax]);
-            height = Mathf.Abs(lossy[ay]) * Mathf.Abs(local.size[ay]);
+            return n.Contains("screen logo") || n.Contains("screenlogo");
         }
 
         private static void FitBounds(Transform t, Bounds local, GameObject host, Transform quad, out float faceW, out float faceH)
@@ -1154,40 +1525,122 @@ namespace Crispberry_PiPhone
             int thin = Thin(local.size);
             int ax = (thin + 1) % 3;
             int ay = (thin + 2) % 3;
-            var axis = Vector3.zero;
-            axis[thin] = 1f;
-            Vector3 worldN = t.TransformDirection(axis);
+            var thinAxis = Vector3.zero;
+            thinAxis[thin] = 1f;
+            var rightAxis = Vector3.zero;
+            rightAxis[ax] = 1f;
+            var upAxis = Vector3.zero;
+            upAxis[ay] = 1f;
+            Vector3 center = t.TransformPoint(local.center);
+            Vector3 worldN = t.TransformDirection(thinAxis);
             if (worldN.sqrMagnitude < 0.0001f)
                 worldN = Vector3.forward;
             worldN.Normalize();
-            Vector3 center = t.TransformPoint(local.center);
             Camera cam = Camera.main;
             if (cam != null && Vector3.Dot(worldN, cam.transform.position - center) < 0f)
                 worldN = -worldN;
-            Vector3 lossy = t.lossyScale;
-            float width = Mathf.Abs(lossy[ax]) * Mathf.Abs(local.size[ax]);
-            float height = Mathf.Abs(lossy[ay]) * Mathf.Abs(local.size[ay]);
-            if (width < 0.05f)
-                width = 0.8f;
-            if (height < 0.05f)
-                height = 0.45f;
-            float depth = Mathf.Abs(lossy[thin]) * Mathf.Abs(local.size[thin]) * 0.5f + 0.02f;
-            var upAxis = Vector3.zero;
-            upAxis[ay] = 1f;
-            Vector3 up = t.TransformDirection(upAxis);
-            if (up.sqrMagnitude < 0.0001f || Mathf.Abs(Vector3.Dot(up.normalized, worldN)) > 0.95f)
-                up = Vector3.up;
+            Vector3 worldUp = t.TransformDirection(upAxis);
+            if (worldUp.sqrMagnitude < 0.0001f)
+                worldUp = Vector3.up;
+            if (Vector3.Dot(worldUp, Vector3.up) < 0f)
+                worldUp = -worldUp;
+            worldUp.Normalize();
+            if (Mathf.Abs(Vector3.Dot(worldUp, worldN)) > 0.95f)
+                worldUp = Vector3.up;
+            Vector3 worldRight = Vector3.Cross(worldUp, worldN);
+            if (worldRight.sqrMagnitude < 0.0001f)
+                worldRight = t.TransformDirection(rightAxis);
+            worldRight.Normalize();
+            worldUp = Vector3.Cross(worldN, worldRight).normalized;
+            faceW = t.TransformVector(rightAxis * local.size[ax]).magnitude;
+            faceH = t.TransformVector(upAxis * local.size[ay]).magnitude;
+            if (faceW < 0.05f)
+                faceW = 0.8f;
+            if (faceH < 0.05f)
+                faceH = 0.45f;
+            host.transform.SetParent(null, false);
+            host.transform.SetPositionAndRotation(center + worldN * 0.02f, Quaternion.LookRotation(worldN, worldUp));
+            host.transform.localScale = new Vector3(faceW, faceH, 1f);
             host.transform.SetParent(t, true);
-            host.transform.position = center + worldN * depth;
-            host.transform.rotation = Quaternion.LookRotation(worldN, up);
-            Vector3 parentScale = host.transform.lossyScale;
-            float sx = Mathf.Abs(parentScale.x) < 0.0001f ? 1f : Mathf.Abs(parentScale.x);
-            float sy = Mathf.Abs(parentScale.y) < 0.0001f ? 1f : Mathf.Abs(parentScale.y);
             quad.localPosition = Vector3.zero;
             quad.localRotation = Quaternion.identity;
-            quad.localScale = new Vector3(width / sx, height / sy, 1f);
-            faceW = width;
-            faceH = height;
+            quad.localScale = Vector3.one;
+        }
+
+        private static void SendStill(Texture2D shot)
+        {
+            if (shot == null || !PhotonNetwork.InRoom || PhotonNetwork.CurrentRoom == null || PhotonNetwork.CurrentRoom.PlayerCount < 2)
+                return;
+            if (Time.unscaledTime < _netWait)
+                return;
+            _netWait = Time.unscaledTime + 1.25f;
+            int hash = SampleHash(shot);
+            if (hash == _netHash)
+                return;
+            _netHash = hash;
+            Texture2D small = Downscale(shot, 320);
+            Texture2D src = small != null ? small : shot;
+            byte[] jpg = PhoneImages.EncodeJpg(src, 32);
+            if (jpg != null && jpg.Length > 40000)
+            {
+                Texture2D tinier = Downscale(src, 200);
+                if (tinier != null)
+                {
+                    if (small != null)
+                        UnityEngine.Object.Destroy(small);
+                    small = tinier;
+                    jpg = PhoneImages.EncodeJpg(small, 28);
+                }
+            }
+            if (small != null && small != shot)
+                UnityEngine.Object.Destroy(small);
+            if (jpg != null && jpg.Length > 32 && jpg.Length <= 48000)
+                PhoneNet.SendCastFrame(_deviceId, NextSeq(), jpg);
+        }
+
+        private static int SampleHash(Texture2D tex)
+        {
+            Color32[] px = tex.GetPixels32();
+            int h = 17;
+            int step = px.Length / 48;
+            if (step < 1)
+                step = 1;
+            for (int i = 0; i < px.Length; i += step)
+            {
+                Color32 c = px[i];
+                h = unchecked(h * 31 + (c.r >> 4));
+                h = unchecked(h * 31 + (c.g >> 4));
+                h = unchecked(h * 31 + (c.b >> 4));
+            }
+            return h;
+        }
+
+        private static Bounds ScreenBounds(Renderer rend, int slot)
+        {
+            Mesh mesh = null;
+            var filter = rend.GetComponent<MeshFilter>();
+            if (filter != null)
+                mesh = filter.sharedMesh;
+            if (mesh == null)
+            {
+                var skin = rend as SkinnedMeshRenderer;
+                if (skin != null)
+                    mesh = skin.sharedMesh;
+            }
+            if (mesh != null && slot >= 0 && slot < mesh.subMeshCount)
+            {
+                try
+                {
+                    Bounds sub = mesh.GetSubMesh(slot).bounds;
+                    if (sub.size.sqrMagnitude > 0.000001f)
+                        return sub;
+                }
+                catch (Exception ex)
+                {
+                    Plugin.LogInfo("Cast submesh bounds unavailable: " + ex.Message);
+                }
+            }
+            return MeshBounds(rend);
         }
 
         private static Bounds SlotBounds(Renderer rend, int slot)
@@ -1465,10 +1918,156 @@ namespace Crispberry_PiPhone
 
         private static PiPhoneCastDevice FindDevice(string id)
         {
+            PiPhoneCastDevice hit = FindListed(id);
+            if (hit != null)
+                return hit;
+            Discover(false);
+            return FindListed(id);
+        }
+
+        private static PiPhoneCastDevice FindListed(string id)
+        {
             for (int i = 0; i < Devices.Count; i++)
             {
                 if (Devices[i] != null && Devices[i].Id == id)
                     return Devices[i];
+            }
+            return null;
+        }
+
+        private static int _discoverScene = int.MinValue;
+        private static float _discoverAt = -999f;
+
+        private static void Discover(bool force)
+        {
+            Scene scene = SceneManager.GetActiveScene();
+            int handle = scene.handle;
+            if (!force && handle == _discoverScene && Time.unscaledTime - _discoverAt < 1.5f)
+                return;
+            _discoverScene = handle;
+            _discoverAt = Time.unscaledTime;
+            var claimed = new List<int>();
+            for (int i = 0; i < Devices.Count; i++)
+            {
+                Transform have = SafeFind(Devices[i]);
+                if (have != null)
+                    claimed.Add(have.GetInstanceID());
+            }
+            var hits = new List<Transform>();
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                if (roots[i] != null)
+                    CollectBoards(roots[i].transform, hits);
+            }
+            for (int i = 0; i < hits.Count; i++)
+            {
+                Transform board = hits[i];
+                if (board == null)
+                    continue;
+                int key = board.GetInstanceID();
+                if (claimed.Contains(key))
+                    continue;
+                string path = PathOf(board);
+                string label = board.name;
+                PiPhoneCastDevice device = PathBoard(path, label);
+                if (FindListed(device.Id) == null)
+                    Plugin.LogInfo("Cast screen " + label);
+                Register(device);
+                claimed.Add(key);
+            }
+        }
+
+        private static void CollectBoards(Transform t, List<Transform> hits)
+        {
+            if (t == null || !t.gameObject.activeInHierarchy)
+                return;
+            if (InFlight(t) && HasScreen(t))
+                hits.Add(t);
+            for (int i = 0; i < t.childCount; i++)
+                CollectBoards(t.GetChild(i), hits);
+        }
+
+        private static bool InFlight(Transform t)
+        {
+            while (t != null)
+            {
+                if (NameHasFlight(t.name))
+                    return true;
+                t = t.parent;
+            }
+            return false;
+        }
+
+        private static bool NameHasFlight(string name)
+        {
+            return !string.IsNullOrEmpty(name) && name.IndexOf("flight", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool HasScreen(Transform t)
+        {
+            Renderer[] rends = t.GetComponents<Renderer>();
+            for (int i = 0; i < rends.Length; i++)
+            {
+                Renderer rend = rends[i];
+                if (rend == null)
+                    continue;
+                string typeName = rend.GetType().Name;
+                if (typeName == "ParticleSystemRenderer" || typeName == "TrailRenderer" || typeName == "LineRenderer")
+                    continue;
+                Material[] mats = rend.sharedMaterials;
+                if (mats == null)
+                    continue;
+                for (int m = 0; m < mats.Length; m++)
+                {
+                    if (IsNamedScreen(mats[m]))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private static PiPhoneCastDevice PathBoard(string path, string label)
+        {
+            string captured = path;
+            return new PiPhoneCastDevice
+            {
+                Id = "peak.cast.path:" + path,
+                Name = label,
+                Find = () => FindPath(captured)
+            };
+        }
+
+        private static string PathOf(Transform t)
+        {
+            var parts = new List<string>();
+            while (t != null)
+            {
+                parts.Add(t.name);
+                t = t.parent;
+            }
+            parts.Reverse();
+            return string.Join("/", parts.ToArray());
+        }
+
+        private static Transform FindPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return null;
+            string[] parts = path.Split('/');
+            if (parts.Length == 0)
+                return null;
+            Scene scene = SceneManager.GetActiveScene();
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                if (roots[i] == null || roots[i].name != parts[0])
+                    continue;
+                Transform at = roots[i].transform;
+                for (int p = 1; p < parts.Length && at != null; p++)
+                    at = at.Find(parts[p]);
+                if (at != null)
+                    return at;
             }
             return null;
         }
@@ -1536,6 +2135,8 @@ namespace Crispberry_PiPhone
             Shows.Remove(id);
             if (show == null)
                 return;
+            if (show.Source != null && show.OriginalMats != null)
+                show.Source.sharedMaterials = show.OriginalMats;
             if (show.Screen != null)
             {
                 show.Screen.Release();
@@ -1602,15 +2203,230 @@ namespace Crispberry_PiPhone
             };
             _quad.uv = new[]
             {
-                new Vector2(0f, 0f),
-                new Vector2(1f, 0f),
+                new Vector2(1f, 1f),
                 new Vector2(0f, 1f),
-                new Vector2(1f, 1f)
+                new Vector2(1f, 0f),
+                new Vector2(0f, 0f)
             };
             _quad.triangles = new[] { 0, 1, 2, 1, 3, 2 };
             _quad.colors = new[] { Color.white, Color.white, Color.white, Color.white };
             _quad.RecalculateNormals();
             return _quad;
+        }
+
+        private static void PublishWatch()
+        {
+            if (!_casting || !_share || _watcherIds.Count == 0 || !PhotonNetwork.InRoom)
+                return;
+            PiPhoneApp app = PhoneMenu.OpenApp();
+            string appId = app != null ? app.Id : "home";
+            string title = app != null && !string.IsNullOrEmpty(app.DisplayName) ? app.DisplayName : "Home";
+            bool land = PhoneMenu.IsLandscape;
+            string home = HomeList();
+            bool front = false;
+            Vector3 pos = Vector3.zero;
+            Quaternion rot = Quaternion.identity;
+            float fov = 60f;
+            bool cam = false;
+            bool closet = false;
+            if (app != null && appId != "#")
+            {
+                if (app.Id == BuiltinApps.CameraId)
+                    cam = CameraApp.TryWorldPose(out pos, out rot, out fov, out front);
+                else if (app.Id == BuiltinApps.ClosetId)
+                    closet = ClosetApp.TryWorldPose(out pos, out rot, out fov);
+            }
+            string pose = (cam || closet)
+                ? pos.x.ToString("0.00") + "," + pos.y.ToString("0.00") + "," + pos.z.ToString("0.00") + "," + fov.ToString("0.00")
+                : string.Empty;
+            float now = Time.unscaledTime;
+            bool pictureDue = now >= _nextState;
+            bool poseDue = now >= _nextPose;
+            if (!pictureDue && !poseDue)
+                return;
+            string blob = pictureDue ? PhoneCastMirror.Capture(CastIsPrivate()) : _stateSig;
+            bool pictureChanged = pictureDue && blob != _stateSig;
+            if (!pictureChanged && (!poseDue || pose == _statePose))
+            {
+                if (pictureDue)
+                    _nextState = now + 0.28f;
+                return;
+            }
+            if (pictureChanged)
+            {
+                _stateSig = blob;
+                _nextState = now + 0.28f;
+            }
+            else if (pictureDue)
+                _nextState = now + 0.28f;
+            _statePose = pose;
+            _nextPose = now + 0.1f;
+            PhoneNet.SendCastState(new object[]
+            {
+                PhoneNet.Magic, PhoneNet.Protocol, PhoneNet.KindCastState,
+                _deviceId, appId, land, title, home,
+                cam, front, pos.x, pos.y, pos.z, rot.x, rot.y, rot.z, rot.w, fov,
+                closet, pictureChanged ? blob : string.Empty
+            }, pictureChanged);
+        }
+
+        private static string HomeList()
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < PhoneStore.HomeIds.Count; i++)
+            {
+                string id = PhoneStore.HomeIds[i];
+                if (string.IsNullOrEmpty(id) || !PhoneStore.IsInstalled(id))
+                    continue;
+                if (sb.Length > 0)
+                    sb.Append(',');
+                sb.Append(id);
+            }
+            sb.Append(';');
+            for (int i = 0; i < PhoneStore.DockIds.Count && i < 4; i++)
+            {
+                string id = PhoneStore.DockIds[i];
+                if (string.IsNullOrEmpty(id) || !PhoneStore.IsInstalled(id))
+                    continue;
+                if (sb.Length > 0 && sb[sb.Length - 1] != ';')
+                    sb.Append(',');
+                sb.Append(id);
+            }
+            return sb.ToString();
+        }
+
+        public static void OnActorGone(int actor)
+        {
+            if (actor <= 0)
+                return;
+            _watcherIds.Remove(actor);
+            var ids = new List<string>();
+            foreach (KeyValuePair<string, int> pair in Owners)
+            {
+                if (pair.Value == actor)
+                    ids.Add(pair.Key);
+            }
+            for (int i = 0; i < ids.Count; i++)
+                OnStop(ids[i], actor);
+        }
+
+        public static void OnLeftRoom()
+        {
+            if (!_casting && string.IsNullOrEmpty(_watchId) && Owners.Count == 0)
+                return;
+            Release();
+            EndWatch();
+            Owners.Clear();
+            Shared.Clear();
+            Frames.Clear();
+            _watcherIds.Clear();
+        }
+
+        public static void OnWatch(int actor, string id, bool on)
+        {
+            if (!_casting || actor <= 0 || id != _deviceId)
+                return;
+            if (on)
+            {
+                _watcherIds.Add(actor);
+                _nextState = 0f;
+                _nextPose = 0f;
+                _stateSig = string.Empty;
+                _statePose = string.Empty;
+            }
+            else
+                _watcherIds.Remove(actor);
+        }
+
+        public static void OnState(int actor, object[] data)
+        {
+            if (data == null || data.Length < 19)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _watchId)
+                return;
+            int owner;
+            if (!Owners.TryGetValue(id, out owner) || owner != actor)
+                return;
+            var snap = new PhoneCastView.Snap();
+            snap.App = data[4] as string ?? string.Empty;
+            snap.Land = data[5] is bool && (bool)data[5];
+            snap.Title = data[6] as string ?? string.Empty;
+            snap.Home = data[7] as string ?? string.Empty;
+            snap.Cam = data[8] is bool && (bool)data[8];
+            snap.Front = data[9] is bool && (bool)data[9];
+            snap.Pos = new Vector3(Num(data[10]), Num(data[11]), Num(data[12]));
+            snap.Rot = new Quaternion(Num(data[13]), Num(data[14]), Num(data[15]), Num(data[16]));
+            snap.Fov = Num(data[17]);
+            snap.Closet = data[18] is bool && (bool)data[18];
+            snap.Blob = data.Length > 19 ? data[19] as string ?? string.Empty : string.Empty;
+            snap.Actor = actor;
+            PhoneCastView.Apply(snap);
+        }
+
+        private static float Num(object value)
+        {
+            if (value is float)
+                return (float)value;
+            if (value is double)
+                return (float)(double)value;
+            if (value is int)
+                return (int)value;
+            return 0f;
+        }
+
+        private static void ToggleWatch(string id)
+        {
+            if (string.IsNullOrEmpty(id))
+                return;
+            if (_watchId == id)
+            {
+                string was = _watchId;
+                EndWatch();
+                PhoneNet.SendCastWatch(was, false);
+                return;
+            }
+            if (!string.IsNullOrEmpty(_watchId))
+            {
+                string was = _watchId;
+                EndWatch();
+                PhoneNet.SendCastWatch(was, false);
+            }
+            if (!EnsureShow(id))
+            {
+                PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
+                return;
+            }
+            Display show;
+            if (!Shows.TryGetValue(id, out show) || show == null || show.Host == null)
+                return;
+            _watchId = id;
+            if (show.Quad != null)
+                show.Quad.enabled = true;
+            if (show.ScreenMat != null)
+            {
+                show.ScreenMat.mainTexture = null;
+                show.ScreenMat.color = Color.black;
+                show.ScreenMat.renderQueue = 2500;
+            }
+            PhoneCastView.Attach(show.Host.transform, show.FaceW, show.FaceH);
+            PhoneNet.SendCastWatch(id, true);
+            ClosePicker();
+        }
+
+        private static void EndWatch()
+        {
+            string id = _watchId;
+            _watchId = string.Empty;
+            PhoneCastView.Drop();
+            if (!string.IsNullOrEmpty(id) && _deviceId != id)
+                DropShow(id);
+        }
+
+        private static bool IsShared(string id)
+        {
+            bool on;
+            return !string.IsNullOrEmpty(id) && Shared.TryGetValue(id, out on) && on;
         }
 
         private static int Actor()

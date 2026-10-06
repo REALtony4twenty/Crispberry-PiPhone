@@ -139,8 +139,38 @@ namespace Crispberry_PiPhone
             return PhoneTheme.NotifyToneId;
         }
 
-        public static void FillPicker(UnityEngine.Transform parent, System.Action redraw, System.Action<SoundItem> pick)
+        public static string Mark(string name, bool current)
         {
+            return current ? (name ?? string.Empty) + "  ·  In use" : (name ?? string.Empty);
+        }
+
+        public static void FillPicker(UnityEngine.Transform parent, System.Action redraw, System.Action<SoundItem> pick, string currentId)
+        {
+            PhoneSfx.Cue[] clips = PhoneSfx.Library();
+            for (int i = 0; i < clips.Length; i++)
+            {
+                string key = clips[i].Key;
+                string label = clips[i].Label;
+                bool current = key == currentId;
+                var row = new UnityEngine.GameObject("Tone", typeof(UnityEngine.RectTransform));
+                row.transform.SetParent(parent, false);
+                PhoneUi.Size(row, 40f);
+                PhoneUi.AddHorizontal(row, 6f);
+                var nameBtn = PhoneUi.CreateButton(row.transform, Mark(label, current), () =>
+                {
+                    PhoneSounds.StopPreview();
+                    if (pick != null)
+                        pick(new SoundItem { Id = key, Name = label, IsAlert = true });
+                }, new UnityEngine.Vector2(220f, 36f));
+                var nle = nameBtn.GetComponent<UnityEngine.UI.LayoutElement>();
+                if (nle != null)
+                    nle.flexibleWidth = 1f;
+                PhoneUi.CreateIconChip(row.transform, "Play", PhoneIcons.Material("play"), () =>
+                {
+                    PhoneSfx.HoldClick();
+                    PhoneSfx.PlayRaw(key, PhoneTheme.RingVolume);
+                }, false, new UnityEngine.Vector2(40f, 36f));
+            }
             System.Collections.Generic.List<SoundItem> tones = PhoneStore.AlertTones();
             for (int i = 0; i < tones.Count; i++)
             {
@@ -148,11 +178,12 @@ namespace Crispberry_PiPhone
                 if (s == null)
                     continue;
                 SoundItem captured = s;
+                bool current = !string.IsNullOrEmpty(currentId) && captured.Id == currentId;
                 var row = new UnityEngine.GameObject("Tone", typeof(UnityEngine.RectTransform));
                 row.transform.SetParent(parent, false);
                 PhoneUi.Size(row, 40f);
                 PhoneUi.AddHorizontal(row, 6f);
-                var nameBtn = PhoneUi.CreateButton(row.transform, captured.Name, () =>
+                var nameBtn = PhoneUi.CreateButton(row.transform, Mark(captured.Name, current), () =>
                 {
                     PhoneSounds.StopPreview();
                     if (pick != null)

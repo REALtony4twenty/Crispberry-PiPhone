@@ -10,6 +10,7 @@ namespace Crispberry_PiPhone
     {
         public const string Open = "pip.open";
         public const string Landscape = "pip.landscape";
+        public const string CastHold = "pip.cast.hold";
         public const string Answer = "pip.answer";
         public const string Decline = "pip.decline";
         public const string CamCursor = "pip.camera.cursor";
@@ -76,6 +77,16 @@ namespace Crispberry_PiPhone
             });
             Add(new PiPhoneKeybind
             {
+                Id = CastHold,
+                Label = "Phone on the cast",
+                Group = "Phone",
+                DefaultKey = KeyCode.F4,
+                PhoneOpen = true,
+                SortOrder = 2,
+                OnPressed = PhoneMenu.ToggleCastHold
+            });
+            Add(new PiPhoneKeybind
+            {
                 Id = Answer,
                 Label = "Answer call / open text",
                 Group = "Alerts",
@@ -102,7 +113,7 @@ namespace Crispberry_PiPhone
                 PhoneOpen = true,
                 DefaultKey = KeyCode.LeftAlt,
                 SortOrder = 20,
-                OnPressed = PhoneMenu.TogglePlayThrough
+                OnPressed = PhoneMenu.ToggleCursorKey
             });
             Add(new PiPhoneKeybind
             {
@@ -559,7 +570,11 @@ namespace Crispberry_PiPhone
             if (bind.Global)
                 return true;
             if (!PhoneMenu.IsOpen)
+            {
+                if (bind.Id == CamCursor && (AlertHud.HasBanner || PhoneMenu.AlertCursor))
+                    return true;
                 return false;
+            }
             if (bind.PhoneOpen && string.IsNullOrEmpty(bind.AppId) && (bind.AlsoApps == null || bind.AlsoApps.Length == 0))
                 return true;
             string current = PhoneMenu.CurrentAppId;

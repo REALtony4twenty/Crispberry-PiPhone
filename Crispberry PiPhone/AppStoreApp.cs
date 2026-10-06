@@ -50,6 +50,8 @@ namespace Crispberry_PiPhone
 
             public bool GoBack()
             {
+                if (CloseShot())
+                    return true;
                 if (_page == "list")
                     return false;
                 ShowList();
@@ -122,7 +124,7 @@ namespace Crispberry_PiPhone
                 if (cell > 96f)
                     cell = 96f;
                 var grid = content.gameObject.AddComponent<GridLayoutGroup>();
-                grid.cellSize = new Vector2(cell, cell + 22f);
+                grid.cellSize = new Vector2(cell, cell + 36f);
                 grid.spacing = new Vector2(8f, 8f);
                 grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
                 grid.constraintCount = cols;
@@ -251,12 +253,20 @@ namespace Crispberry_PiPhone
                 v.childForceExpandWidth = false;
                 v.childControlWidth = false;
                 var icon = PhoneIcons.CreateView(tile.transform, app, 52f, false);
+                PhoneUi.SetClickable(icon.gameObject, true);
                 var btn = icon.gameObject.AddComponent<Button>();
                 btn.targetGraphic = icon.GetComponent<Image>();
-                btn.onClick.AddListener(() => ShowDetail(id));
+                PhoneSfx.BindPress(btn, () => ShowDetail(id));
                 var name = PhoneUi.CreateLabel(tile.transform, "N", app.DisplayName ?? app.Id, 12f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(name.gameObject, 18f, 72f);
+#pragma warning disable CS0618
+                name.enableWordWrapping = true;
+#pragma warning restore CS0618
                 name.overflowMode = TextOverflowModes.Ellipsis;
+                float nameW = 72f;
+                var grid = _rows != null ? _rows.GetComponent<GridLayoutGroup>() : null;
+                if (grid != null)
+                    nameW = grid.cellSize.x;
+                PhoneUi.Size(name.gameObject, 30f, nameW);
             }
 
             private void ShowDetail(string id)
@@ -352,14 +362,19 @@ namespace Crispberry_PiPhone
                     {
                         if (shots[i] == null)
                             continue;
+                        Sprite captured = shots[i];
                         var frame = PhoneUi.CreateImage(strip, "Shot", PhoneUi.Rounded(12), PhoneUi.SurfaceAlt);
                         PhoneUi.Size(frame.gameObject, 120f, 140f);
-                        var art = PhoneUi.CreateImage(frame, "Art", shots[i], Color.white);
+                        var art = PhoneUi.CreateImage(frame, "Art", captured, Color.white);
                         PhoneUi.Stretch(art, 4f, 4f);
                         var artImg = art.GetComponent<Image>();
                         artImg.preserveAspect = true;
                         artImg.raycastTarget = false;
                         artImg.type = Image.Type.Simple;
+                        PhoneUi.SetClickable(frame.gameObject, true);
+                        var hit = frame.gameObject.AddComponent<Button>();
+                        hit.targetGraphic = frame.GetComponent<Image>();
+                        PhoneSfx.BindPress(hit, () => ShowShot(captured));
                     }
                 }
 
@@ -391,9 +406,51 @@ namespace Crispberry_PiPhone
 
             private void Clear()
             {
+                CloseShot();
                 _rows = null;
                 for (int i = _host.Content.childCount - 1; i >= 0; i--)
                     UnityEngine.Object.Destroy(_host.Content.GetChild(i).gameObject);
+            }
+
+            private GameObject _shotView;
+            private int _shotFrame;
+
+            private void ShowShot(Sprite sprite)
+            {
+                CloseShot();
+                if (sprite == null || _host == null || _host.Content == null)
+                    return;
+                Transform parent = _host.Content.parent != null ? _host.Content.parent : _host.Content;
+                var root = PhoneUi.CreateImage(parent, "ShotView", PhoneUi.White(), new Color(0.02f, 0.03f, 0.04f, 0.96f));
+                var ignore = root.gameObject.AddComponent<LayoutElement>();
+                ignore.ignoreLayout = true;
+                PhoneUi.Stretch(root, 0f, 0f);
+                root.transform.SetAsLastSibling();
+                _shotFrame = Time.frameCount;
+                PhoneUi.SetClickable(root.gameObject, true);
+                var btn = root.gameObject.AddComponent<Button>();
+                btn.targetGraphic = root.GetComponent<Image>();
+                PhoneSfx.BindPress(btn, () =>
+                {
+                    if (Time.frameCount <= _shotFrame)
+                        return;
+                    CloseShot();
+                });
+                var art = PhoneUi.CreateImage(root, "Full", sprite, Color.white);
+                PhoneUi.Stretch(art, 16f, 16f);
+                var img = art.GetComponent<Image>();
+                img.preserveAspect = true;
+                img.raycastTarget = false;
+                _shotView = root.gameObject;
+            }
+
+            private bool CloseShot()
+            {
+                if (_shotView == null)
+                    return false;
+                UnityEngine.Object.Destroy(_shotView);
+                _shotView = null;
+                return true;
             }
         }
     }

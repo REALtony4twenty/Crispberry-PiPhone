@@ -130,7 +130,7 @@ namespace Crispberry_PiPhone
                 v.childForceExpandHeight = false;
                 v.childAlignment = TextAnchor.MiddleCenter;
                 if (up != null)
-                    PhoneUi.CreateIconChip(col.transform, "^", PhoneIcons.Material("expand_less"), up, false, new Vector2(w, h));
+                    PhoneUi.CreateIconChip(col.transform, "^", PhoneIcons.Material("keyboard_arrow_up"), up, false, new Vector2(w, h));
                 var mid = new GameObject("Mid", typeof(RectTransform));
                 mid.transform.SetParent(col.transform, false);
                 PhoneUi.Size(mid, h);
@@ -139,11 +139,11 @@ namespace Crispberry_PiPhone
                 mh.childForceExpandWidth = false;
                 mh.childAlignment = TextAnchor.MiddleCenter;
                 if (left != null)
-                    PhoneUi.CreateIconChip(mid.transform, "<", PhoneIcons.Material("chevron_left"), left, false, new Vector2(w, h));
+                    PhoneUi.CreateIconChip(mid.transform, "<", PhoneIcons.Material("keyboard_arrow_left"), left, false, new Vector2(w, h));
                 if (down != null)
-                    PhoneUi.CreateIconChip(mid.transform, "v", PhoneIcons.Material("expand_more"), down, false, new Vector2(w, h));
+                    PhoneUi.CreateIconChip(mid.transform, "v", PhoneIcons.Material("keyboard_arrow_down"), down, false, new Vector2(w, h));
                 if (right != null)
-                    PhoneUi.CreateIconChip(mid.transform, ">", PhoneIcons.Material("chevron_right"), right, false, new Vector2(w, h));
+                    PhoneUi.CreateIconChip(mid.transform, ">", PhoneIcons.Material("keyboard_arrow_right"), right, false, new Vector2(w, h));
                 return;
             }
             var row = new GameObject("Pad", typeof(RectTransform));
@@ -154,22 +154,28 @@ namespace Crispberry_PiPhone
             layout.childForceExpandWidth = false;
             layout.childAlignment = TextAnchor.MiddleCenter;
             if (left != null)
-                PhoneUi.CreateIconChip(row.transform, "<", PhoneIcons.Material("chevron_left"), left, false, new Vector2(w, h));
+                PhoneUi.CreateIconChip(row.transform, "<", PhoneIcons.Material("keyboard_arrow_left"), left, false, new Vector2(w, h));
             if (down != null)
-                PhoneUi.CreateIconChip(row.transform, "v", PhoneIcons.Material("expand_more"), down, false, new Vector2(w, h));
+                PhoneUi.CreateIconChip(row.transform, "v", PhoneIcons.Material("keyboard_arrow_down"), down, false, new Vector2(w, h));
             if (up != null)
-                PhoneUi.CreateIconChip(row.transform, "^", PhoneIcons.Material("expand_less"), up, false, new Vector2(w, h));
+                PhoneUi.CreateIconChip(row.transform, "^", PhoneIcons.Material("keyboard_arrow_up"), up, false, new Vector2(w, h));
             if (right != null)
-                PhoneUi.CreateIconChip(row.transform, ">", PhoneIcons.Material("chevron_right"), right, false, new Vector2(w, h));
+                PhoneUi.CreateIconChip(row.transform, ">", PhoneIcons.Material("keyboard_arrow_right"), right, false, new Vector2(w, h));
         }
 
         public static TextMeshProUGUI HudBar(Transform parent, string text, UnityAction quit)
         {
+            return HudBar(parent, text, quit, null, null);
+        }
+
+        public static TextMeshProUGUI HudBar(Transform parent, string text, UnityAction quit, UnityAction again, string againName)
+        {
             var row = new GameObject("Hud", typeof(RectTransform));
             row.transform.SetParent(parent, false);
+            Vector2 chip = new Vector2(36f, 32f);
             if (PhoneUi.Landscape)
             {
-                PhoneUi.Size(row, quit != null ? 108f : 72f);
+                PhoneUi.Size(row, again != null ? 186f : (quit != null ? 146f : 110f));
                 PhoneUi.AddVertical(row, 6f, new RectOffset(0, 0, 0, 0));
                 var v = row.GetComponent<VerticalLayoutGroup>();
                 v.childAlignment = TextAnchor.UpperCenter;
@@ -180,7 +186,11 @@ namespace Crispberry_PiPhone
                 lab.overflowMode = TextOverflowModes.Ellipsis;
                 PhoneUi.Size(lab.gameObject, 64f);
                 if (quit != null)
-                    PhoneUi.MaterialChip(row.transform, "logout", "Quit", quit, new Vector2(36f, 32f));
+                    PhoneUi.MaterialChip(row.transform, "logout", "Quit", quit, chip);
+                if (again != null)
+                    PhoneUi.MaterialChip(row.transform, "replay", string.IsNullOrEmpty(againName) ? "Play Again" : againName, again, chip);
+                Button sound = PhoneUi.MaterialChip(row.transform, "instant_mix", "Sound", ToggleGameSound, chip);
+                PhoneUi.SetTooltip(sound.gameObject, "Sound");
                 return lab;
             }
             PhoneUi.Size(row, 36f);
@@ -190,9 +200,107 @@ namespace Crispberry_PiPhone
             h.childForceExpandWidth = true;
             var port = PhoneUi.CreateLabel(row.transform, "Score", text ?? string.Empty, 15f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
             port.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            if (again != null)
+                PhoneUi.MaterialChip(row.transform, "replay", string.IsNullOrEmpty(againName) ? "Play Again" : againName, again, chip);
             if (quit != null)
-                PhoneUi.MaterialChip(row.transform, "logout", "Quit", quit, new Vector2(36f, 32f));
+                PhoneUi.MaterialChip(row.transform, "logout", "Quit", quit, chip);
+            Button soundBtn = PhoneUi.MaterialChip(row.transform, "instant_mix", "Sound", ToggleGameSound, chip);
+            PhoneUi.SetTooltip(soundBtn.gameObject, "Sound");
             return port;
+        }
+
+        private static float _soundPreviewAt;
+
+        public static void ToggleGameSound()
+        {
+            IPiPhoneHost host = PhoneMenu.InstanceHost;
+            if (host == null || host.Content == null)
+                return;
+            Transform existing = host.Content.Find("GameSound");
+            if (existing != null)
+            {
+                UnityEngine.Object.Destroy(existing.gameObject);
+                return;
+            }
+            PiPhoneApp app = PhoneMenu.OpenApp();
+            if (app == null)
+                return;
+            string appId = app.Id;
+            var root = new GameObject("GameSound", typeof(RectTransform));
+            root.transform.SetParent(host.Content, false);
+            root.transform.SetAsLastSibling();
+            PhoneUi.IgnoreLayout(root);
+            var rt = root.GetComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = new Vector2(8f, 8f);
+            rt.offsetMax = new Vector2(-8f, -8f);
+            var card = PhoneUi.CreateImage(root.transform, "Card", PhoneUi.Rounded(16), PhoneUi.Surface);
+            card.anchorMin = Vector2.zero;
+            card.anchorMax = Vector2.one;
+            card.offsetMin = Vector2.zero;
+            card.offsetMax = Vector2.zero;
+            PhoneUi.SetClickable(card.gameObject, true);
+            var layout = card.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(10, 10, 8, 10);
+            layout.spacing = 4f;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            var head = new GameObject("Head", typeof(RectTransform));
+            head.transform.SetParent(card, false);
+            PhoneUi.Size(head, 36f);
+            var headLayout = PhoneUi.AddHorizontal(head, 6f);
+            headLayout.childAlignment = TextAnchor.MiddleLeft;
+            headLayout.childForceExpandWidth = false;
+            var title = PhoneUi.CreateLabel(head.transform, "T", "Sounds", 15f, FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
+            title.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            PhoneUi.MaterialChip(head.transform, "close", "Close", ToggleGameSound, new Vector2(32f, 28f));
+            ScrollRect scroll = PhoneUi.CreateScrollView(card, out RectTransform list);
+            var scrollLe = scroll.gameObject.AddComponent<LayoutElement>();
+            scrollLe.flexibleHeight = 1f;
+            scrollLe.minHeight = 80f;
+            PhoneUi.AddVertical(list.gameObject, 4f, new RectOffset(0, 0, 0, 4));
+            PhoneUi.FitVertical(list.gameObject);
+            PhoneSfx.Cue[] cues = PhoneSfx.Cues(appId);
+            for (int i = 0; i < cues.Length; i++)
+            {
+                string cueKey = cues[i].Key;
+                string cueLabel = cues[i].Label;
+                bool tone = cues[i].Tone;
+                int hz = cues[i].Hz;
+                float sec = cues[i].Seconds;
+                PhoneUi.CreateSliderRow(list, cueLabel, 0f, 1f, PhoneTheme.GameCueVolume(appId, cueKey), v =>
+                {
+                    PhoneTheme.SetGameCueVolume(appId, cueKey, v);
+                    if (Time.unscaledTime < _soundPreviewAt)
+                        return;
+                    _soundPreviewAt = Time.unscaledTime + 0.14f;
+                    if (tone)
+                        PhoneSounds.PlayTone(hz, sec, cueKey);
+                    else
+                        PhoneSfx.Play(cueKey);
+                });
+            }
+        }
+
+        public static void HidePane(Transform pane)
+        {
+            if (pane == null)
+                return;
+            LayoutElement le = pane.GetComponent<LayoutElement>();
+            if (le != null)
+            {
+                le.minWidth = 0f;
+                le.preferredWidth = 0f;
+                le.flexibleWidth = 0f;
+                le.minHeight = 0f;
+                le.preferredHeight = 0f;
+                le.flexibleHeight = 0f;
+            }
+            pane.gameObject.SetActive(false);
         }
 
         /// <summary>
@@ -206,33 +314,63 @@ namespace Crispberry_PiPhone
                 return;
             if (!host.IsLandscape)
             {
+                SeatPlay(host, false);
                 left = PlayStrip(host.Content, "Hud", TextAnchor.UpperCenter, 0f);
                 center = PlayStage(host.Content);
                 right = PlayStrip(host.Content, "Controls", TextAnchor.MiddleCenter, 0f);
                 return;
             }
-            var row = new GameObject("PlayLand", typeof(RectTransform));
-            row.transform.SetParent(host.Content, false);
-            var le = row.AddComponent<LayoutElement>();
+            SeatPlay(host, true);
+            var shell = new GameObject("PlayLand", typeof(RectTransform));
+            shell.transform.SetParent(host.Content, false);
+            var le = shell.AddComponent<LayoutElement>();
             le.flexibleHeight = 1f;
+            le.flexibleWidth = 1f;
             le.minHeight = 160f;
-            var h = PhoneUi.AddHorizontal(row, 8f);
+            var rowGo = new GameObject("Row", typeof(RectTransform));
+            rowGo.transform.SetParent(shell.transform, false);
+            PhoneUi.Stretch(rowGo.GetComponent<RectTransform>(), 0f, 0f);
+            var h = PhoneUi.AddHorizontal(rowGo, 6f);
             h.childForceExpandWidth = false;
             h.childForceExpandHeight = true;
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.padding = new RectOffset(4, 4, 0, 0);
-            left = PlayPane(row.transform, "Left", 136f, 0f, TextAnchor.UpperCenter);
-            center = PlayPane(row.transform, "Center", 220f, 1f, TextAnchor.MiddleCenter);
-            right = PlayPane(row.transform, "Right", 148f, 0f, TextAnchor.UpperCenter);
+            h.childAlignment = TextAnchor.LowerCenter;
+            h.padding = new RectOffset(2, 2, 2, 0);
+            left = PlayPane(rowGo.transform, "Left", 136f, 0f, TextAnchor.UpperCenter);
+            center = PlayPane(rowGo.transform, "Center", 220f, 1f, TextAnchor.LowerCenter);
+            right = PlayPane(rowGo.transform, "Right", 148f, 0f, TextAnchor.UpperCenter);
             var centerLayout = center.GetComponent<VerticalLayoutGroup>();
             if (centerLayout != null)
+            {
                 centerLayout.childForceExpandWidth = false;
+                centerLayout.padding = new RectOffset(2, 2, 2, 0);
+            }
+        }
+
+        private static void SeatPlay(IPiPhoneHost host, bool land)
+        {
+            if (host == null || host.Content == null)
+                return;
+            var layout = host.Content.GetComponent<VerticalLayoutGroup>();
+            if (layout == null)
+                return;
+            if (!land)
+            {
+                layout.padding = new RectOffset(12, 12, 10, 10);
+                layout.childAlignment = TextAnchor.UpperCenter;
+                layout.childForceExpandHeight = false;
+                return;
+            }
+            layout.padding = new RectOffset(8, 8, 4, 8);
+            layout.childAlignment = TextAnchor.LowerCenter;
+            layout.childForceExpandHeight = true;
         }
 
         public static float FitCell(int cols, int rows, float gap)
         {
             return FitCell(cols, rows, gap, 0f);
         }
+
+        internal const float LandscapeBoardH = 340f;
 
         public static float FitCell(int cols, int rows, float gap, float extraChrome)
         {
@@ -241,8 +379,8 @@ namespace Crispberry_PiPhone
             if (rows < 1)
                 rows = 1;
             bool land = PhoneUi.Landscape;
-            float w = land ? 240f : 360f;
-            float h = (land ? 250f : 420f) - extraChrome;
+            float w = land ? 480f : 360f;
+            float h = (land ? LandscapeBoardH : 420f) - extraChrome;
             if (h < 120f)
                 h = 120f;
             float cw = (w - (cols + 1) * gap) / cols;
@@ -368,9 +506,10 @@ namespace Crispberry_PiPhone
             var board = new GameObject("Board", typeof(RectTransform));
             board.transform.SetParent(parent, false);
             var le = board.AddComponent<LayoutElement>();
+            float boardH = rows * cell.y + Mathf.Max(0, rows - 1) * gap;
             le.flexibleHeight = flex ? 1f : 0f;
-            le.minHeight = flex ? 80f : rows * (cell.y + gap) + 16f;
-            le.preferredHeight = flex ? 0f : le.minHeight;
+            le.minHeight = flex ? 80f : boardH;
+            le.preferredHeight = flex ? 0f : boardH;
             le.preferredWidth = cols * (cell.x + gap) + 8f;
             le.flexibleWidth = 0f;
             var grid = board.AddComponent<GridLayoutGroup>();
@@ -378,7 +517,7 @@ namespace Crispberry_PiPhone
             grid.constraintCount = cols;
             grid.spacing = new Vector2(gap, gap);
             grid.cellSize = cell;
-            grid.childAlignment = TextAnchor.MiddleCenter;
+            grid.childAlignment = TextAnchor.LowerCenter;
             grid.padding = new RectOffset(0, 0, 0, 0);
             cells = new Image[cols * rows];
             labels = new TextMeshProUGUI[cols * rows];

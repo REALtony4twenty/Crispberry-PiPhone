@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -20,8 +21,8 @@ namespace Crispberry_PiPhone
                 IconBackground = new Color(0.86f, 0.32f, 0.28f, 1f),
                 SortOrder = 75,
                 ShowOnHome = true,
-                OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
-                OnClose = () => { _live = null; },
+                OnOpen = host => { _live = new Session(host); _live.StartGame(); },
+                OnClose = () => { if (_live != null) _live.Halt(); _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
         }
@@ -29,6 +30,11 @@ namespace Crispberry_PiPhone
         internal static bool TryGoBack()
         {
             return _live != null && _live.GoBack();
+        }
+
+        internal static string CastState()
+        {
+            return _live == null ? "menu" : _live.ExportCast();
         }
 
         private sealed class Session
@@ -50,8 +56,9 @@ namespace Crispberry_PiPhone
             private Vector2 _vel;
             private bool _launched;
             private TextMeshProUGUI _status;
-            private Transform _overParent;
             private float _paddleW = 84f;
+            private float _pace = 1f;
+            private int _runId;
             private Vector2 _fieldSize;
 
             public Session(IPiPhoneHost host)
@@ -61,36 +68,60 @@ namespace Crispberry_PiPhone
 
             public bool GoBack()
             {
-                if (_page == "menu")
-                    return false;
-                BuildMenu();
-                return true;
+                return false;
+            }
+
+            internal void Halt()
+            {
+                _runId++;
+                _page = "off";
+            }
+
+            internal string ExportCast()
+            {
+                if (_page != "play" || _hp == null)
+                    return "menu";
+                var sb = new StringBuilder();
+                sb.Append("play|").Append(_score).Append('|').Append(_lives).Append('|').Append(_level).Append('|');
+                sb.Append(_dead ? '1' : '0').Append('|');
+                for (int i = 0; i < _hp.Length; i++)
+                {
+                    int hp = _hp[i];
+                    if (hp < 0)
+                        hp = 0;
+                    if (hp > 9)
+                        hp = 9;
+                    sb.Append((char)('0' + hp));
+                }
+                float w = _play != null ? _play.rect.width : 0f;
+                float h = _play != null ? _play.rect.height : 0f;
+                int px = 500;
+                int py = 80;
+                int bx = 500;
+                int by = 140;
+                int pw = 280;
+                if (w > 20f && h > 20f && _paddle != null && _ball != null)
+                {
+                    px = Mathf.RoundToInt(Mathf.Clamp01(_paddle.anchoredPosition.x / w) * 1000f);
+                    py = Mathf.RoundToInt(Mathf.Clamp01(_paddle.anchoredPosition.y / h) * 1000f);
+                    bx = Mathf.RoundToInt(Mathf.Clamp01(_ball.anchoredPosition.x / w) * 1000f);
+                    by = Mathf.RoundToInt(Mathf.Clamp01(_ball.anchoredPosition.y / h) * 1000f);
+                    pw = Mathf.RoundToInt(Mathf.Clamp01(_paddle.sizeDelta.x / w) * 1000f);
+                }
+                sb.Append('|').Append(px).Append('|').Append(py).Append('|').Append(bx).Append('|').Append(by).Append('|').Append(pw);
+                return sb.ToString();
             }
 
             public void Relayout()
             {
                 if (_page == "play")
                     BuildPlayUi();
-                else
-                    BuildMenu();
             }
 
-            public void BuildMenu()
+            internal void StartGame()
             {
-                _page = "menu";
-                PhoneGames.Clear(_host);
-                _host.SetTitle(PhoneLang.T("app.pip.breakout", "Brick Break"));
-                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
-                var high = PhoneUi.CreateLabel(_host.Content, "High", "High score  " + PhoneTheme.HighBreakout, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(high.gameObject, 28f);
-                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Drag the field or use A/D. Tap or Space to serve. Each wall is a new layout.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                hint.color = PhoneUi.TextDim;
-                PhoneUi.Wrap(hint);
-                PhoneUi.Size(hint.gameObject, 52f);
-            }
-
-            private void StartGame()
-            {
+                _runId++;
+                int run = _runId;
                 _page = "play";
                 _dead = false;
                 _score = 0;
@@ -100,8 +131,9 @@ namespace Crispberry_PiPhone
                 _vel = Vector2.zero;
                 _hp = null;
                 _paddleW = 84f;
+                _pace = 1f;
                 BuildPlayUi();
-                _host.StartHostCoroutine(Run());
+                _host.StartHostCoroutine(Run(run));
             }
 
             private void BuildPlayUi()
@@ -112,10 +144,8 @@ namespace Crispberry_PiPhone
                 Transform center;
                 Transform right;
                 PhoneGames.PlayLayout(_host, out left, out center, out right);
-                _overParent = left;
-                _status = PhoneGames.HudBar(left, StatusText(), BuildMenu);
-                if (_dead)
-                    PhoneGames.OverRow(left, StartGame, BuildMenu);
+                _status = PhoneGames.HudBar(left, StatusText(), () => _host.GoBack(), StartGame, "New");
+                PhoneGames.HidePane(right);
 
                 var playGo = new GameObject("Play", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
                 playGo.transform.SetParent(center, false);
@@ -152,7 +182,6 @@ namespace Crispberry_PiPhone
                 _ball.pivot = new Vector2(0.5f, 0.5f);
                 _ball.sizeDelta = new Vector2(14f, 14f);
 
-                PhoneGames.Dpad(right, () => Nudge(-36f), () => Nudge(36f), Serve, null);
                 _host.StartHostCoroutine(AfterLayout());
             }
 
@@ -203,6 +232,9 @@ namespace Crispberry_PiPhone
                     px = w * 0.5f;
                 float py = Mathf.Clamp(28f, 20f, h * 0.12f);
                 _paddle.anchoredPosition = new Vector2(Mathf.Clamp(px, _paddleW * 0.5f + 4f, w - _paddleW * 0.5f - 4f), py);
+                float brickBottom = top - (BrickRows - 1) * (bh + gap);
+                float travel = brickBottom - (py + 16f);
+                _pace = Mathf.Clamp(travel / 150f, 1f, 2.2f);
                 if (!_launched)
                     ResetBall();
                 _fieldSize = new Vector2(w, h);
@@ -245,7 +277,7 @@ namespace Crispberry_PiPhone
                 if (_play == null || _play.rect.width < 80f || _play.rect.height < 100f)
                     return;
                 _launched = true;
-                float speed = 220f + _level * 24f;
+                float speed = (220f + _level * 24f) * _pace;
                 float side = Random.value < 0.5f ? -0.6f : 0.6f;
                 _vel = new Vector2(side * speed, speed);
             }
@@ -258,9 +290,9 @@ namespace Crispberry_PiPhone
                     _ball.anchoredPosition = new Vector2(_paddle.anchoredPosition.x, _paddle.anchoredPosition.y + 16f);
             }
 
-            private IEnumerator Run()
+            private IEnumerator Run(int run)
             {
-                while (_page == "play" && !_dead)
+                while (_page == "play" && !_dead && run == _runId)
                 {
                     if (_play != null && (Mathf.Abs(_play.rect.width - _fieldSize.x) > 4f || Mathf.Abs(_play.rect.height - _fieldSize.y) > 4f))
                     {
@@ -294,16 +326,19 @@ namespace Crispberry_PiPhone
                 {
                     pos.x = r;
                     _vel.x = Mathf.Abs(_vel.x);
+                    PhoneSounds.PlayTone(480, 0.03f, "brick-wall");
                 }
                 else if (pos.x > w - r)
                 {
                     pos.x = w - r;
                     _vel.x = -Mathf.Abs(_vel.x);
+                    PhoneSounds.PlayTone(480, 0.03f, "brick-wall");
                 }
                 if (pos.y > h - r)
                 {
                     pos.y = h - r;
                     _vel.y = -Mathf.Abs(_vel.y);
+                    PhoneSounds.PlayTone(480, 0.03f, "brick-wall");
                 }
 
                 Rect paddle = new Rect(_paddle.anchoredPosition.x - _paddle.sizeDelta.x * 0.5f, _paddle.anchoredPosition.y - _paddle.sizeDelta.y * 0.5f, _paddle.sizeDelta.x, _paddle.sizeDelta.y);
@@ -315,7 +350,7 @@ namespace Crispberry_PiPhone
                     float speed = _vel.magnitude;
                     _vel.x = Mathf.Clamp(t, -0.85f, 0.85f) * speed;
                     _vel.y = Mathf.Abs(Mathf.Sqrt(Mathf.Max(40f, speed * speed - _vel.x * _vel.x)));
-                    PhoneSounds.PlayTone(660, 0.04f);
+                    PhoneSounds.PlayTone(660, 0.04f, "brick-paddle");
                 }
 
                 for (int i = 0; i < _bricks.Length; i++)
@@ -329,7 +364,7 @@ namespace Crispberry_PiPhone
                     if (_hp[i] < 0)
                     {
                         Bounce(br, ref pos, r);
-                        PhoneSounds.PlayTone(220, 0.04f);
+                        PhoneSounds.PlayTone(220, 0.04f, "brick-solid");
                         break;
                     }
                     _hp[i]--;
@@ -343,7 +378,7 @@ namespace Crispberry_PiPhone
                     else
                         PaintBrick(i);
                     Bounce(br, ref pos, r);
-                    PhoneSounds.PlayTone(990, 0.05f);
+                    PhoneSounds.PlayTone(990, 0.05f, "brick-hit");
                     break;
                 }
 
@@ -356,7 +391,6 @@ namespace Crispberry_PiPhone
                         PhoneGames.Remember(ref PhoneTheme.HighBreakout, _score, _host);
                         if (_status != null)
                             _status.text = StatusText();
-                        PhoneGames.OverRow(_overParent != null ? _overParent : _host.Content, StartGame, BuildMenu);
                         return;
                     }
                     ResetBall();

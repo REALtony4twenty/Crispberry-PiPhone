@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -19,8 +20,8 @@ namespace Crispberry_PiPhone
                 IconBackground = new Color(0.18f, 0.72f, 0.82f, 1f),
                 SortOrder = 74,
                 ShowOnHome = true,
-                OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
-                OnClose = () => { _live = null; },
+                OnOpen = host => { _live = new Session(host); _live.StartGame(); },
+                OnClose = () => { if (_live != null) _live.Halt(); _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
         }
@@ -28,6 +29,11 @@ namespace Crispberry_PiPhone
         internal static bool TryGoBack()
         {
             return _live != null && _live.GoBack();
+        }
+
+        internal static string CastState()
+        {
+            return _live == null ? "menu" : _live.ExportCast();
         }
 
         private sealed class Session
@@ -53,7 +59,7 @@ namespace Crispberry_PiPhone
             private readonly int[] _bag = new int[7];
             private int _bagLeft;
             private int _nextKind;
-            private Transform _overParent;
+            private int _runId;
 
             private static readonly Color[] Palette =
             {
@@ -75,10 +81,48 @@ namespace Crispberry_PiPhone
 
             public bool GoBack()
             {
-                if (_page == "menu")
-                    return false;
-                BuildMenu();
-                return true;
+                return false;
+            }
+
+            internal void Halt()
+            {
+                _runId++;
+                _page = "off";
+            }
+
+            internal string ExportCast()
+            {
+                if (_page != "play" || _board == null)
+                    return "menu";
+                int cols = Cols;
+                int rows = _board.Length / cols;
+                var show = (int[])_board.Clone();
+                if (!_dead)
+                {
+                    Vector2Int[] cells = Shape(_kind, _rot);
+                    for (int i = 0; i < cells.Length; i++)
+                    {
+                        int x = _px + cells[i].x;
+                        int y = _py + cells[i].y;
+                        if (x >= 0 && y >= 0 && x < cols && y < rows)
+                            show[y * cols + x] = _kind + 1;
+                    }
+                }
+                var sb = new StringBuilder();
+                sb.Append("play|").Append(_score).Append('|').Append(_dead ? '1' : '0').Append('|');
+                for (int y = rows - 1; y >= 0; y--)
+                {
+                    for (int x = 0; x < cols; x++)
+                    {
+                        int v = show[y * cols + x];
+                        if (v < 0)
+                            v = 0;
+                        if (v > 8)
+                            v = 8;
+                        sb.Append((char)('0' + v));
+                    }
+                }
+                return sb.ToString();
             }
 
             public void Relayout()
@@ -88,26 +132,12 @@ namespace Crispberry_PiPhone
                     BuildPlayUi();
                     Draw();
                 }
-                else
-                    BuildMenu();
             }
 
-            public void BuildMenu()
+            internal void StartGame()
             {
-                _page = "menu";
-                PhoneGames.Clear(_host);
-                _host.SetTitle(PhoneLang.T("app.pip.tetris", "Stacker"));
-                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
-                var high = PhoneUi.CreateLabel(_host.Content, "High", "High score  " + PhoneTheme.HighTetris, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(high.gameObject, 28f);
-                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "WASD or arrows. W/Up rotates. S/Down drops. Space hard-drops.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                hint.color = PhoneUi.TextDim;
-                PhoneUi.Wrap(hint);
-                PhoneUi.Size(hint.gameObject, 48f);
-            }
-
-            private void StartGame()
-            {
+                _runId++;
+                int run = _runId;
                 _page = "play";
                 for (int i = 0; i < _board.Length; i++)
                     _board[i] = 0;
@@ -121,7 +151,7 @@ namespace Crispberry_PiPhone
                 Spawn();
                 BuildPlayUi();
                 Draw();
-                _host.StartHostCoroutine(Run());
+                _host.StartHostCoroutine(Run(run));
             }
 
             private void BuildPlayUi()
@@ -132,34 +162,51 @@ namespace Crispberry_PiPhone
                 Transform center;
                 Transform right;
                 PhoneGames.PlayLayout(_host, out left, out center, out right);
-                _overParent = left;
-                _scoreLabel = PhoneGames.HudBar(left, ScoreText(), BuildMenu);
-                if (_dead)
-                    PhoneGames.OverRow(left, StartGame, BuildMenu);
-                float cell = PhoneGames.FitCell(Cols, Rows, 1f, _host.IsLandscape ? 0f : 40f);
-                if (_host.IsLandscape)
-                    cell = Mathf.Min(cell, 15f);
-                GameObject board = PhoneGames.Board(center, Cols, Rows, new Vector2(cell, cell), 1f, out _cells, out _, false);
-                if (_host.IsLandscape)
-                    _nextCells = PhoneGames.OverlayNext(board.transform, 8f, true);
-                else if (_scoreLabel != null)
-                {
-                    _nextCells = PhoneGames.OverlayNext(_scoreLabel.transform.parent, 8f, false);
-                    PhoneUi.Size(_scoreLabel.transform.parent.gameObject, 48f);
-                }
+                _scoreLabel = PhoneGames.HudBar(left, ScoreText(), () => _host.GoBack(), StartGame, "New");
+                float cell = StackCell();
+                var well = new GameObject("Well", typeof(RectTransform));
+                well.transform.SetParent(center, false);
+                var wellH = PhoneUi.AddHorizontal(well, 8f);
+                wellH.childAlignment = TextAnchor.UpperCenter;
+                wellH.childForceExpandWidth = false;
+                wellH.childForceExpandHeight = false;
+                PhoneGames.Board(well.transform, Cols, Rows, new Vector2(cell, cell), 1f, out _cells, out _, false);
+                _nextCells = PhoneGames.OverlayNext(well.transform, Mathf.Clamp(cell * 0.72f, 10f, 16f), false);
                 var cluster = new GameObject("Controls", typeof(RectTransform));
                 cluster.transform.SetParent(right, false);
-                var clusterLayout = PhoneUi.AddHorizontal(cluster, 4f);
-                clusterLayout.childForceExpandWidth = false;
-                clusterLayout.childForceExpandHeight = false;
-                clusterLayout.childAlignment = TextAnchor.MiddleCenter;
-                var clusterLe = cluster.AddComponent<LayoutElement>();
-                clusterLe.flexibleWidth = 0f;
-                clusterLe.flexibleHeight = 0f;
                 Vector2 pad = PhoneUi.Landscape ? new Vector2(40f, 36f) : new Vector2(48f, 40f);
-                PhoneUi.MaterialChip(cluster.transform, "cached", "Rotate", Rotate, pad);
-                PhoneGames.Dpad(cluster.transform, () => TryMove(-1, 0), () => TryMove(1, 0), Rotate, () => TryMove(0, -1));
-                PhoneUi.MaterialChip(cluster.transform, "keyboard_double_arrow_down", "Drop", HardDrop, pad);
+                if (_host.IsLandscape)
+                {
+                    var clusterLayout = PhoneUi.AddVertical(cluster, 6f, new RectOffset(0, 0, 0, 0));
+                    clusterLayout.childForceExpandWidth = false;
+                    clusterLayout.childForceExpandHeight = false;
+                    clusterLayout.childAlignment = TextAnchor.UpperCenter;
+                    PhoneUi.MaterialChip(cluster.transform, "cached", "Rotate", Rotate, pad);
+                    PhoneGames.Dpad(cluster.transform, () => TryMove(-1, 0), () => TryMove(1, 0), null, () => TryMove(0, -1));
+                    PhoneUi.MaterialChip(cluster.transform, "keyboard_double_arrow_down", "Drop", HardDrop, pad);
+                }
+                else
+                {
+                    var clusterLayout = PhoneUi.AddHorizontal(cluster, 4f);
+                    clusterLayout.childForceExpandWidth = false;
+                    clusterLayout.childForceExpandHeight = false;
+                    clusterLayout.childAlignment = TextAnchor.MiddleCenter;
+                    PhoneUi.MaterialChip(cluster.transform, "cached", "Rotate", Rotate, pad);
+                    PhoneGames.Dpad(cluster.transform, () => TryMove(-1, 0), () => TryMove(1, 0), Rotate, () => TryMove(0, -1));
+                    PhoneUi.MaterialChip(cluster.transform, "keyboard_double_arrow_down", "Drop", HardDrop, pad);
+                }
+            }
+
+            private float StackCell()
+            {
+                float preview = 64f;
+                float gap = 1f;
+                float availW = _host.IsLandscape ? 640f : 380f;
+                float availH = _host.IsLandscape ? PhoneGames.LandscapeBoardH : 620f;
+                float boardW = availW - preview;
+                float cw = (boardW - (Cols + 1) * gap) / Cols;
+                float ch = (availH - (Rows + 1) * gap) / Rows;
+                return Mathf.Clamp(Mathf.Floor(Mathf.Min(cw, ch)), 12f, 36f);
             }
 
             private string ScoreText()
@@ -169,9 +216,9 @@ namespace Crispberry_PiPhone
                 return "Lv " + _level + "   " + _score + "   " + _lines + "    " + PhoneLang.T("best", "Best") + " " + PhoneTheme.HighTetris;
             }
 
-            private IEnumerator Run()
+            private IEnumerator Run(int run)
             {
-                while (_page == "play" && !_dead)
+                while (_page == "play" && !_dead && run == _runId)
                 {
                     if (PhoneKeys.Down(PhoneKeys.TetrisRotate) || PhoneKeys.Down(PhoneKeys.GameUp) || PhoneGames.Down(KeyCode.UpArrow))
                         Rotate();
@@ -241,10 +288,10 @@ namespace Crispberry_PiPhone
                 if (Hits(_px, _py, _rot))
                 {
                     _dead = true;
+                    PhoneSfx.Play("stack-lose");
                     PhoneGames.Remember(ref PhoneTheme.HighTetris, _score, _host);
                     if (_scoreLabel != null)
                         _scoreLabel.text = "Game over  " + _score + "    Best " + PhoneTheme.HighTetris;
-                    PhoneGames.OverRow(_overParent != null ? _overParent : _host.Content, StartGame, BuildMenu);
                 }
             }
 
@@ -252,6 +299,7 @@ namespace Crispberry_PiPhone
             {
                 if (_dead)
                     return;
+                int before = _rot;
                 int next = (_rot + 1) & 3;
                 if (!Hits(_px, _py, next))
                     _rot = next;
@@ -265,6 +313,8 @@ namespace Crispberry_PiPhone
                     _px++;
                     _rot = next;
                 }
+                if (_rot != before)
+                    PhoneSfx.Play("stack-rot");
                 Draw();
             }
 
@@ -300,12 +350,14 @@ namespace Crispberry_PiPhone
                         _board[y * Cols + x] = _kind + 1;
                 }
                 int cleared = ClearLines();
+                if (cleared == 0)
+                    PhoneSfx.Play("stack-place");
                 if (cleared > 0)
                 {
                     _lines += cleared;
                     int[] pts = { 0, 40, 100, 300, 1200 };
                     _score += pts[cleared] * _level;
-                    PhoneSounds.PlayTone(880, 0.08f);
+                    PhoneSfx.Play("stack-clear");
                     int nextLevel = 1 + _lines / 10;
                     if (nextLevel > _level)
                     {

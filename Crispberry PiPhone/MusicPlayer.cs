@@ -339,7 +339,7 @@ namespace Crispberry_PiPhone
         {
             if (_source == null)
                 return;
-            float v = PhoneTheme.MusicVolume * _duck;
+            float v = PhoneTheme.MusicVolume * PhoneTheme.RingVolume * _duck;
             if (Mathf.Abs(v - _lastVol) < 0.002f)
                 return;
             _lastVol = v;

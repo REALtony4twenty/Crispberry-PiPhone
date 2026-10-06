@@ -22,6 +22,7 @@ namespace Crispberry_PiPhone
                 IconBackground = PhoneUi.PhoneIcon,
                 SortOrder = 0,
                 ShowOnDock = true,
+                RunInBackground = true,
                 OnOpen = host => { _live = new Session(host); _live.Build(); },
                 OnClose = () => { _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
@@ -207,11 +208,12 @@ namespace Crispberry_PiPhone
                 var artImg = art.GetComponent<Image>();
                 artImg.type = Image.Type.Simple;
                 artImg.preserveAspect = true;
+                artImg.raycastTarget = true;
                 var button = art.gameObject.AddComponent<Button>();
                 button.targetGraphic = artImg;
                 button.colors = PhoneUi.TintColors();
                 string captured = digit;
-                button.onClick.AddListener(() => Press(captured));
+                PhoneSfx.BindPress(button, () => Press(captured));
                 var artLe = art.gameObject.AddComponent<LayoutElement>();
                 artLe.preferredWidth = d;
                 artLe.preferredHeight = d;
@@ -586,7 +588,12 @@ namespace Crispberry_PiPhone
                 _toneRing = ring;
                 ClearPage(_tonesPage);
                 PhoneUi.MaterialChip(_tonesPage.transform, "arrow_back", "Back", DrawContactTones, new Vector2(36f, 32f));
-                PhoneUi.CreateButton(_tonesPage.transform, "Default", () =>
+                string stored = ring ? PhoneTones.ContactRing(_toneContactId) : PhoneTones.ContactText(_toneContactId);
+                string effective = ring ? PhoneTones.ResolveRing(_toneContactId) : PhoneTones.ResolveText(_toneContactId);
+                var usingLine = PhoneUi.CreateLabel(_tonesPage.transform, "Using", "Using " + PhoneTheme.ToneName(effective), 14f, FontStyles.Normal, TextAlignmentOptions.Center);
+                usingLine.color = PhoneUi.TextDim;
+                PhoneUi.Size(usingLine.gameObject, 22f);
+                PhoneUi.CreateButton(_tonesPage.transform, PhoneTones.Mark("Default", string.IsNullOrEmpty(stored)), () =>
                 {
                     if (ring)
                         PhoneTones.SetContactRing(_toneContactId, string.Empty);
@@ -605,7 +612,7 @@ namespace Crispberry_PiPhone
                     else
                         PhoneTones.SetContactText(_toneContactId, captured.Id);
                     DrawContactTones();
-                });
+                }, stored);
             }
 
             private static void ClearPage(GameObject page)

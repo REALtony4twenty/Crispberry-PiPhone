@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -358,9 +359,41 @@ namespace Crispberry_PiPhone
             Plugin.LogInfo("Icon skipped: " + reason);
         }
 
+        public static IEnumerator WarmCards()
+        {
+            yield return new WaitForSecondsRealtime(1f);
+            BindBuiltins();
+            Logo();
+            string[] glyphs = new string[GlyphByApp.Count];
+            GlyphByApp.Values.CopyTo(glyphs, 0);
+            for (int i = 0; i < glyphs.Length; i++)
+            {
+                Material(glyphs[i]);
+                yield return new WaitForSecondsRealtime(0.05f);
+            }
+            Card("card_back");
+            yield return new WaitForSecondsRealtime(0.05f);
+            Card("card_empty");
+            yield return new WaitForSecondsRealtime(0.05f);
+            string[] suits = { "spades", "hearts", "diamonds", "clubs" };
+            string[] ranks = { "A", "02", "03", "04", "05", "06", "07", "08", "09", "10", "J", "Q", "K" };
+            for (int s = 0; s < suits.Length; s++)
+            {
+                for (int r = 0; r < ranks.Length; r++)
+                {
+                    Card("card_" + suits[s] + "_" + ranks[r]);
+                    yield return new WaitForSecondsRealtime(0.05f);
+                }
+            }
+        }
+
+        private static string[] _resourceNames;
+
         private static byte[] FindResource(string fileName)
         {
-            string[] names = Asm.GetManifestResourceNames();
+            if (_resourceNames == null)
+                _resourceNames = Asm.GetManifestResourceNames();
+            string[] names = _resourceNames;
             for (int i = 0; i < names.Length; i++)
             {
                 if (names[i] != null && names[i].EndsWith(fileName, StringComparison.OrdinalIgnoreCase))

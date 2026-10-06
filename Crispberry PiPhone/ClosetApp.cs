@@ -36,6 +36,65 @@ namespace Crispberry_PiPhone
             });
         }
 
+        internal static bool TryWorldPose(out Vector3 pos, out Quaternion rot, out float fov)
+        {
+            pos = Vector3.zero;
+            rot = Quaternion.identity;
+            fov = 48f;
+            if (_live == null || _live.Cam == null)
+                return false;
+            pos = _live.Cam.transform.position;
+            rot = _live.Cam.transform.rotation;
+            fov = _live.Cam.fieldOfView;
+            return true;
+        }
+
+        internal static string CastSpriteKey(Sprite sprite)
+        {
+            if (sprite == null)
+                return null;
+            Session.EnsurePassportIcons();
+            foreach (KeyValuePair<int, Sprite> pair in _passportIcons)
+            {
+                if (pair.Value == sprite)
+                    return "b" + pair.Key.ToString();
+            }
+            return null;
+        }
+
+        internal static Sprite PassportSprite(int type)
+        {
+            Session.EnsurePassportIcons();
+            Sprite sprite;
+            return _passportIcons.TryGetValue(type, out sprite) ? sprite : null;
+        }
+
+        internal static bool TryOption(int type, int index, out Texture tex, out Material mat)
+        {
+            tex = null;
+            mat = null;
+            try
+            {
+                Customization catalog = Customization.Instance;
+                if (catalog == null)
+                    return false;
+                CustomizationOption[] list = catalog.GetList((Customization.Type)type);
+                if (list == null || index < 0 || index >= list.Length)
+                    return false;
+                CustomizationOption opt = list[index];
+                if (opt == null || opt.texture == null)
+                    return false;
+                tex = opt.texture;
+                if ((Customization.Type)type == Customization.Type.Eyes)
+                    mat = Session.EyeMaterial();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         internal static bool TryGoBack()
         {
             return ClosetSkinSliders.Hide();
@@ -50,6 +109,11 @@ namespace Crispberry_PiPhone
             private readonly IPiPhoneHost _host;
             private Customization.Type _type = Customization.Type.Skin;
             private Camera _cam;
+
+            internal Camera Cam
+            {
+                get { return _cam; }
+            }
             private RenderTexture _rt;
             private RawImage _preview;
             private float _camLift;
@@ -283,7 +347,7 @@ namespace Crispberry_PiPhone
                 return _passportIcons.TryGetValue((int)type, out sprite) ? sprite : null;
             }
 
-            private static void EnsurePassportIcons()
+            internal static void EnsurePassportIcons()
             {
                 PassportTab[] tabs = null;
                 PassportManager manager = PassportManager.instance;
@@ -555,9 +619,10 @@ namespace Crispberry_PiPhone
                     bool locked = opt != null && OptionLocked(opt);
                     bool on = index == current;
                     var tile = PhoneUi.CreateImage(_optionContent, "O", PhoneUi.Rounded(14), on ? PhoneUi.Accent : PhoneUi.SurfaceAlt);
+                    PhoneUi.SetClickable(tile.gameObject, true);
                     if (opt != null && opt.texture != null)
                     {
-                        var rawGo = new GameObject("T", typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
+                        var rawGo = new GameObject("Opt" + (int)_type + ":" + index, typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
                         rawGo.transform.SetParent(tile, false);
                         PhoneUi.Stretch(rawGo.GetComponent<RectTransform>(), 6f, 18f);
                         var raw = rawGo.GetComponent<RawImage>();
@@ -585,7 +650,7 @@ namespace Crispberry_PiPhone
                     var btn = tile.gameObject.AddComponent<Button>();
                     btn.transition = Selectable.Transition.None;
                     btn.targetGraphic = tile.GetComponent<Image>();
-                    btn.onClick.AddListener(() => Pick(_type, index, locked));
+                    PhoneSfx.BindPress(btn, () => Pick(_type, index, locked));
                 }
                 int rows = (count + extra + 3) / 4;
                 float cellH = _optionGrid != null ? _optionGrid.cellSize.y : 72f;
@@ -597,6 +662,7 @@ namespace Crispberry_PiPhone
             {
                 IPiPhoneHost host = _host;
                 var tile = PhoneUi.CreateImage(_optionContent, "Custom", PhoneUi.Rounded(14), PhoneUi.SurfaceAlt);
+                PhoneUi.SetClickable(tile.gameObject, true);
                 Sprite art = PhoneIcons.Material("color_lens");
                 if (art != null)
                 {
@@ -613,7 +679,7 @@ namespace Crispberry_PiPhone
                 var btn = tile.gameObject.AddComponent<Button>();
                 btn.transition = Selectable.Transition.None;
                 btn.targetGraphic = tile.GetComponent<Image>();
-                btn.onClick.AddListener(() => ClosetSkinSliders.Open(host));
+                PhoneSfx.BindPress(btn, () => ClosetSkinSliders.Open(host));
             }
 
             private void RefreshScroll(float contentHeight)
@@ -792,7 +858,7 @@ namespace Crispberry_PiPhone
                 return PhoneUi.Surface;
             }
 
-            private static Material EyeMaterial()
+            internal static Material EyeMaterial()
             {
                 if (_eyeMat != null)
                     return _eyeMat;

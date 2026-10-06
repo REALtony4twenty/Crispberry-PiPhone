@@ -424,12 +424,13 @@ namespace Crispberry_PiPhone
                     PhoneUi.Stretch(mark.rectTransform, 6f, 4f);
                     mark.color = new Color(0.10f, 0.11f, 0.12f, 1f);
                 }
+                PhoneUi.SetClickable(thumb.gameObject, true);
                 var btn = thumb.gameObject.AddComponent<Button>();
                 btn.transition = Selectable.Transition.None;
                 if (_selecting && !string.IsNullOrEmpty(key))
                 {
                     string captured = key;
-                    btn.onClick.AddListener(() =>
+                    PhoneSfx.BindPress(btn, () =>
                     {
                         if (_picked.Contains(captured))
                             _picked.Remove(captured);
@@ -439,7 +440,7 @@ namespace Crispberry_PiPhone
                     });
                 }
                 else if (onClick != null)
-                    btn.onClick.AddListener(onClick);
+                    PhoneSfx.BindPress(btn, onClick);
             }
 
             private void ShowViewer(PhotoItem photo, string downloadWall)

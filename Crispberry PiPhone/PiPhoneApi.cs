@@ -30,6 +30,12 @@ namespace Crispberry_PiPhone
     ///
     /// Build your app UI under <see cref="IPiPhoneHost.Content"/> with Unity uGUI
     /// (or <see cref="PhoneUi"/> helpers so it matches the Android chrome).
+    /// Pictures are decoration: they do not take clicks. <see cref="PhoneUi.CreateImage"/>
+    /// leaves raycastTarget off. <see cref="PhoneUi.CreateButton"/> and
+    /// <see cref="PhoneUi.SetClickable"/> turn it on for a real button.
+    /// If you build your own Unity Image, set raycastTarget false unless that
+    /// image is the button. Unity's own default is clickable, and a screen full
+    /// of clickable decoration makes the pointer test every picture.
     ///
     /// Apps (the store app, id pip.store): registered apps appear there first and
     /// are not installed until the player taps Install (or you set
@@ -62,6 +68,10 @@ namespace Crispberry_PiPhone
     /// Open with data: <see cref="OpenApp(string, object)"/> passes a payload (a thread id,
     /// an item, anything). Read it from <see cref="IPiPhoneHost.Payload"/> inside <see cref="PiPhoneApp.OnOpen"/>.
     /// <see cref="PiPhoneApp.Tick"/> runs every frame even while the phone is closed.
+    /// Use Tick plus <see cref="Notify"/> for "someone challenged you" without keeping
+    /// the whole app alive. <see cref="PiPhoneApp.RunInBackground"/> defaults to false:
+    /// leaving the app stops coroutines started with <see cref="IPiPhoneHost.StartHostCoroutine"/>.
+    /// Set it true only for calls, messages, or music that must keep going after the player goes home.
     /// <see cref="SetStatusIcon"/> puts a small icon just left of the battery. Use your plugin GUID in the id.
     ///
     /// Hover text: <see cref="PiPhoneApp.Tooltip"/> on the home, dock, and All apps icon.
@@ -120,6 +130,27 @@ namespace Crispberry_PiPhone
     /// screen at a time. Other players in the room see that phone on the screen.
     /// The picture keeps the phone's aspect unless the open app sets
     /// <see cref="PiPhoneApp.CastAspectWidth"/> or calls <see cref="SetCastAspect"/>.
+    /// <see cref="MountPhone"/> parks the real phone on a world socket.
+    /// <see cref="SetPhoneHeld"/> leaves the open phone on the cast, or brings it
+    /// back to the hand. The app stays open either way. A mod app does not send a
+    /// separate board: the cast shows the phone picture, so the UI you built is
+    /// what other players see. The side volume buttons are not part of that picture.
+    ///
+    /// Sounds: the phone volume is the master. <see cref="PlayInterfaceSound"/> plays
+    /// a built-in cue (click, toggle-on, toggle-off, back-btn, hover, tick, trash,
+    /// shutter, rec-start, rec-stop, vibrate, type, back, and the game cues).
+    /// <see cref="PlayClip(byte[])"/> plays your WAV or MP3 at that volume.
+    /// <see cref="BindButton(Button, UnityAction)"/> plays the phone click, then your action.
+    /// Pass a cue, or call <see cref="BindButtonClip"/>, for a different press.
+    /// <see cref="PiPhoneApp.HoverSound"/> and <see cref="SetAppHoverClip"/> choose the
+    /// home-icon hover. <see cref="GetAppCueVolume"/> is a trim under the phone volume.
+    /// <see cref="PiPhoneApp.RunInBackground"/> stays false unless the app must keep
+    /// working after the player goes home.
+    ///
+    /// Sliders and toggles: <see cref="PhoneUi.CreateSlider"/>, <see cref="PhoneUi.CreateSliderRow"/>,
+    /// <see cref="PhoneUi.CreateThinSlider"/>, and <see cref="PhoneUi.CreateDualRange"/> match the
+    /// phone track and play the slider tick. <see cref="PhoneUi.CreateToggleChip"/> plays
+    /// toggle-on or toggle-off. <see cref="PhoneUi.CreateButton"/> plays the button click.
     ///
     /// Networking: texts/calls use Photon RaiseEvent byte 185 with magic
     /// <see cref="PluginGuid"/>. Pick a different byte if you raise your own events.
@@ -565,6 +596,46 @@ namespace Crispberry_PiPhone
             PhoneCast.Unregister(id);
         }
 
+        /// <summary>True while <see cref="MountPhone"/> has the phone on a world socket.</summary>
+        public static bool IsPhoneMounted
+        {
+            get { return PhoneMenu.IsPhoneMounted; }
+        }
+
+        /// <summary>
+        /// Move the real phone onto a socket in the world. The socket's forward points out of
+        /// the screen toward the player. <paramref name="widthMeters"/> is the phone's width.
+        /// The player uses this phone. It is not a copy.
+        /// </summary>
+        public static bool MountPhone(Transform socket, float widthMeters)
+        {
+            return PhoneMenu.MountPhone(socket, widthMeters);
+        }
+
+        /// <summary>Put the phone back on the player's screen.</summary>
+        public static void UnmountPhone()
+        {
+            PhoneMenu.UnmountPhone();
+        }
+
+        /// <summary>True while the phone is the picture in your hand, not living on a cast screen.</summary>
+        public static bool PhoneHeld
+        {
+            get { return !PhoneCast.PhoneIsOnBoard; }
+        }
+
+        /// <summary>
+        /// Keep the open app running. When <paramref name="held"/> is false and a cast is on,
+        /// the phone leaves your view and sits on that screen so you click it there.
+        /// Pass true to bring the phone back to your hand. The app stays open either way.
+        /// </summary>
+        public static bool SetPhoneHeld(bool held)
+        {
+            if (held)
+                return PhoneCast.UseBoard(false);
+            return PhoneCast.UseBoard(true);
+        }
+
         /// <summary>
         /// Shape of the cast picture, as width and height (16 and 9, or 4 and 3).
         /// The phone image stays unstretched inside that shape. Zero either value
@@ -704,6 +775,8 @@ namespace Crispberry_PiPhone
                 Icon = PhoneTheme.IconColor,
                 Case = PhoneTheme.CaseColor,
                 Clock = PhoneTheme.ClockColor,
+                Battery = PhoneTheme.BatteryColor,
+                Signal = PhoneTheme.SignalColor,
                 ButtonFill = PhoneTheme.ButtonFillColor,
                 ButtonText = PhoneTheme.ButtonFontColor,
                 FontScale = PhoneTheme.FontScale,
@@ -727,9 +800,11 @@ namespace Crispberry_PiPhone
             PhoneTheme.IconColor = look.Icon;
             PhoneTheme.CaseColor = look.Case;
             PhoneTheme.ClockColor = look.Clock;
+            PhoneTheme.BatteryColor = look.Battery;
+            PhoneTheme.SignalColor = look.Signal;
             PhoneTheme.ButtonFillColor = look.ButtonFill;
             PhoneTheme.ButtonFontColor = look.ButtonText;
-            PhoneTheme.FontScale = Mathf.Clamp(look.FontScale, 0.7f, 1.6f);
+            PhoneTheme.FontScale = Mathf.Clamp(look.FontScale, 0.7f, 1.4f);
             PhoneTheme.ButtonRadius = look.ButtonRadius < 0 ? 0 : (look.ButtonRadius > 28 ? 28 : look.ButtonRadius);
             PhoneTheme.IconRadius = look.IconRadius < 0 ? 0 : (look.IconRadius > 28 ? 28 : look.IconRadius);
             PhoneTheme.Commit();
@@ -896,6 +971,97 @@ namespace Crispberry_PiPhone
         public static string GetAppAlertSound(string appId)
         {
             return PhoneTones.AppTone(appId);
+        }
+
+        /// <summary>Trim for interface sounds that do not have their own slider yet. The phone volume still scales the result. 0 is silent, 1 is full.</summary>
+        public static float UiSfxVolume
+        {
+            get { return PhoneTheme.UiSfxVolume; }
+            set { PhoneTheme.SetUiSfxVolume(value); }
+        }
+
+        /// <summary>App sound level used until an effect has its own slider. 0.7 until the player changes it.</summary>
+        public static float GetAppSfxVolume(string appId)
+        {
+            return PhoneTheme.GameSfxVolume(appId);
+        }
+
+        /// <summary>Save an app sound level (0 silent, 1 full). Effects with their own slider keep that level.</summary>
+        public static void SetAppSfxVolume(string appId, float volume)
+        {
+            PhoneTheme.SetGameSfxVolume(appId, volume);
+        }
+
+        /// <summary>Volume for one effect in an app. Falls back to <see cref="GetAppSfxVolume"/>.</summary>
+        public static float GetAppCueVolume(string appId, string cue)
+        {
+            return PhoneTheme.GameCueVolume(appId, cue);
+        }
+
+        /// <summary>Save one effect's volume (0 silent, 1 full). Playback is also scaled by the phone volume.</summary>
+        public static void SetAppCueVolume(string appId, string cue, float volume)
+        {
+            PhoneTheme.SetGameCueVolume(appId, cue, volume);
+        }
+
+        /// <summary>
+        /// Play a built-in phone sound at the phone volume. The cue keeps its Sounds-page slider when it has one.
+        /// Keys include click, back-btn, hover, tick, trash, shutter, rec-start, rec-stop, type, and back.
+        /// </summary>
+        public static void PlayInterfaceSound(string cue)
+        {
+            PhoneSfx.PlayUi(cue);
+        }
+
+        /// <summary>Play your own short WAV or MP3 at the phone volume.</summary>
+        public static bool PlayClip(byte[] wavOrMp3)
+        {
+            return PlayClip(wavOrMp3, 1f);
+        }
+
+        /// <summary>Play your own short WAV or MP3. <paramref name="scale"/> is 0–1, then the phone volume.</summary>
+        public static bool PlayClip(byte[] wavOrMp3, float scale)
+        {
+            object clip = PhoneSfx.FromBytes(wavOrMp3);
+            if (clip == null)
+                return false;
+            float vol = Mathf.Clamp01(scale) * PhoneTheme.RingVolume;
+            if (vol > 0.001f)
+                VoiceIo.PlayOneShot(clip, vol);
+            return true;
+        }
+
+        /// <summary>Home-icon hover uses a built-in cue. Null or empty restores the phone hover.</summary>
+        public static void SetAppHoverSound(string appId, string cue)
+        {
+            PiPhoneApp app;
+            if (!TryGetApp(appId, out app) || app == null)
+                return;
+            app.HoverSound = string.IsNullOrEmpty(cue) ? null : cue;
+        }
+
+        /// <summary>Home-icon hover uses your WAV or MP3. Pass null or empty to clear it and use <see cref="PiPhoneApp.HoverSound"/>.</summary>
+        public static bool SetAppHoverClip(string appId, byte[] wavOrMp3)
+        {
+            return PhoneSfx.SetHoverClip(appId, wavOrMp3);
+        }
+
+        /// <summary>Button plays the phone click, then runs <paramref name="action"/>.</summary>
+        public static void BindButton(Button button, UnityAction action)
+        {
+            PhoneSfx.BindPress(button, action, false, false);
+        }
+
+        /// <summary>Button plays a built-in phone sound, then runs <paramref name="action"/>.</summary>
+        public static void BindButton(Button button, UnityAction action, string cue)
+        {
+            PhoneSfx.BindCue(button, action, cue);
+        }
+
+        /// <summary>Button plays your WAV or MP3 at the button level, then runs <paramref name="action"/>.</summary>
+        public static void BindButtonClip(Button button, UnityAction action, byte[] wavOrMp3)
+        {
+            PhoneSfx.BindClip(button, action, wavOrMp3);
         }
 
         public static void Toast(string message)
@@ -1364,6 +1530,8 @@ namespace Crispberry_PiPhone
         public Color Icon = Color.white;
         public Color Case = new Color(0.07f, 0.07f, 0.08f, 1f);
         public Color Clock = new Color(0.96f, 0.97f, 0.98f, 1f);
+        public Color Battery = new Color(0.96f, 0.97f, 0.98f, 1f);
+        public Color Signal = new Color(0.96f, 0.97f, 0.98f, 1f);
         public Color ButtonFill = new Color(0.20f, 0.22f, 0.26f, 1f);
         public Color ButtonText = new Color(0.96f, 0.97f, 0.98f, 1f);
         public float FontScale = 1f;
@@ -1564,6 +1732,16 @@ namespace Crispberry_PiPhone
         /// </summary>
         public bool AllowPlayThrough = true;
 
+        /// <summary>
+        /// Built-in sound when the pointer hovers this app's icon. Null uses the phone's App hover.
+        /// A library key such as "click" uses that phone sound.
+        /// For your own recording, call <see cref="PiPhoneApi.SetAppHoverClip"/>.
+        /// Buttons you build can use <see cref="PiPhoneApi.BindButton"/> or <see cref="PiPhoneApi.BindButtonClip"/>,
+        /// and <see cref="PiPhoneApi.PlayInterfaceSound"/> or <see cref="PiPhoneApi.PlayClip"/> for anything else.
+        /// All of those follow the phone volume.
+        /// </summary>
+        public string HoverSound;
+
         /// <summary>Optional path to a short alert clip copied into <see cref="PiPhoneApi.AlertsFolder"/> on register.</summary>
         public string BundledAlertPath;
 
@@ -1609,8 +1787,21 @@ namespace Crispberry_PiPhone
         /// Parent your UI to that RectTransform. Use <see cref="PhoneUi"/> so buttons,
         /// labels, and media match the phone chrome. For images, call
         /// <see cref="PhoneUi.FitContained"/> instead of stretching.
+        /// Leave raycastTarget off on pictures that are not buttons. Use
+        /// <see cref="PhoneUi.SetClickable"/> or <see cref="PhoneUi.CreateButton"/>
+        /// when a picture should take a click.
         /// </summary>
         public Action<IPiPhoneHost> OnOpen;
+
+        /// <summary>
+        /// If false (default), leaving this app stops coroutines started with
+        /// <see cref="IPiPhoneHost.StartHostCoroutine"/> and then calls <see cref="OnClose"/>.
+        /// Games should leave this false so the board does not keep playing off-screen.
+        /// Set true for a call, message, or music session that must continue after the player goes home.
+        /// A challenge notification does not need this. <see cref="Tick"/> already runs while the app
+        /// is closed; call <see cref="PiPhoneApi.Notify"/> from there.
+        /// </summary>
+        public bool RunInBackground;
 
         /// <summary>Called when leaving the app (home, back, or phone close).</summary>
         public Action OnClose;
@@ -1762,6 +1953,10 @@ namespace Crispberry_PiPhone
     /// </summary>
     public interface IPiPhoneHost
     {
+        /// <summary>
+        /// App page. Pictures parented here should leave raycastTarget off unless
+        /// they are buttons. See <see cref="PhoneUi.SetClickable"/>.
+        /// </summary>
         RectTransform Content { get; }
         void SetTitle(string title);
         void GoHome();

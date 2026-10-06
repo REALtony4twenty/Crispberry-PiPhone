@@ -181,6 +181,7 @@ namespace Crispberry_PiPhone
             LoadLayout();
             LoadInstalled();
             LoadSounds();
+            PhoneSfx.SeedAlerts();
             ImportLooseAlerts();
             LoadPlaylists();
             MigrateOldMemos();

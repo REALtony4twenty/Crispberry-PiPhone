@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -20,8 +21,8 @@ namespace Crispberry_PiPhone
                 IconBackground = new Color(0.16f, 0.42f, 0.28f, 1f),
                 SortOrder = 77,
                 ShowOnHome = true,
-                OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
-                OnClose = () => { _live = null; },
+                OnOpen = host => { _live = new Session(host); _live.Start(1); },
+                OnClose = () => { if (_live != null) _live.Halt(); _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
         }
@@ -29,6 +30,11 @@ namespace Crispberry_PiPhone
         internal static bool TryGoBack()
         {
             return _live != null && _live.GoBack();
+        }
+
+        internal static string CastState()
+        {
+            return _live == null ? "menu" : _live.ExportCast();
         }
 
         private sealed class Session
@@ -46,6 +52,8 @@ namespace Crispberry_PiPhone
             private int _draw = 1;
             private int _selPile = -1;
             private int _selFrom;
+            private List<int> _flyCards;
+            private List<Vector3> _flyFrom;
             private bool _won;
             private bool _lost;
             private bool _auto;
@@ -63,35 +71,67 @@ namespace Crispberry_PiPhone
 
             public bool GoBack()
             {
-                if (_page == "menu")
-                    return false;
-                BuildMenu();
-                return true;
+                return false;
+            }
+
+            internal void Halt()
+            {
+                _dealId++;
+                _page = "off";
+            }
+
+            internal string ExportCast()
+            {
+                if (_page != "play")
+                    return "menu";
+                var sb = new StringBuilder();
+                sb.Append("play|").Append(_won ? '1' : '0').Append('|').Append(_stock.Count).Append('|');
+                for (int i = 0; i < _waste.Count; i++)
+                {
+                    if (i > 0)
+                        sb.Append('.');
+                    sb.Append(_waste[i]);
+                }
+                sb.Append('|');
+                for (int f = 0; f < 4; f++)
+                {
+                    if (f > 0)
+                        sb.Append('/');
+                    List<int> pile = _found[f];
+                    for (int i = 0; i < pile.Count; i++)
+                    {
+                        if (i > 0)
+                            sb.Append('.');
+                        sb.Append(pile[i]);
+                    }
+                }
+                sb.Append('|');
+                for (int c = 0; c < 7; c++)
+                {
+                    if (c > 0)
+                        sb.Append('/');
+                    List<int> pile = _tab[c];
+                    for (int k = 0; k < pile.Count; k++)
+                    {
+                        if (k > 0)
+                            sb.Append('.');
+                        int card = pile[k];
+                        if (card >= 0 && card < _up.Length && _up[card])
+                            sb.Append(card);
+                        else
+                            sb.Append('d');
+                    }
+                }
+                return sb.ToString();
             }
 
             public void Relayout()
             {
                 if (_page == "play")
                     BuildPlayUi();
-                else
-                    BuildMenu();
             }
 
-            public void BuildMenu()
-            {
-                _page = "menu";
-                PhoneGames.Clear(_host);
-                _host.SetTitle(PhoneLang.T("app.pip.solitaire", "Solitaire"));
-                PhoneUi.CreateButton(_host.Content, "Play", () => Start(1), new Vector2(220f, 48f));
-                var high = PhoneUi.CreateLabel(_host.Content, "High", "Wins  " + PhoneTheme.HighSolitaire, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(high.gameObject, 28f);
-                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Tap the deck to flip one card. When the deck is empty and every card is face up, the stacks finish themselves. You can also tap the empty deck. If nothing left can be played, the game ends.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                hint.color = PhoneUi.TextDim;
-                PhoneUi.Wrap(hint);
-                PhoneUi.Size(hint.gameObject, 64f);
-            }
-
-            private void Start(int draw)
+            internal void Start(int draw)
             {
                 _draw = draw < 1 ? 1 : draw;
                 _won = false;
@@ -148,9 +188,8 @@ namespace Crispberry_PiPhone
                 Transform center;
                 Transform right;
                 PhoneGames.PlayLayout(_host, out left, out center, out right);
-                _status = PhoneGames.HudBar(left, StatusText(), BuildMenu);
-                if (_won || _lost)
-                    PhoneGames.OverRow(left, () => Start(_draw), BuildMenu);
+                _status = PhoneGames.HudBar(left, StatusText(), () => _host.GoBack(), () => Start(_draw), "New");
+                PhoneGames.HidePane(right);
 
                 var table = new GameObject("Table", typeof(RectTransform));
                 table.transform.SetParent(center, false);
@@ -212,8 +251,6 @@ namespace Crispberry_PiPhone
                         CardFace(pile.transform, up ? card : -2, h, () => TapTab(col, idx), up && IsSelected(card));
                     }
                 }
-
-                PhoneUi.CreateButton(right, "New", () => Start(_draw), new Vector2(88f, 36f));
             }
 
             private string StatusText()
@@ -241,7 +278,7 @@ namespace Crispberry_PiPhone
             private void CardFace(Transform parent, int card, float height, UnityEngine.Events.UnityAction click, bool selected)
             {
                 const float width = 46f;
-                var rt = PhoneUi.CreateImage(parent, "Card", PhoneUi.White(), selected ? PhoneUi.Accent : new Color(0f, 0f, 0f, 0f));
+                var rt = PhoneUi.CreateImage(parent, card >= 0 ? "K" + card : "Card", PhoneUi.White(), selected ? PhoneUi.Accent : new Color(0f, 0f, 0f, 0f));
                 var le = rt.gameObject.AddComponent<LayoutElement>();
                 le.minWidth = 36f;
                 le.preferredWidth = width;
@@ -251,6 +288,7 @@ namespace Crispberry_PiPhone
                 le.flexibleHeight = 0f;
                 var img = rt.GetComponent<Image>();
                 img.type = Image.Type.Simple;
+                img.raycastTarget = true;
                 var button = rt.gameObject.AddComponent<Button>();
                 button.targetGraphic = img;
                 var colors = button.colors;
@@ -301,6 +339,7 @@ namespace Crispberry_PiPhone
                     return;
                 if (_stock.Count == 0)
                 {
+                    PhoneSfx.Play("sol-card");
                     if (CanAutoComplete() && HasMove())
                     {
                         _host.StartHostCoroutine(AutoComplete());
@@ -326,6 +365,7 @@ namespace Crispberry_PiPhone
                     _waste.Add(c);
                 }
                 _selPile = -1;
+                PhoneSfx.Play("sol-card");
                 BuildPlayUi();
                 MaybeAuto();
                 MaybeStuck();
@@ -362,6 +402,7 @@ namespace Crispberry_PiPhone
                     AfterMove();
                     return;
                 }
+                PhoneSfx.Play("sol-bad");
                 _selPile = -1;
                 BuildPlayUi();
             }
@@ -379,6 +420,7 @@ namespace Crispberry_PiPhone
                         AfterMove();
                         return;
                     }
+                    PhoneSfx.Play("sol-bad");
                 }
                 if (idx < pile.Count)
                 {
@@ -387,9 +429,10 @@ namespace Crispberry_PiPhone
                     {
                         if (idx == pile.Count - 1)
                         {
-                            _up[card] = true;
-                            _selPile = -1;
-                            BuildPlayUi();
+                        _up[card] = true;
+                        _selPile = -1;
+                        PhoneSfx.Play("sol-card");
+                        BuildPlayUi();
                         }
                         return;
                     }
@@ -412,6 +455,8 @@ namespace Crispberry_PiPhone
                         _selPile = -1;
                         AfterMove();
                     }
+                    else
+                        PhoneSfx.Play("sol-bad");
                 }
             }
 
@@ -639,6 +684,7 @@ namespace Crispberry_PiPhone
                     if (!CanStack(card, top))
                         return false;
                 }
+                RememberFly(run);
                 PullSelected();
                 dest.AddRange(run);
                 return true;
@@ -664,6 +710,7 @@ namespace Crispberry_PiPhone
                     if (top % 13 != rank - 1)
                         return false;
                 }
+                RememberFly(run);
                 PullSelected();
                 _found[f].Add(card);
                 return true;
@@ -714,12 +761,121 @@ namespace Crispberry_PiPhone
                     _won = true;
                     PhoneGames.Remember(ref PhoneTheme.HighSolitaire, PhoneTheme.HighSolitaire + 1, _host);
                     _host.ShowToast("You win!");
+                    PhoneSfx.Play("sol-win");
                     if (!_auto)
                         Plugin.LogInfo("Solitaire won.");
                 }
+                else
+                    PhoneSfx.Play("sol-card");
+                List<int> cards = _flyCards;
+                List<Vector3> from = _flyFrom;
+                _flyCards = null;
+                _flyFrom = null;
                 BuildPlayUi();
+                if (cards != null && from != null && cards.Count > 0 && from.Count == cards.Count)
+                    _host.StartHostCoroutine(Fly(cards, from));
                 MaybeAuto();
                 MaybeStuck();
+            }
+
+            private void RememberFly(List<int> run)
+            {
+                _flyCards = run;
+                _flyFrom = new List<Vector3>();
+                for (int i = 0; i < run.Count; i++)
+                    _flyFrom.Add(CardWorld(run[i]));
+            }
+
+            private Vector3 CardWorld(int card)
+            {
+                if (_host == null || _host.Content == null)
+                    return Vector3.zero;
+                Transform[] all = _host.Content.GetComponentsInChildren<Transform>(true);
+                string name = "K" + card;
+                for (int i = 0; i < all.Length; i++)
+                {
+                    if (all[i] != null && all[i].name == name)
+                        return all[i].position;
+                }
+                return Vector3.zero;
+            }
+
+            private IEnumerator Fly(List<int> cards, List<Vector3> from)
+            {
+                yield return null;
+                Canvas.ForceUpdateCanvases();
+                var flyers = new List<RectTransform>();
+                var starts = new List<Vector3>();
+                var targets = new List<Vector3>();
+                var hidden = new List<Image>();
+                for (int i = 0; i < cards.Count; i++)
+                {
+                    if (from[i] == Vector3.zero)
+                        continue;
+                    Vector3 to = CardWorld(cards[i]);
+                    if (to == Vector3.zero)
+                        continue;
+                    Transform dest = null;
+                    Transform[] all = _host.Content.GetComponentsInChildren<Transform>(true);
+                    string name = "K" + cards[i];
+                    for (int n = 0; n < all.Length; n++)
+                    {
+                        if (all[n] != null && all[n].name == name)
+                        {
+                            dest = all[n];
+                            break;
+                        }
+                    }
+                    if (dest != null)
+                    {
+                        Transform art = dest.Find("Art");
+                        Image artImg = art != null ? art.GetComponent<Image>() : null;
+                        if (artImg != null)
+                        {
+                            Color c = artImg.color;
+                            artImg.color = new Color(c.r, c.g, c.b, 0f);
+                            hidden.Add(artImg);
+                        }
+                    }
+                    RectTransform flyer = PhoneUi.CreateImage(_host.Content, "Fly", CardArt(cards[i]), Color.white);
+                    PhoneUi.IgnoreLayout(flyer.gameObject);
+                    flyer.sizeDelta = new Vector2(46f, 64f);
+                    flyer.position = from[i];
+                    flyer.SetAsLastSibling();
+                    var img = flyer.GetComponent<Image>();
+                    img.preserveAspect = true;
+                    img.raycastTarget = false;
+                    flyers.Add(flyer);
+                    starts.Add(from[i]);
+                    targets.Add(to);
+                }
+                float t = 0f;
+                const float dur = 0.16f;
+                while (t < dur && _page == "play")
+                {
+                    t += Time.unscaledDeltaTime;
+                    float u = Mathf.Clamp01(t / dur);
+                    u = u * u * (3f - 2f * u);
+                    for (int i = 0; i < flyers.Count; i++)
+                    {
+                        if (flyers[i] != null)
+                            flyers[i].position = Vector3.Lerp(starts[i], targets[i], u);
+                    }
+                    yield return null;
+                }
+                for (int i = 0; i < flyers.Count; i++)
+                {
+                    if (flyers[i] != null)
+                        UnityEngine.Object.Destroy(flyers[i].gameObject);
+                }
+                for (int i = 0; i < hidden.Count; i++)
+                {
+                    if (hidden[i] != null)
+                    {
+                        Color c = hidden[i].color;
+                        hidden[i].color = new Color(c.r, c.g, c.b, 1f);
+                    }
+                }
             }
 
             private void MaybeStuck()
@@ -729,6 +885,7 @@ namespace Crispberry_PiPhone
                 if (HasMove())
                     return;
                 _lost = true;
+                PhoneSfx.Play("sol-lose");
                 Plugin.LogInfo("Solitaire has no more moves.");
                 _host.ShowToast("No more moves.");
                 BuildPlayUi();
@@ -736,11 +893,181 @@ namespace Crispberry_PiPhone
 
             private bool HasMove()
             {
+                if (ImmediateProgress())
+                    return true;
+                var seen = new HashSet<string>();
+                return LeadsToProgress(0, seen);
+            }
+
+            private bool ImmediateProgress()
+            {
                 if (_waste.Count > 0 && CardPlays(_waste[_waste.Count - 1]))
                     return true;
-                if (TableauPlays())
-                    return true;
+                for (int c = 0; c < 7; c++)
+                {
+                    var pile = _tab[c];
+                    if (pile.Count == 0)
+                        continue;
+                    int top = pile[pile.Count - 1];
+                    if (_up[top] && CanPlaceFound(top, top / 13))
+                        return true;
+                    for (int i = 0; i < pile.Count; i++)
+                    {
+                        if (!RunIsUp(c, i) || !WouldUncover(c, i))
+                            continue;
+                        if (RunFitsAnywhere(c, i))
+                            return true;
+                    }
+                }
                 return StockOffersPlay();
+            }
+
+            private bool LeadsToProgress(int depth, HashSet<string> seen)
+            {
+                if (depth >= 3)
+                    return false;
+                if (seen.Count > 240)
+                    return true;
+                if (!seen.Add(BoardKey()))
+                    return false;
+                int[] tabCount = new int[7];
+                int[] tabFrom = new int[7];
+                var tabCards = new List<int>();
+                for (int c = 0; c < 7; c++)
+                {
+                    tabCount[c] = _tab[c].Count;
+                    tabFrom[c] = tabCards.Count;
+                    tabCards.AddRange(_tab[c]);
+                }
+                var up = (bool[])_up.Clone();
+                for (int c = 0; c < 7; c++)
+                {
+                    int count = tabCount[c];
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (!WasRunUp(tabCards, tabFrom[c], count, up, i))
+                            continue;
+                        if (i > 0 && !up[tabCards[tabFrom[c] + i - 1]])
+                            continue;
+                        for (int d = 0; d < 7; d++)
+                        {
+                            if (d == c || !RunFits(c, i, d))
+                                continue;
+                            if (_tab[d].Count == 0 && i == 0)
+                                continue;
+                            ApplyRun(c, i, d);
+                            bool onward = ImmediateProgress() || LeadsToProgress(depth + 1, seen);
+                            RestoreTabs(tabCards, tabFrom, tabCount, up);
+                            if (onward)
+                                return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            private static bool WasRunUp(List<int> cards, int from, int count, bool[] up, int idx)
+            {
+                for (int i = idx; i < count; i++)
+                {
+                    int card = cards[from + i];
+                    if (card < 0 || card >= up.Length || !up[card])
+                        return false;
+                }
+                return true;
+            }
+
+            private void RestoreTabs(List<int> cards, int[] from, int[] count, bool[] up)
+            {
+                for (int c = 0; c < 7; c++)
+                {
+                    _tab[c].Clear();
+                    for (int i = 0; i < count[c]; i++)
+                        _tab[c].Add(cards[from[c] + i]);
+                }
+                for (int i = 0; i < _up.Length && i < up.Length; i++)
+                    _up[i] = up[i];
+            }
+
+            private string BoardKey()
+            {
+                var sb = new StringBuilder();
+                for (int f = 0; f < 4; f++)
+                    sb.Append(_found[f].Count).Append(';');
+                for (int c = 0; c < 7; c++)
+                {
+                    var pile = _tab[c];
+                    for (int i = 0; i < pile.Count; i++)
+                    {
+                        int card = pile[i];
+                        sb.Append(card);
+                        sb.Append(card >= 0 && card < _up.Length && _up[card] ? 'u' : 'd');
+                        sb.Append(',');
+                    }
+                    sb.Append('|');
+                }
+                return sb.ToString();
+            }
+
+            private bool RunIsUp(int col, int idx)
+            {
+                var pile = _tab[col];
+                for (int i = idx; i < pile.Count; i++)
+                {
+                    int card = pile[i];
+                    if (card < 0 || card >= _up.Length || !_up[card])
+                        return false;
+                }
+                return true;
+            }
+
+            private bool WouldUncover(int col, int idx)
+            {
+                if (idx <= 0)
+                    return false;
+                int under = _tab[col][idx - 1];
+                return under >= 0 && under < _up.Length && !_up[under];
+            }
+
+            private bool RunFitsAnywhere(int col, int idx)
+            {
+                for (int d = 0; d < 7; d++)
+                {
+                    if (d != col && RunFits(col, idx, d))
+                        return true;
+                }
+                return false;
+            }
+
+            private bool RunFits(int col, int idx, int dest)
+            {
+                var src = _tab[col];
+                if (idx < 0 || idx >= src.Count)
+                    return false;
+                int card = src[idx];
+                var pile = _tab[dest];
+                if (pile.Count == 0)
+                    return card % 13 == 12;
+                int top = pile[pile.Count - 1];
+                return _up[top] && CanStack(card, top);
+            }
+
+            private void ApplyRun(int col, int idx, int dest)
+            {
+                var src = _tab[col];
+                var run = new List<int>();
+                for (int i = idx; i < src.Count; i++)
+                    run.Add(src[i]);
+                src.RemoveRange(idx, run.Count);
+                _tab[dest].AddRange(run);
+                for (int c = 0; c < 7; c++)
+                {
+                    if (_tab[c].Count == 0)
+                        continue;
+                    int last = _tab[c][_tab[c].Count - 1];
+                    if (last >= 0 && last < _up.Length)
+                        _up[last] = true;
+                }
             }
 
             private bool TableauPlays()

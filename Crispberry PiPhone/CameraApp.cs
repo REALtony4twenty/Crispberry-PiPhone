@@ -384,6 +384,8 @@ namespace Crispberry_PiPhone
                     return;
                 }
                 PhoneStore.AddPhoto(png, _front);
+                PhoneSfx.HoldClick();
+                PhoneSfx.PlayUi("shutter");
                 _host.ShowToast(_front ? "Selfie saved to Photos." : "Photo saved to Photos.");
             }
             catch (Exception ex)
@@ -420,6 +422,8 @@ namespace Crispberry_PiPhone
                 return;
             }
             _recording = true;
+            PhoneSfx.HoldClick();
+            PhoneSfx.PlayUi("rec-start");
             RefreshBar();
             if (_videoLabel != null)
                 _videoLabel.text = "REC";
@@ -429,6 +433,8 @@ namespace Crispberry_PiPhone
 
         private static void StopVideo()
         {
+            PhoneSfx.HoldClick();
+            PhoneSfx.PlayUi("rec-stop");
             _recording = false;
             RefreshBar();
             if (_videoLabel != null)
@@ -892,9 +898,62 @@ namespace Crispberry_PiPhone
             }
         }
 
+        internal static bool TryWorldPose(out Vector3 pos, out Quaternion rot, out float fov, out bool front)
+        {
+            front = _front;
+            pos = Vector3.zero;
+            rot = Quaternion.identity;
+            fov = 60f;
+            if (_cam == null)
+                return false;
+            pos = _cam.transform.position;
+            rot = _cam.transform.rotation;
+            fov = _cam.fieldOfView;
+            return true;
+        }
+
+        internal static string CastSpriteKey(Sprite sprite)
+        {
+            if (sprite == null)
+                return null;
+            EmoteWheelData[] data = EmoteList();
+            if (data == null)
+                return null;
+            for (int i = 0; i < data.Length; i++)
+            {
+                EmoteWheelData item = data[i];
+                if (item != null && item.emoteSprite == sprite)
+                    return "e" + i.ToString();
+            }
+            return null;
+        }
+
+        internal static Sprite EmoteSprite(int index)
+        {
+            EmoteWheelData[] data = EmoteList();
+            if (data == null || index < 0 || index >= data.Length || data[index] == null)
+                return null;
+            return data[index].emoteSprite;
+        }
+
         private sealed class CamFollow : MonoBehaviour
         {
             private bool _logged;
+
+            private void OnPreCull()
+            {
+                PhoneCast.SuspendPicture();
+            }
+
+            private void OnPostRender()
+            {
+                PhoneCast.ResumePicture();
+            }
+
+            private void OnDisable()
+            {
+                PhoneCast.ResumePicture();
+            }
 
             private void LateUpdate()
             {

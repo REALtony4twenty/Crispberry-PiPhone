@@ -9,7 +9,7 @@ using PhotonPlayer = Photon.Realtime.Player;
 
 namespace Crispberry_PiPhone
 {
-    internal sealed class PhoneNet : MonoBehaviour, IOnEventCallback
+    internal sealed class PhoneNet : MonoBehaviour, IOnEventCallback, IInRoomCallbacks, IMatchmakingCallbacks
     {
         public const byte EventCode = Plugin.PhotonEventCode;
         public const string Magic = Plugin.EventMagic;
@@ -40,6 +40,8 @@ namespace Crispberry_PiPhone
         internal const byte KindCastDeny = 23;
         internal const byte KindCastStop = 24;
         internal const byte KindCastFrame = 25;
+        internal const byte KindCastWatch = 26;
+        internal const byte KindCastState = 27;
         public const int MaxMediaBytes = 8388608;
 
         public static PhoneNet Instance;
@@ -354,11 +356,11 @@ namespace Crispberry_PiPhone
                         break;
                     case KindCastAsk:
                         if (data.Length >= 4)
-                            PhoneCast.OnAsk(photonEvent.Sender, data[3] as string);
+                            PhoneCast.OnAsk(photonEvent.Sender, data[3] as string, data.Length >= 5 && data[4] is bool && (bool)data[4]);
                         break;
                     case KindCastGrant:
                         if (data.Length >= 5)
-                            PhoneCast.OnGrant(data[3] as string, ToInt(data[4]));
+                            PhoneCast.OnGrant(data[3] as string, ToInt(data[4]), data.Length >= 6 && data[5] is bool && (bool)data[5]);
                         break;
                     case KindCastDeny:
                         if (data.Length >= 4)
@@ -371,6 +373,14 @@ namespace Crispberry_PiPhone
                     case KindCastFrame:
                         if (data.Length >= 8)
                             PhoneCast.OnFrame(data[3] as string, photonEvent.Sender, ToInt(data[4]), ToInt(data[5]), ToInt(data[6]), data[7] as byte[]);
+                        break;
+                    case KindCastWatch:
+                        if (data.Length >= 5)
+                            PhoneCast.OnWatch(photonEvent.Sender, data[3] as string, data[4] is bool && (bool)data[4]);
+                        break;
+                    case KindCastState:
+                        if (data.Length >= 19)
+                            PhoneCast.OnState(photonEvent.Sender, data);
                         break;
                 }
             }
@@ -563,16 +573,16 @@ namespace Crispberry_PiPhone
             MessagesApp.RefreshIfOpen();
         }
 
-        public static void SendCastAsk(string deviceId)
+        public static void SendCastAsk(string deviceId, bool share)
         {
             if (!PhotonNetwork.InRoom || PhotonNetwork.MasterClient == null)
                 return;
-            SendTo(PhotonNetwork.MasterClient.ActorNumber, new object[] { Magic, Protocol, KindCastAsk, deviceId ?? string.Empty });
+            SendTo(PhotonNetwork.MasterClient.ActorNumber, new object[] { Magic, Protocol, KindCastAsk, deviceId ?? string.Empty, share });
         }
 
-        public static void SendCastGrant(string deviceId, int actor)
+        public static void SendCastGrant(string deviceId, int actor, bool share)
         {
-            SendOthers(new object[] { Magic, Protocol, KindCastGrant, deviceId ?? string.Empty, actor }, true);
+            SendOthers(new object[] { Magic, Protocol, KindCastGrant, deviceId ?? string.Empty, actor, share }, true);
         }
 
         public static void SendCastDeny(int actor, string deviceId)
@@ -583,6 +593,20 @@ namespace Crispberry_PiPhone
         public static void SendCastStop(string deviceId, int actor)
         {
             SendOthers(new object[] { Magic, Protocol, KindCastStop, deviceId ?? string.Empty, actor }, true);
+        }
+
+        public static void SendCastWatch(string deviceId, bool on)
+        {
+            if (!PhotonNetwork.InRoom)
+                return;
+            SendOthers(new object[] { Magic, Protocol, KindCastWatch, deviceId ?? string.Empty, on }, true);
+        }
+
+        public static void SendCastState(object[] fields, bool reliable)
+        {
+            if (fields == null || !PhotonNetwork.InRoom)
+                return;
+            SendOthers(fields, reliable);
         }
 
         public static void SendCastFrame(string deviceId, int seq, byte[] jpg)
@@ -655,6 +679,57 @@ namespace Crispberry_PiPhone
             if (bytes < 1024 * 1024)
                 return (bytes / 1024) + " KB";
             return ((bytes + 512 * 1024) / (1024 * 1024)) + " MB";
+        }
+
+        public void OnPlayerEnteredRoom(PhotonPlayer newPlayer)
+        {
+        }
+
+        public void OnPlayerLeftRoom(PhotonPlayer otherPlayer)
+        {
+            if (otherPlayer != null)
+                PhoneCast.OnActorGone(otherPlayer.ActorNumber);
+        }
+
+        public void OnRoomPropertiesUpdate(ExitGames.Client.Photon.Hashtable propertiesThatChanged)
+        {
+        }
+
+        public void OnPlayerPropertiesUpdate(PhotonPlayer targetPlayer, ExitGames.Client.Photon.Hashtable changedProps)
+        {
+        }
+
+        public void OnMasterClientSwitched(PhotonPlayer newMasterClient)
+        {
+        }
+
+        public void OnFriendListUpdate(List<FriendInfo> friendList)
+        {
+        }
+
+        public void OnCreatedRoom()
+        {
+        }
+
+        public void OnCreateRoomFailed(short returnCode, string message)
+        {
+        }
+
+        public void OnJoinedRoom()
+        {
+        }
+
+        public void OnJoinRoomFailed(short returnCode, string message)
+        {
+        }
+
+        public void OnJoinRandomFailed(short returnCode, string message)
+        {
+        }
+
+        public void OnLeftRoom()
+        {
+            PhoneCast.OnLeftRoom();
         }
 
         private static byte ToByte(object value)

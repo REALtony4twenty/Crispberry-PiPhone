@@ -14,6 +14,9 @@ namespace Crispberry_PiPhone
         public static float Brightness = 1f;
         public static float RingVolume = 0.7f;
         public static float MusicVolume = 0.7f;
+        public static float UiSfxVolume = 0.7f;
+        public static string UiSndCsv = string.Empty;
+        public static string GameSfxCsv = string.Empty;
         public static bool HideDock;
         public static float PhoneScale = 1f;
         public static float PhoneScaleLand = 1.2f;
@@ -64,6 +67,8 @@ namespace Crispberry_PiPhone
 
         public static Color CaseColor = new Color(0.07f, 0.07f, 0.08f, 1f);
         public static Color ClockColor = new Color(0.96f, 0.97f, 0.98f, 1f);
+        public static Color BatteryColor = new Color(0.96f, 0.97f, 0.98f, 1f);
+        public static Color SignalColor = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static Color ButtonFillColor = new Color(0.20f, 0.22f, 0.26f, 1f);
         public static Color ButtonFontColor = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static Color ScreenColor = new Color(0.08f, 0.10f, 0.13f, 1f);
@@ -74,13 +79,19 @@ namespace Crispberry_PiPhone
         public static Color TextColor = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static Color AccentColor = new Color(0.24f, 0.86f, 0.52f, 1f);
         public static Color IconColor = Color.white;
+        public static Color ToggleOnColor = new Color(0.18f, 0.78f, 0.32f, 1f);
+        public static Color ToggleOffColor = new Color(0.86f, 0.22f, 0.22f, 1f);
         public static float FontScale = 1f;
         public static int ButtonRadius = 18;
         public static int IconRadius = 20;
         public static string Language = string.Empty;
+        public static string EmojiRecent = string.Empty;
+        public static string EmojiFav = string.Empty;
 
         public static readonly Color DefaultCase = new Color(0.07f, 0.07f, 0.08f, 1f);
         public static readonly Color DefaultClock = new Color(0.96f, 0.97f, 0.98f, 1f);
+        public static readonly Color DefaultBattery = new Color(0.96f, 0.97f, 0.98f, 1f);
+        public static readonly Color DefaultSignal = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static readonly Color DefaultButtonFill = new Color(0.20f, 0.22f, 0.26f, 1f);
         public static readonly Color DefaultButtonFont = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static readonly Color DefaultScreen = new Color(0.08f, 0.10f, 0.13f, 1f);
@@ -91,6 +102,8 @@ namespace Crispberry_PiPhone
         public static readonly Color DefaultText = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static readonly Color DefaultAccent = new Color(0.24f, 0.86f, 0.52f, 1f);
         public static readonly Color DefaultIcon = Color.white;
+        public static readonly Color DefaultToggleOn = new Color(0.18f, 0.78f, 0.32f, 1f);
+        public static readonly Color DefaultToggleOff = new Color(0.86f, 0.22f, 0.22f, 1f);
         public const float DefaultFontScale = 1f;
         public const int DefaultButtonRadius = 18;
         public const int DefaultIconRadius = 20;
@@ -103,6 +116,8 @@ namespace Crispberry_PiPhone
                 Apply();
                 return;
             }
+            bool sawBattery = false;
+            bool sawSignal = false;
             try
             {
                 string[] lines = File.ReadAllLines(path);
@@ -124,6 +139,9 @@ namespace Crispberry_PiPhone
                     else if (key == "ring" && val.IndexOf('.') >= 0) RingVolume = Mathf.Clamp01(f);
                     else if (key == "ring") RingVolume = Mathf.Clamp01(n / 10f);
                     else if (key == "musicvol") MusicVolume = Mathf.Clamp01(f);
+                    else if (key == "uisfx") UiSfxVolume = Mathf.Clamp01(f);
+                    else if (key == "uisnd") UiSndCsv = val ?? string.Empty;
+                    else if (key == "gsfx") GameSfxCsv = val ?? string.Empty;
                     else if (key == "hidedock") HideDock = n != 0 || val == "true";
                     else if (key == "clock24") Clock24Hour = n != 0 || val == "true";
                     else if (key == "peak") UsePeakTime = n != 0 || val == "true";
@@ -131,6 +149,8 @@ namespace Crispberry_PiPhone
                     else if (key == "wallpaper") WallpaperFile = val ?? string.Empty;
                     else if (key == "casec") CaseColor = ParseColor(val, CaseColor);
                     else if (key == "clockc") ClockColor = ParseColor(val, ClockColor);
+                    else if (key == "battc") { BatteryColor = ParseColor(val, BatteryColor); sawBattery = true; }
+                    else if (key == "sigc") { SignalColor = ParseColor(val, SignalColor); sawSignal = true; }
                     else if (key == "btnfill") ButtonFillColor = ParseColor(val, ButtonFillColor);
                     else if (key == "btnfont") ButtonFontColor = ParseColor(val, ButtonFontColor);
                     else if (key == "screenc") ScreenColor = ParseColor(val, ScreenColor);
@@ -141,10 +161,14 @@ namespace Crispberry_PiPhone
                     else if (key == "textc") TextColor = ParseColor(val, TextColor);
                     else if (key == "accentc") AccentColor = ParseColor(val, AccentColor);
                     else if (key == "iconc") IconColor = ParseColor(val, IconColor);
-                    else if (key == "fontscale") FontScale = Mathf.Clamp(f, 0.7f, 1.6f);
+                    else if (key == "togon") ToggleOnColor = ParseColor(val, ToggleOnColor);
+                    else if (key == "togoff") ToggleOffColor = ParseColor(val, ToggleOffColor);
+                    else if (key == "fontscale") FontScale = Mathf.Clamp(f, 0.7f, 1.4f);
                     else if (key == "btnradius") ButtonRadius = Clamp(n, 0, 28);
                     else if (key == "iconradius") IconRadius = Clamp(n, 0, 28);
                     else if (key == "lang") Language = val ?? string.Empty;
+                    else if (key == "emojirecent") EmojiRecent = val ?? string.Empty;
+                    else if (key == "emojifav") EmojiFav = val ?? string.Empty;
                     else if (key == "case" && val.IndexOf(',') < 0) CaseColor = PaletteColor(n, CaseColor);
                     else if (key == "font" && val.IndexOf(',') < 0) ClockColor = PaletteColor(n, ClockColor);
                     else if (key == "button" && val.IndexOf(',') < 0) ButtonFillColor = PaletteColor(n, ButtonFillColor);
@@ -191,11 +215,40 @@ namespace Crispberry_PiPhone
             {
                 Plugin.LogError("Theme load failed: " + ex.Message);
             }
+            if (!sawBattery)
+                BatteryColor = ClockColor;
+            if (!sawSignal)
+                SignalColor = ClockColor;
             Apply();
         }
 
+        private static bool _saveDirty;
+        private static float _saveAt = -1f;
+
         public static void Save()
         {
+            _saveDirty = true;
+            _saveAt = Time.unscaledTime + 0.35f;
+        }
+
+        internal static void FlushSaves()
+        {
+            if (!_saveDirty || Time.unscaledTime < _saveAt)
+                return;
+            WriteTheme();
+        }
+
+        internal static void FlushSavesNow()
+        {
+            if (!_saveDirty)
+                return;
+            WriteTheme();
+        }
+
+        private static void WriteTheme()
+        {
+            _saveDirty = false;
+            _saveAt = -1f;
             try
             {
                 PhoneStore.EnsureDir();
@@ -203,6 +256,9 @@ namespace Crispberry_PiPhone
                     "brightness=" + Brightness.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "ringf=" + RingVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "musicvol=" + MusicVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "uisfx=" + UiSfxVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "uisnd=" + (UiSndCsv ?? string.Empty) + "\n"
+                    + "gsfx=" + (GameSfxCsv ?? string.Empty) + "\n"
                     + "hidedock=" + (HideDock ? "1" : "0") + "\n"
                     + "clock24=" + (Clock24Hour ? "1" : "0") + "\n"
                     + "peak=" + (UsePeakTime ? "1" : "0") + "\n"
@@ -210,6 +266,8 @@ namespace Crispberry_PiPhone
                     + "wallpaper=" + (WallpaperFile ?? string.Empty) + "\n"
                     + "casec=" + Fmt(CaseColor) + "\n"
                     + "clockc=" + Fmt(ClockColor) + "\n"
+                    + "battc=" + Fmt(BatteryColor) + "\n"
+                    + "sigc=" + Fmt(SignalColor) + "\n"
                     + "btnfill=" + Fmt(ButtonFillColor) + "\n"
                     + "btnfont=" + Fmt(ButtonFontColor) + "\n"
                     + "screenc=" + Fmt(ScreenColor) + "\n"
@@ -220,10 +278,14 @@ namespace Crispberry_PiPhone
                     + "textc=" + Fmt(TextColor) + "\n"
                     + "accentc=" + Fmt(AccentColor) + "\n"
                     + "iconc=" + Fmt(IconColor) + "\n"
+                    + "togon=" + Fmt(ToggleOnColor) + "\n"
+                    + "togoff=" + Fmt(ToggleOffColor) + "\n"
                     + "fontscale=" + FontScale.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "btnradius=" + ButtonRadius + "\n"
                     + "iconradius=" + IconRadius + "\n"
                     + "lang=" + (Language ?? string.Empty) + "\n"
+                    + "emojirecent=" + (EmojiRecent ?? string.Empty) + "\n"
+                    + "emojifav=" + (EmojiFav ?? string.Empty) + "\n"
                     + "scale=" + PhoneScale.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "scaleland=" + PhoneScaleLand.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "posx=" + PhonePosX.ToString("0.#", CultureInfo.InvariantCulture) + "\n"
@@ -410,6 +472,7 @@ namespace Crispberry_PiPhone
         {
             RingVolume = Mathf.Clamp01(value);
             VoiceIo.ApplyVolume();
+            MusicPlayer.ApplyVolume();
             Save();
         }
 
@@ -417,6 +480,194 @@ namespace Crispberry_PiPhone
         {
             MusicVolume = Mathf.Clamp01(value);
             MusicPlayer.ApplyVolume();
+            Save();
+        }
+
+        public static float GameSfxVolume(string appId)
+        {
+            float v;
+            if (!string.IsNullOrEmpty(appId) && TryPrefixed(GameSfxCsv, appId + ":", out v))
+                return v;
+            return 0.7f;
+        }
+
+        /// <summary>Volume for one effect. A saved per-effect level wins; otherwise the app level.</summary>
+        public static float GameCueVolume(string appId, string cue)
+        {
+            float v;
+            if (!string.IsNullOrEmpty(appId) && !string.IsNullOrEmpty(cue)
+                && TryPrefixed(GameSfxCsv, appId + "/" + cue + ":", out v))
+                return v;
+            return GameSfxVolume(appId);
+        }
+
+        public static bool UiCueOn(string key)
+        {
+            bool on;
+            float vol;
+            string file;
+            if (!ReadUi(key, out on, out vol, out file))
+                return true;
+            return on;
+        }
+
+        public static float UiCueVolume(string key)
+        {
+            bool on;
+            float vol;
+            string file;
+            if (!ReadUi(key, out on, out vol, out file))
+                return UiSfxVolume;
+            return vol;
+        }
+
+        public static string UiCueFile(string key)
+        {
+            bool on;
+            float vol;
+            string file;
+            if (!ReadUi(key, out on, out vol, out file))
+                return string.Empty;
+            return file ?? string.Empty;
+        }
+
+        public static string UiCueFileName(string key)
+        {
+            string file = UiCueFile(key);
+            if (string.IsNullOrEmpty(file))
+                return "Default";
+            string lib = PhoneSfx.ClipLabel(file);
+            if (!string.IsNullOrEmpty(lib))
+                return lib;
+            return ToneName(file);
+        }
+
+        public static void SetUiCueOn(string key, bool on)
+        {
+            WriteUi(key, on, UiCueVolume(key), UiCueFile(key));
+        }
+
+        public static void SetUiCueVolume(string key, float volume)
+        {
+            WriteUi(key, UiCueOn(key), volume, UiCueFile(key));
+        }
+
+        public static void SetUiCueFile(string key, string fileId)
+        {
+            WriteUi(key, UiCueOn(key), UiCueVolume(key), fileId ?? string.Empty);
+        }
+
+        public static void SetUiSfxVolume(float value)
+        {
+            UiSfxVolume = Mathf.Clamp01(value);
+            Save();
+        }
+
+        public static void SetGameSfxVolume(string appId, float value)
+        {
+            if (string.IsNullOrEmpty(appId))
+                return;
+            value = Mathf.Clamp01(value);
+            string prefix = appId + ":";
+            var kept = new System.Collections.Generic.List<string>();
+            if (!string.IsNullOrEmpty(GameSfxCsv))
+            {
+                string[] parts = GameSfxCsv.Split(',');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (!string.IsNullOrEmpty(parts[i]) && !parts[i].StartsWith(prefix, StringComparison.Ordinal))
+                        kept.Add(parts[i]);
+                }
+            }
+            kept.Add(prefix + value.ToString("0.###", CultureInfo.InvariantCulture));
+            GameSfxCsv = string.Join(",", kept.ToArray());
+            Save();
+        }
+
+        public static void SetGameCueVolume(string appId, string cue, float value)
+        {
+            if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(cue))
+                return;
+            value = Mathf.Clamp01(value);
+            string prefix = appId + "/" + cue + ":";
+            var kept = new System.Collections.Generic.List<string>();
+            if (!string.IsNullOrEmpty(GameSfxCsv))
+            {
+                string[] parts = GameSfxCsv.Split(',');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (!string.IsNullOrEmpty(parts[i]) && !parts[i].StartsWith(prefix, StringComparison.Ordinal))
+                        kept.Add(parts[i]);
+                }
+            }
+            kept.Add(prefix + value.ToString("0.###", CultureInfo.InvariantCulture));
+            GameSfxCsv = string.Join(",", kept.ToArray());
+            Save();
+        }
+
+        private static bool TryPrefixed(string csv, string prefix, out float value)
+        {
+            value = 0f;
+            if (string.IsNullOrEmpty(csv) || string.IsNullOrEmpty(prefix))
+                return false;
+            string[] parts = csv.Split(',');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (string.IsNullOrEmpty(parts[i]) || !parts[i].StartsWith(prefix, StringComparison.Ordinal))
+                    continue;
+                float v;
+                if (float.TryParse(parts[i].Substring(prefix.Length), NumberStyles.Float, CultureInfo.InvariantCulture, out v))
+                {
+                    value = Mathf.Clamp01(v);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool ReadUi(string key, out bool on, out float vol, out string file)
+        {
+            on = true;
+            vol = UiSfxVolume;
+            file = string.Empty;
+            if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(UiSndCsv))
+                return false;
+            string prefix = key + ";";
+            string[] parts = UiSndCsv.Split('|');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (string.IsNullOrEmpty(parts[i]) || !parts[i].StartsWith(prefix, StringComparison.Ordinal))
+                    continue;
+                string[] fields = parts[i].Split(';');
+                on = fields.Length < 2 || fields[1] != "0";
+                float v;
+                if (fields.Length >= 3 && float.TryParse(fields[2], NumberStyles.Float, CultureInfo.InvariantCulture, out v))
+                    vol = Mathf.Clamp01(v);
+                if (fields.Length >= 4)
+                    file = string.Join(";", fields, 3, fields.Length - 3);
+                return true;
+            }
+            return false;
+        }
+
+        private static void WriteUi(string key, bool on, float vol, string file)
+        {
+            if (string.IsNullOrEmpty(key))
+                return;
+            vol = Mathf.Clamp01(vol);
+            var kept = new System.Collections.Generic.List<string>();
+            string prefix = key + ";";
+            if (!string.IsNullOrEmpty(UiSndCsv))
+            {
+                string[] parts = UiSndCsv.Split('|');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (!string.IsNullOrEmpty(parts[i]) && !parts[i].StartsWith(prefix, StringComparison.Ordinal))
+                        kept.Add(parts[i]);
+                }
+            }
+            kept.Add(key + ";" + (on ? "1" : "0") + ";" + vol.ToString("0.###", CultureInfo.InvariantCulture) + ";" + (file ?? string.Empty));
+            UiSndCsv = string.Join("|", kept.ToArray());
             Save();
         }
 
@@ -468,6 +719,18 @@ namespace Crispberry_PiPhone
         public static void SetClockColor(Color color)
         {
             ClockColor = color;
+            Commit();
+        }
+
+        public static void SetBatteryColor(Color color)
+        {
+            BatteryColor = color;
+            Commit();
+        }
+
+        public static void SetSignalColor(Color color)
+        {
+            SignalColor = color;
             Commit();
         }
 
@@ -531,9 +794,21 @@ namespace Crispberry_PiPhone
             Commit();
         }
 
+        public static void SetToggleOnColor(Color color)
+        {
+            ToggleOnColor = color;
+            Commit();
+        }
+
+        public static void SetToggleOffColor(Color color)
+        {
+            ToggleOffColor = color;
+            Commit();
+        }
+
         public static void SetFontScale(float scale)
         {
-            FontScale = Mathf.Clamp(scale, 0.7f, 1.6f);
+            FontScale = Mathf.Clamp(scale, 0.7f, 1.4f);
             Commit();
         }
 
@@ -559,6 +834,10 @@ namespace Crispberry_PiPhone
             TextColor = DefaultText;
             AccentColor = DefaultAccent;
             IconColor = DefaultIcon;
+            CaseColor = DefaultCase;
+            ClockColor = DefaultClock;
+            BatteryColor = DefaultBattery;
+            SignalColor = DefaultSignal;
             FontScale = DefaultFontScale;
             FilledIcons = true;
             PhoneShade.ForgetIcons();
@@ -583,6 +862,18 @@ namespace Crispberry_PiPhone
         public static void ResetClockColor()
         {
             ClockColor = DefaultClock;
+            Commit();
+        }
+
+        public static void ResetBatteryColor()
+        {
+            BatteryColor = DefaultBattery;
+            Commit();
+        }
+
+        public static void ResetSignalColor()
+        {
+            SignalColor = DefaultSignal;
             Commit();
         }
 
@@ -639,6 +930,9 @@ namespace Crispberry_PiPhone
 
         public static string ToneName(string id)
         {
+            string builtIn = PhoneSfx.ClipLabel(id);
+            if (!string.IsNullOrEmpty(builtIn))
+                return builtIn;
             SoundItem s = PhoneStore.FindSound(id);
             return s != null ? s.Name : "Default";
         }
@@ -649,9 +943,24 @@ namespace Crispberry_PiPhone
             Commit();
         }
 
+        /// <summary>True while a color field is being dragged. Skips the disk write and the home rebuild until the pointer lifts.</summary>
+        internal static bool LivePaint;
+
         public static void Commit()
         {
             Apply();
+            if (!LivePaint)
+                Save();
+            Action handler = Changed;
+            if (handler != null)
+                handler();
+        }
+
+        internal static void EndLivePaint()
+        {
+            if (!LivePaint)
+                return;
+            LivePaint = false;
             Save();
             Action handler = Changed;
             if (handler != null)
@@ -663,6 +972,8 @@ namespace Crispberry_PiPhone
             Brightness = ClampBright(Brightness);
             PhoneUi.Bezel = CaseColor;
             PhoneUi.ClockText = ClockColor;
+            PhoneUi.BatteryText = BatteryColor;
+            PhoneUi.SignalText = SignalColor;
             PhoneUi.ButtonText = ButtonFontColor;
             PhoneUi.SurfaceAlt = ButtonFillColor;
             PhoneUi.Screen = ScreenColor;

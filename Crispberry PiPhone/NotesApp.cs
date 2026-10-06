@@ -96,11 +96,13 @@ namespace Crispberry_PiPhone
                 _noteId = note != null ? note.Id : null;
                 Clear();
                 _host.SetTitle("Note");
-                PhoneUi.CreateIconChip(_host.Content, "Notes", PhoneIcons.Material("arrow_back"), ShowList, false, new Vector2(36f, 32f));
+                PhoneUi.CreateIconChip(_host.Content, "Notes", PhoneIcons.Material("arrow_back"), ShowList, false, new Vector2(36f, 32f), true, true);
                 TMP_InputField title = PhoneUi.CreateInput(_host.Content, "Title", 80);
                 title.text = note.Title ?? string.Empty;
+                PhoneSfx.BindKeys(title);
                 TMP_InputField body = PhoneUi.CreateMultiline(_host.Content, "Write something", 8000);
                 body.text = note.Body ?? string.Empty;
+                PhoneSfx.BindKeys(body);
                 title.onEndEdit.AddListener(s =>
                 {
                     note.Title = s ?? string.Empty;

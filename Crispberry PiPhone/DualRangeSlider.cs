@@ -10,8 +10,6 @@ namespace Crispberry_PiPhone
     /// </summary>
     public sealed class DualRangeSlider : MonoBehaviour, IPointerDownHandler, IDragHandler, IInitializePotentialDragHandler
     {
-        private const float Handle = 24f;
-
         private RectTransform _track;
         private RectTransform _fill;
         private RectTransform _lowH;
@@ -23,6 +21,8 @@ namespace Crispberry_PiPhone
         private float _high = 1f;
         private UnityAction<float> _onLow;
         private UnityAction<float> _onHigh;
+        private RectTransform _startLab;
+        private RectTransform _endLab;
         private bool _dragLow;
 
         public void Bind(
@@ -49,6 +49,13 @@ namespace Crispberry_PiPhone
             _high = high;
             _onLow = onLow;
             _onHigh = onHigh;
+            ApplyLayout();
+        }
+
+        public void Readouts(RectTransform start, RectTransform end)
+        {
+            _startLab = start;
+            _endLab = end;
             ApplyLayout();
         }
 
@@ -83,6 +90,7 @@ namespace Crispberry_PiPhone
 
         private void Fire(float v)
         {
+            PhoneSfx.PlayTick();
             if (_dragLow)
             {
                 if (_onLow != null)
@@ -127,11 +135,13 @@ namespace Crispberry_PiPhone
                 PlaceHandle(_highH, new Vector2(0.5f, t1));
                 if (_fill != null)
                 {
-                    _fill.anchorMin = new Vector2(0.22f, t0);
-                    _fill.anchorMax = new Vector2(0.78f, t1);
+                    _fill.anchorMin = new Vector2(0f, t0);
+                    _fill.anchorMax = new Vector2(1f, t1);
                     _fill.offsetMin = Vector2.zero;
                     _fill.offsetMax = Vector2.zero;
                 }
+                PlaceSideReadout(_startLab, t0, true);
+                PlaceSideReadout(_endLab, t1, false);
             }
             else
             {
@@ -139,12 +149,40 @@ namespace Crispberry_PiPhone
                 PlaceHandle(_highH, new Vector2(t1, 0.5f));
                 if (_fill != null)
                 {
-                    _fill.anchorMin = new Vector2(t0, 0.22f);
-                    _fill.anchorMax = new Vector2(t1, 0.78f);
+                    _fill.anchorMin = new Vector2(t0, 0f);
+                    _fill.anchorMax = new Vector2(t1, 1f);
                     _fill.offsetMin = Vector2.zero;
                     _fill.offsetMax = Vector2.zero;
                 }
+                PlaceReadout(_startLab, t0, 0f, true);
+                PlaceReadout(_endLab, t1, 0f, true);
             }
+        }
+
+        private static void PlaceReadout(RectTransform lab, float x, float y, bool horizontal)
+        {
+            if (lab == null)
+                return;
+            float along = horizontal ? x : y;
+            float px = 0.5f;
+            if (along < 0.14f)
+                px = 0f;
+            else if (along > 0.86f)
+                px = 1f;
+            lab.anchorMin = lab.anchorMax = new Vector2(horizontal ? x : 0.5f, horizontal ? 0f : y);
+            lab.pivot = new Vector2(px, 1f);
+            lab.anchoredPosition = new Vector2(0f, -2f);
+            lab.sizeDelta = new Vector2(56f, 16f);
+        }
+
+        private static void PlaceSideReadout(RectTransform lab, float y, bool left)
+        {
+            if (lab == null)
+                return;
+            lab.anchorMin = lab.anchorMax = new Vector2(left ? 0f : 1f, y);
+            lab.pivot = new Vector2(left ? 1f : 0f, 0.5f);
+            lab.anchoredPosition = new Vector2(left ? -8f : 8f, 0f);
+            lab.sizeDelta = new Vector2(56f, 16f);
         }
 
         private static void PlaceHandle(RectTransform handle, Vector2 anchor)
@@ -155,7 +193,7 @@ namespace Crispberry_PiPhone
             handle.anchorMax = anchor;
             handle.pivot = new Vector2(0.5f, 0.5f);
             handle.anchoredPosition = Vector2.zero;
-            handle.sizeDelta = new Vector2(Handle, Handle);
+            handle.sizeDelta = new Vector2(1f, 1f);
         }
     }
 }

@@ -1713,7 +1713,8 @@ namespace Crispberry_PiPhone
             void GetMaxLength();
         }
 
-        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("70ae66f2-c809-4e4f-8915-552d7185ceb4")]
+        // Last group is bdcb406b7993 (mfreadwrite.h). A swapped ending makes every MP3 cast fail.
+        [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("70ae66f2-c809-4e4f-8915-bdcb406b7993")]
         private interface IMFSourceReader
         {
             void GetStreamSelection();

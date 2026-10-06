@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("Crispberry PiPhone")]
@@ -11,5 +11,5 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCulture("")]
 [assembly: ComVisible(false)]
 [assembly: Guid("b86841f9-1cd5-41de-ba99-f10d663d2700")]
-[assembly: AssemblyVersion("0.17.81.0")]
-[assembly: AssemblyFileVersion("0.17.81.0")]
+[assembly: AssemblyVersion("0.17.124.0")]
+[assembly: AssemblyFileVersion("0.17.124.0")]

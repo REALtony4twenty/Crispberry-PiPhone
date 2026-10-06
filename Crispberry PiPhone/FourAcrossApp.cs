@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -30,7 +31,7 @@ namespace Crispberry_PiPhone
                 SortOrder = 74,
                 ShowOnHome = true,
                 OnOpen = host => { _live = new Session(host); _live.ShowMenu(); },
-                OnClose = () => { _live = null; },
+                OnClose = () => { if (_live != null) _live.Halt(); _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
         }
@@ -38,6 +39,11 @@ namespace Crispberry_PiPhone
         internal static bool TryGoBack()
         {
             return _live != null && _live.GoBack();
+        }
+
+        internal static string CastState()
+        {
+            return _live == null ? "menu" : _live.ExportCast();
         }
 
         internal static void OnNet(object[] data)
@@ -80,7 +86,7 @@ namespace Crispberry_PiPhone
                 int col = data[5] is int ? (int)data[5] : Convert.ToInt32(data[5]);
                 ApplyMove(game, col, false);
                 if (_live != null && _live.Is(game.Id))
-                    _live.ShowBoard(game);
+                    _live.PlayDrop(game, col);
                 return;
             }
             if (op == "leave")
@@ -107,6 +113,7 @@ namespace Crispberry_PiPhone
             g.Board = new string('0', Cols * Rows);
             g.Turn = 1;
             g.Status = "active";
+            PhoneSfx.Play("c4-reset");
         }
 
         private static Game NewGame(string id, bool ai)
@@ -141,10 +148,10 @@ namespace Crispberry_PiPhone
             return null;
         }
 
-        private static bool Drop(Game g, int col, int player)
+        private static int Drop(Game g, int col, int player)
         {
             if (g == null || col < 0 || col >= Cols || g.Status == "done")
-                return false;
+                return -1;
             char[] cells = g.Board.ToCharArray();
             for (int r = 0; r < Rows; r++)
             {
@@ -153,10 +160,10 @@ namespace Crispberry_PiPhone
                 {
                     cells[i] = player == 1 ? '1' : '2';
                     g.Board = new string(cells);
-                    return true;
+                    return r;
                 }
             }
-            return false;
+            return -1;
         }
 
         private static void ApplyMove(Game g, int col, bool local)
@@ -167,7 +174,7 @@ namespace Crispberry_PiPhone
             int player = local ? me : (me == 1 ? 2 : 1);
             if (g.Ai && local)
                 player = g.Turn;
-            if (!Drop(g, col, player))
+            if (Drop(g, col, player) < 0)
                 return;
             if (Winner(g.Board) != 0 || Full(g.Board))
                 g.Status = "done";
@@ -179,16 +186,6 @@ namespace Crispberry_PiPhone
                 int actor = OtherActor(g);
                 if (actor > 0)
                     PhoneNet.SendGame(actor, "move", g.Id, col);
-            }
-            if (g.Ai && g.Status != "done" && g.Turn == 2)
-            {
-                int aiCol = BestAi(g.Board);
-                Drop(g, aiCol, 2);
-                if (Winner(g.Board) != 0 || Full(g.Board))
-                    g.Status = "done";
-                else
-                    g.Turn = 1;
-                Save();
             }
         }
 
@@ -213,8 +210,24 @@ namespace Crispberry_PiPhone
 
         private static int Winner(string board)
         {
+            bool[] mask = WinningMask(board);
+            if (mask == null)
+                return 0;
+            for (int i = 0; i < mask.Length; i++)
+            {
+                if (mask[i])
+                    return Cell(board, i % Cols, i / Cols);
+            }
+            return 0;
+        }
+
+        internal static bool[] WinningMask(string board)
+        {
+            if (string.IsNullOrEmpty(board) || board.Length < Cols * Rows)
+                return null;
             int[] dx = { 1, 0, 1, 1 };
             int[] dy = { 0, 1, 1, -1 };
+            bool[] hit = null;
             for (int r = 0; r < Rows; r++)
             {
                 for (int c = 0; c < Cols; c++)
@@ -231,12 +244,20 @@ namespace Crispberry_PiPhone
                                 break;
                             n++;
                         }
-                        if (n >= 4)
-                            return p;
+                        if (n < 4)
+                            continue;
+                        if (hit == null)
+                            hit = new bool[Cols * Rows];
+                        for (int k = 0; k < 4; k++)
+                        {
+                            int cc = c + dx[d] * k;
+                            int rr = r + dy[d] * k;
+                            hit[rr * Cols + cc] = true;
+                        }
                     }
                 }
             }
-            return 0;
+            return hit;
         }
 
         private static bool Full(string board)
@@ -359,6 +380,12 @@ namespace Crispberry_PiPhone
             private readonly IPiPhoneHost _host;
             private string _page = "menu";
             private string _gameId;
+            private bool _busy;
+            private int _fallCol = -1;
+            private int _fallRow = -1;
+            private int _fallGen;
+            private int _winGen;
+            private Transform _board;
 
             public Session(IPiPhoneHost host)
             {
@@ -378,6 +405,24 @@ namespace Crispberry_PiPhone
                 return true;
             }
 
+            internal void Halt()
+            {
+                _fallGen++;
+                _winGen++;
+                _busy = false;
+                _page = "off";
+            }
+
+            internal string ExportCast()
+            {
+                if (_page != "board" || string.IsNullOrEmpty(_gameId))
+                    return "menu";
+                Game g = Find(_gameId);
+                if (g == null || string.IsNullOrEmpty(g.Board))
+                    return "menu";
+                return "play|" + g.Board;
+            }
+
             public void Relayout()
             {
                 if (_page == "board")
@@ -394,6 +439,7 @@ namespace Crispberry_PiPhone
 
             public void ShowMenu()
             {
+                _winGen++;
                 _page = "menu";
                 _gameId = null;
                 PhoneGames.Clear(_host);
@@ -484,6 +530,8 @@ namespace Crispberry_PiPhone
                 }
                 _page = "board";
                 _gameId = g.Id;
+                _winGen++;
+                int winGen = _winGen;
                 PhoneGames.Clear(_host);
                 _host.SetTitle(PhoneLang.T("app.pip.connect4", "Four Across"));
                 Transform left;
@@ -505,11 +553,22 @@ namespace Crispberry_PiPhone
                 turn.overflowMode = TextOverflowModes.Ellipsis;
                 PhoneUi.Size(turn.gameObject, 56f);
                 PhoneUi.MaterialChip(left, "group", "Lobbies", ShowMenu, new Vector2(36f, 32f));
+                PhoneUi.MaterialChip(left, "instant_mix", "Sound", PhoneGames.ToggleGameSound, new Vector2(36f, 32f));
 
                 var gridGo = new GameObject("Board", typeof(RectTransform));
                 gridGo.transform.SetParent(center, false);
+                _board = gridGo.transform;
                 var gle = gridGo.AddComponent<LayoutElement>();
+                int fallCol = _fallCol;
+                int fallRow = _fallRow;
+                _fallCol = -1;
+                _fallRow = -1;
                 float cell = PhoneGames.FitCell(Cols, Rows, 4f);
+                if (_host.IsLandscape)
+                {
+                    float wide = Mathf.Floor(Mathf.Min((500f - (Cols + 1) * 4f) / Cols, (320f - (Rows + 1) * 4f) / Rows));
+                    cell = Mathf.Clamp(wide, cell, 52f);
+                }
                 gle.flexibleHeight = 0f;
                 gle.flexibleWidth = 0f;
                 gle.minHeight = Rows * (cell + 4f) + 8f;
@@ -530,18 +589,19 @@ namespace Crispberry_PiPhone
                     {
                         int col = c;
                         int v = Cell(g.Board, c, r);
-                        Color color = v == 1 ? PhoneUi.HangRed : (v == 2 ? new Color(0.95f, 0.82f, 0.18f, 1f) : PhoneUi.SurfaceAlt);
+                        bool hidden = c == fallCol && r == fallRow;
+                        Color color = hidden || v == 0
+                            ? PhoneUi.SurfaceAlt
+                            : (v == 1 ? PhoneUi.HangRed : new Color(0.95f, 0.82f, 0.18f, 1f));
                         var disc = PhoneUi.CreateImage(gridGo.transform, "D", PhoneUi.Circle(), color);
-                        disc.GetComponent<Image>().type = Image.Type.Simple;
-                        if ((myTurn || cpuTurn) && v == 0 && g.Status != "done")
+                        var discImg = disc.GetComponent<Image>();
+                        discImg.type = Image.Type.Simple;
+                        discImg.raycastTarget = true;
+                        if (!_busy && (myTurn || cpuTurn) && v == 0 && g.Status != "done")
                         {
                             var btn = disc.gameObject.AddComponent<Button>();
                             btn.targetGraphic = disc.GetComponent<Image>();
-                            btn.onClick.AddListener(() =>
-                            {
-                                ApplyMove(g, col, true);
-                                ShowBoard(g);
-                            });
+                            btn.onClick.AddListener(() => LocalDrop(g, col));
                         }
                     }
                 }
@@ -578,6 +638,201 @@ namespace Crispberry_PiPhone
                         ShowBoard(g);
                     }, new Vector2(100f, 36f));
                 }
+                if (!_busy)
+                {
+                    bool[] mask = WinningMask(g.Board);
+                    if (mask != null)
+                        _host.StartHostCoroutine(FlashWin(mask, winGen));
+                }
+            }
+
+            private IEnumerator FlashWin(bool[] mask, int gen)
+            {
+                yield return null;
+                if (gen != _winGen || mask == null)
+                    yield break;
+                PhoneGames.Flush();
+                Transform grid = FindBoard();
+                if (grid == null)
+                    yield break;
+                var glows = new Image[mask.Length];
+                var discs = new RectTransform[mask.Length];
+                for (int i = 0; i < mask.Length; i++)
+                {
+                    if (!mask[i])
+                        continue;
+                    int r = i / Cols;
+                    int c = i % Cols;
+                    int index = (Rows - 1 - r) * Cols + c;
+                    if (index < 0 || index >= grid.childCount)
+                        continue;
+                    RectTransform disc = grid.GetChild(index) as RectTransform;
+                    if (disc == null)
+                        continue;
+                    discs[i] = disc;
+                    RectTransform glow = PhoneUi.CreateImage(disc, "Glow", PhoneUi.Circle(), new Color(1f, 1f, 1f, 0f));
+                    PhoneUi.Stretch(glow, 0f, 0f);
+                    Image glowImg = glow.GetComponent<Image>();
+                    glowImg.raycastTarget = false;
+                    glowImg.type = Image.Type.Simple;
+                    glows[i] = glowImg;
+                }
+                float t = 0f;
+                while (gen == _winGen && _page == "board")
+                {
+                    t += Time.unscaledDeltaTime;
+                    float pulse = 0.5f + 0.5f * Mathf.Sin(t * 6.5f);
+                    float scale = 1f + 0.1f * pulse;
+                    for (int i = 0; i < glows.Length; i++)
+                    {
+                        if (glows[i] != null)
+                            glows[i].color = new Color(1f, 1f, 1f, 0.15f + 0.75f * pulse);
+                        if (discs[i] != null)
+                            discs[i].localScale = new Vector3(scale, scale, 1f);
+                    }
+                    yield return null;
+                }
+            }
+
+            internal void PlayDrop(Game g, int col)
+            {
+                int row = -1;
+                for (int r = 0; r < Rows; r++)
+                {
+                    if (Cell(g.Board, col, r) != 0)
+                        row = r;
+                }
+                BeginFall(g, col, row, false);
+            }
+
+            private void LocalDrop(Game g, int col)
+            {
+                if (_busy || g == null || g.Status == "done")
+                    return;
+                int player = g.Ai ? g.Turn : (Mine(g) ? 1 : 2);
+                int row = Drop(g, col, player);
+                if (row < 0)
+                    return;
+                if (Winner(g.Board) != 0 || Full(g.Board))
+                    g.Status = "done";
+                else
+                    g.Turn = g.Turn == 1 ? 2 : 1;
+                Save();
+                if (!g.Ai)
+                {
+                    int actor = OtherActor(g);
+                    if (actor > 0)
+                        PhoneNet.SendGame(actor, "move", g.Id, col);
+                }
+                BeginFall(g, col, row, g.Ai && g.Status != "done" && g.Turn == 2);
+            }
+
+            private void BeginFall(Game g, int col, int row, bool chainAi)
+            {
+                _busy = true;
+                _fallCol = col;
+                _fallRow = row;
+                _fallGen++;
+                int gen = _fallGen;
+                ShowBoard(g);
+                _host.StartHostCoroutine(AnimateFall(g, col, row, gen, chainAi));
+            }
+
+            private IEnumerator AnimateFall(Game g, int col, int row, int gen, bool chainAi)
+            {
+                yield return null;
+                if (gen != _fallGen || g == null)
+                    yield break;
+                PhoneGames.Flush();
+                Transform grid = FindBoard();
+                if (grid != null && row >= 0 && col >= 0)
+                {
+                    int landIndex = (Rows - 1 - row) * Cols + col;
+                    int topIndex = col;
+                    if (landIndex >= 0 && landIndex < grid.childCount && topIndex < grid.childCount)
+                    {
+                        RectTransform land = grid.GetChild(landIndex) as RectTransform;
+                        RectTransform top = grid.GetChild(topIndex) as RectTransform;
+                        int v = Cell(g.Board, col, row);
+                        Color color = v == 1 ? PhoneUi.HangRed : new Color(0.95f, 0.82f, 0.18f, 1f);
+                        Transform layer = grid.parent != null ? grid.parent : grid;
+                        RectTransform chip = PhoneUi.CreateImage(layer, "Fall", PhoneUi.Circle(), color);
+                        PhoneUi.IgnoreLayout(chip.gameObject);
+                        if (land != null)
+                            chip.sizeDelta = land.rect.size;
+                        Vector3 from = top != null ? top.position : chip.position;
+                        Vector3 to = land != null ? land.position : from;
+                        chip.position = from;
+                        float dur = 0.2f + Mathf.Max(0, row) * 0.045f;
+                        float t = 0f;
+                        while (t < dur && gen == _fallGen)
+                        {
+                            t += Time.unscaledDeltaTime;
+                            float u = Mathf.Clamp01(t / dur);
+                            chip.position = Vector3.Lerp(from, to, u * u);
+                            yield return null;
+                        }
+                        if (gen == _fallGen)
+                        {
+                            chip.position = to;
+                            Image hole = land != null ? land.GetComponent<Image>() : null;
+                            if (hole != null)
+                                hole.color = color;
+                            UnityEngine.Object.Destroy(chip.gameObject);
+                        }
+                    }
+                }
+                if (gen != _fallGen)
+                    yield break;
+                PhoneSfx.Play("c4-land");
+                yield return new WaitForSecondsRealtime(0.14f);
+                if (gen != _fallGen)
+                    yield break;
+                if (chainAi && g.Ai && g.Status != "done" && g.Turn == 2)
+                {
+                    int aiCol = BestAi(g.Board);
+                    int aiRow = Drop(g, aiCol, 2);
+                    if (aiRow >= 0)
+                    {
+                        if (Winner(g.Board) != 0 || Full(g.Board))
+                            g.Status = "done";
+                        else
+                            g.Turn = 1;
+                        Save();
+                        BeginFall(g, aiCol, aiRow, false);
+                        yield break;
+                    }
+                }
+                _busy = false;
+                ShowBoard(g);
+                if (g.Status == "done")
+                    EndNoise(g);
+            }
+
+            private Transform FindBoard()
+            {
+                if (_board != null)
+                    return _board;
+                if (_host == null || _host.Content == null)
+                    return null;
+                Transform[] all = _host.Content.GetComponentsInChildren<Transform>(true);
+                for (int i = 0; i < all.Length; i++)
+                {
+                    if (all[i] != null && all[i].name == "Board")
+                        return all[i];
+                }
+                return null;
+            }
+
+            private void EndNoise(Game g)
+            {
+                int win = Winner(g.Board);
+                if (win == 0)
+                {
+                    PhoneSounds.PlayTone(180, 0.16f, "c4-draw");
+                    return;
+                }
+                PhoneSfx.Play("c4-win");
             }
         }
     }

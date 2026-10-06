@@ -20,8 +20,24 @@ namespace Crispberry_PiPhone
 
         public static void PlayTone(int hz, float seconds)
         {
-            MusicPlayer.DuckFor(Mathf.Max(0.8f, seconds + 0.35f));
-            VoiceIo.Play(MakeBeep(hz, seconds));
+            PlayTone(hz, seconds, null);
+        }
+
+        public static void PlayTone(int hz, float seconds, string cue)
+        {
+            PiPhoneApp app = PhoneMenu.OpenApp();
+            float vol = PhoneTheme.GameCueVolume(app != null ? app.Id : null, cue) * PhoneTheme.RingVolume;
+            if (vol <= 0.001f)
+                return;
+            if (PhoneTones.DuckMusic)
+                MusicPlayer.DuckFor(Mathf.Clamp(seconds + 0.04f, 0.06f, 0.35f));
+            VoiceIo.PlayOneShot(MakeBeep(hz, seconds), vol);
+        }
+
+        public static void PlayPower(bool on)
+        {
+            MusicPlayer.DuckFor(0.9f);
+            VoiceIo.Play(on ? MakeChord(523, 784, 0.16f, "PiP_On") : MakeChord(659, 392, 0.18f, "PiP_Off"));
         }
 
         public static void PlayRingtone()
@@ -81,6 +97,11 @@ namespace Crispberry_PiPhone
         public static void PlayVibrate(bool call)
         {
             MusicPlayer.DuckFor(call ? 2.2f : 0.55f);
+            if (PhoneSfx.GetClip("vibrate") != null)
+            {
+                PhoneSfx.PlayUi("vibrate");
+                return;
+            }
             VoiceIo.Play(MakeBuzz(call ? 0.7f : 0.32f), false);
         }
 
@@ -107,6 +128,12 @@ namespace Crispberry_PiPhone
         public static void PlayId(string id, int fallbackHz, float fallbackSec, float duckSec, bool loop)
         {
             MusicPlayer.DuckFor(duckSec);
+            object builtIn = PhoneSfx.GetClip(id);
+            if (builtIn != null)
+            {
+                VoiceIo.Play(builtIn, loop);
+                return;
+            }
             SoundItem item = PhoneStore.FindSound(id);
             if (item != null)
             {
@@ -579,6 +606,26 @@ namespace Crispberry_PiPhone
                 data[i] = Mathf.Sin(2f * Mathf.PI * hz * t) * 0.35f * env;
             }
             return ClipFromSamples("PiP_Beep", data, rate);
+        }
+
+        private static object MakeChord(int first, int second, float each, string name)
+        {
+            int rate = 22050;
+            int n1 = Mathf.Max(32, (int)(rate * each));
+            var data = new float[n1 * 2];
+            FillTone(data, 0, n1, first, rate);
+            FillTone(data, n1, n1, second, rate);
+            return ClipFromSamples(name, data, rate);
+        }
+
+        private static void FillTone(float[] data, int start, int count, int hz, int rate)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                float t = i / (float)rate;
+                float env = 1f - i / (float)count;
+                data[start + i] = Mathf.Sin(2f * Mathf.PI * hz * t) * 0.32f * env;
+            }
         }
 
         private static object ClipFromSamples(string name, float[] data, int rate)

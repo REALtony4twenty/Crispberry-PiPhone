@@ -31,6 +31,8 @@ namespace Crispberry_PiPhone
         private static readonly FieldInfo RecorderVoice = typeof(Recorder).GetField("voice", BindingFlags.Instance | BindingFlags.NonPublic);
 
         private static Component _source;
+        private static Component _shots;
+        private static MethodInfo _oneShot;
         private static string _device;
         private static object _recording;
         private static bool _recordingNow;
@@ -267,6 +269,41 @@ namespace Crispberry_PiPhone
             TrySet(_source, "volume", PhoneTheme.RingVolume);
         }
 
+        public static void PlayOneShot(object clip, float volume)
+        {
+            Ensure();
+            if (clip == null || volume <= 0.001f)
+                return;
+            if (_shots == null)
+            {
+                var go = new GameObject("PiP_Sfx");
+                UnityEngine.Object.DontDestroyOnLoad(go);
+                _shots = go.AddComponent(SourceType);
+                TrySet(_shots, "playOnAwake", false);
+                TrySet(_shots, "spatialBlend", 0f);
+                TrySet(_shots, "ignoreListenerPause", true);
+                TrySet(_shots, "ignoreListenerVolume", true);
+                TrySet(_shots, "bypassEffects", true);
+                TrySet(_shots, "bypassListenerEffects", true);
+                TrySet(_shots, "mute", false);
+                TrySet(_shots, "volume", 1f);
+                TrySet(_shots, "pitch", 1f);
+                TrySet(_shots, "outputAudioMixerGroup", null);
+            }
+            if (_oneShot == null)
+                _oneShot = SourceType.GetMethod("PlayOneShot", new[] { ClipType, typeof(float) });
+            if (_oneShot == null || _shots == null)
+                return;
+            try
+            {
+                _oneShot.Invoke(_shots, new object[] { clip, Mathf.Clamp01(volume) });
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogError("Sfx play failed: " + ex.Message);
+            }
+        }
+
         public static void Play(object clip)
         {
             Play(clip, false);
@@ -301,6 +338,19 @@ namespace Crispberry_PiPhone
             catch (Exception ex)
             {
                 Plugin.LogError("Voice play failed: " + ex.Message);
+            }
+        }
+
+        public static void StopOneShots()
+        {
+            if (_shots == null)
+                return;
+            try
+            {
+                SourceType.GetMethod("Stop", Type.EmptyTypes).Invoke(_shots, null);
+            }
+            catch
+            {
             }
         }
 

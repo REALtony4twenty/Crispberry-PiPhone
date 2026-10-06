@@ -23,6 +23,7 @@ namespace Crispberry_PiPhone
         internal const string AlertPlaceId = "pip.shade.alertpos";
 
         internal const float Chip = 36f;
+        internal const float ChipGap = 4f;
         internal const float MediaChip = 32f;
 
         internal static bool SizeOpen;
@@ -184,7 +185,7 @@ namespace Crispberry_PiPhone
                 {
                     var rowGo = new GameObject("Row", typeof(RectTransform));
                     rowGo.transform.SetParent(wrap.transform, false);
-                    PhoneUi.AddHorizontal(rowGo, 6f);
+                    PhoneUi.AddHorizontal(rowGo, ChipGap);
                     var h = rowGo.GetComponent<HorizontalLayoutGroup>();
                     h.childForceExpandWidth = false;
                     h.childForceExpandHeight = false;
@@ -197,7 +198,7 @@ namespace Crispberry_PiPhone
                     rows++;
                 }
                 DrawChip(row, b);
-                x += w + 6f;
+                x += w + ChipGap;
                 shown++;
             }
             LastRows = Mathf.Max(1, rows);

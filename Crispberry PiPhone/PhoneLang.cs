@@ -285,6 +285,20 @@ namespace Crispberry_PiPhone
             Add("no_cast_screen", "No screen nearby");
             Add("screen_cast", "Screen cast");
             Add("cast_on", "On");
+            Add("search", "Search");
+            Add("emoji_recent", "Recent");
+            Add("emoji_fav", "Favorites");
+            Add("emoji_smile", "Smileys");
+            Add("emoji_people", "People");
+            Add("emoji_nature", "Nature");
+            Add("emoji_food", "Food");
+            Add("emoji_travel", "Travel");
+            Add("emoji_play", "Activity");
+            Add("emoji_things", "Objects");
+            Add("emoji_signs", "Symbols");
+            Add("emoji_flags", "Flags");
+            Add("emoji_empty", "Nothing here yet");
+            Add("emoji_hold", "Hold an emoji to favorite it");
         }
 
         private static void PackEs()
@@ -328,7 +342,21 @@ namespace Crispberry_PiPhone
                 "cannot_cast", "No se puede transmitir a este dispositivo",
                 "no_cast_screen", "No hay una pantalla cerca",
                 "screen_cast", "Transmitir",
-                "cast_on", "Activo");
+                "cast_on", "Activo",
+                "search", "Buscar",
+                "emoji_recent", "Recientes",
+                "emoji_fav", "Favoritos",
+                "emoji_smile", "Caras",
+                "emoji_people", "Personas",
+                "emoji_nature", "Naturaleza",
+                "emoji_food", "Comida",
+                "emoji_travel", "Viajes",
+                "emoji_play", "Actividad",
+                "emoji_things", "Objetos",
+                "emoji_signs", "Símbolos",
+                "emoji_flags", "Banderas",
+                "emoji_empty", "Nada aquí todavía",
+                "emoji_hold", "Mantén un emoji para marcarlo");
         }
 
         private static void PackFr()
@@ -372,7 +400,21 @@ namespace Crispberry_PiPhone
                 "cannot_cast", "Impossible de diffuser sur cet appareil",
                 "no_cast_screen", "Aucun écran à proximité",
                 "screen_cast", "Diffusion",
-                "cast_on", "Actif");
+                "cast_on", "Actif",
+                "search", "Rechercher",
+                "emoji_recent", "Récents",
+                "emoji_fav", "Favoris",
+                "emoji_smile", "Visages",
+                "emoji_people", "Personnes",
+                "emoji_nature", "Nature",
+                "emoji_food", "Cuisine",
+                "emoji_travel", "Voyage",
+                "emoji_play", "Activité",
+                "emoji_things", "Objets",
+                "emoji_signs", "Symboles",
+                "emoji_flags", "Drapeaux",
+                "emoji_empty", "Rien ici pour l'instant",
+                "emoji_hold", "Maintenir un emoji pour le favori");
         }
 
         private static void Pack(string code, string name, params string[] kv)

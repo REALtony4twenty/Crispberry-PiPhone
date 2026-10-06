@@ -106,6 +106,7 @@ namespace Crispberry_PiPhone
             _instance._call = false;
             _instance._textId = string.Empty;
             _instance._banner.gameObject.SetActive(false);
+            PhoneMenu.EndAlertCursor();
         }
 
         public static void Sync()
@@ -182,6 +183,7 @@ namespace Crispberry_PiPhone
         {
             PhoneUi.CreateOverlayCanvas(gameObject, 27950);
             _banner = PhoneUi.CreateImage(transform, "Banner", PhoneUi.Rounded(18), new Color(0.08f, 0.09f, 0.11f, 0.96f));
+            _banner.GetComponent<Image>().raycastTarget = true;
             _banner.anchorMin = new Vector2(0.5f, 0f);
             _banner.anchorMax = new Vector2(0.5f, 0f);
             _banner.pivot = new Vector2(0.5f, 0f);
@@ -239,6 +241,15 @@ namespace Crispberry_PiPhone
             if (_banner == null)
                 return;
             _banner.anchoredPosition = new Vector2(PhoneTheme.AlertX, PhoneTheme.AlertY);
+        }
+
+        internal static void ResetPlace()
+        {
+            PhoneTheme.AlertX = 0f;
+            PhoneTheme.AlertY = 28f;
+            PhoneTheme.Save();
+            if (_instance != null)
+                _instance.ApplyPos();
         }
 
         internal static void Nudge(Vector2 delta)

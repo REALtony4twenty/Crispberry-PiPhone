@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
 using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -15,7 +16,7 @@ namespace Crispberry_PiPhone
     {
         public const string PluginGuid = "tony4twentys.Crispberry_PiPhone";
         public const string PluginName = "Crispberry PiPhone";
-        public const string PluginVersion = "0.17.81";
+        public const string PluginVersion = "0.17.124";
         public const string OsName = "Crispberry OS";
 
         public static string OsVersionLabel
@@ -87,11 +88,14 @@ namespace Crispberry_PiPhone
                 LogError("Harmony PatchAll failed: " + ex.Message);
             }
             SceneManager.sceneLoaded += OnSceneLoaded;
+            StartCoroutine(PhoneEmoji.WarmOverTime());
+            StartCoroutine(PhoneIcons.WarmCards());
             LogInfo(PluginName + " v" + PluginVersion + " loaded. Open with " + FormatHotkey() + ".");
         }
 
         private void Update()
         {
+            PhoneTheme.FlushSaves();
             PhoneMenu.TickUseLock();
             PiPhoneApi.TickApps();
             if (PhoneKeys.TickCapture())
@@ -133,6 +137,7 @@ namespace Crispberry_PiPhone
 
         private void OnDestroy()
         {
+            PhoneTheme.FlushSavesNow();
             SceneManager.sceneLoaded -= OnSceneLoaded;
             try { _harmony?.UnpatchSelf(); } catch { }
             if (Instance == this)
@@ -141,6 +146,7 @@ namespace Crispberry_PiPhone
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            PhoneTheme.FlushSavesNow();
             PhoneUi.InvalidateFont();
             PhoneMenu.OnAfterSceneLoad();
         }

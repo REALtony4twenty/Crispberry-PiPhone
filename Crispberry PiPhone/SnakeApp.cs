@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -17,8 +18,8 @@ namespace Crispberry_PiPhone
                 IconBackground = new Color(0.18f, 0.62f, 0.28f, 1f),
                 SortOrder = 70,
                 ShowOnHome = true,
-                OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
-                OnClose = () => { _live = null; },
+                OnOpen = host => { _live = new Session(host); _live.StartGame(); },
+                OnClose = () => { if (_live != null) _live.Halt(); _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
         }
@@ -32,23 +33,29 @@ namespace Crispberry_PiPhone
             return _live.GoBack();
         }
 
+        internal static string CastState()
+        {
+            return _live == null ? "menu" : _live.ExportCast();
+        }
+
         private sealed class Session
         {
             private const int Cols = 12;
             private const int Rows = 16;
             private readonly IPiPhoneHost _host;
-            private string _page = "menu";
+            private string _page = "play";
             private readonly List<Vector2Int> _snake = new List<Vector2Int>();
             private Vector2Int _dir = Vector2Int.up;
             private Vector2Int _pending = Vector2Int.up;
             private Vector2Int _food;
             private float _tick;
             private bool _dead;
+            private bool _won;
             private int _score;
             private int _level = 1;
+            private int _runId;
             private Image[] _cells;
             private TextMeshProUGUI _scoreLabel;
-            private Transform _overParent;
 
             public Session(IPiPhoneHost host)
             {
@@ -57,71 +64,56 @@ namespace Crispberry_PiPhone
 
             public bool GoBack()
             {
-                if (_page == "menu")
-                    return false;
-                BuildMenu();
-                return true;
+                return false;
+            }
+
+            internal void Halt()
+            {
+                _runId++;
+                _page = "off";
+            }
+
+            internal string ExportCast()
+            {
+                if (_page != "play")
+                    return "menu";
+                var cells = new char[Cols * Rows];
+                for (int i = 0; i < cells.Length; i++)
+                    cells[i] = '.';
+                int fx = (Rows - 1 - _food.y) * Cols + _food.x;
+                if (fx >= 0 && fx < cells.Length)
+                    cells[fx] = 'f';
+                for (int i = 0; i < _snake.Count; i++)
+                {
+                    Vector2Int p = _snake[i];
+                    int n = (Rows - 1 - p.y) * Cols + p.x;
+                    if (n >= 0 && n < cells.Length)
+                        cells[n] = i == 0 ? 'H' : 's';
+                }
+                var sb = new StringBuilder();
+                sb.Append("play|").Append(_score).Append('|').Append(_dead ? '1' : '0').Append('|');
+                sb.Append(cells);
+                return sb.ToString();
             }
 
             public void Relayout()
             {
-                if (_page == "play")
-                {
-                    BuildPlayUi();
-                    Draw();
-                }
-                else if (_page == "menu")
-                    BuildMenu();
-                else if (_page == "controls")
-                    BuildControls();
+                if (_page != "play")
+                    return;
+                BuildPlayUi();
+                Draw();
             }
 
-            public void BuildMenu()
+            internal void StartGame()
             {
-                _page = "menu";
-                Clear();
-                _host.SetTitle(PhoneLang.T("app.pip.snake", "Snake"));
-                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
-                PhoneUi.MaterialChip(_host.Content, "keyboard", "Controls", BuildControls, new Vector2(40f, 40f));
-                var high = PhoneUi.CreateLabel(_host.Content, "High", "High score  " + PhoneTheme.SnakeHigh, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(high.gameObject, 28f);
-                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Eat the dots. Fill the whole board to reach the next level. Each level is faster.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                hint.color = PhoneUi.TextDim;
-                PhoneUi.Wrap(hint);
-                PhoneUi.Size(hint.gameObject, 40f);
+                _host.StartHostCoroutine(StartSoon());
             }
 
-            private void BuildControls()
+            private System.Collections.IEnumerator StartSoon()
             {
-                _page = "controls";
-                Clear();
-                _host.SetTitle("Snake controls");
-                PhoneUi.MaterialChip(_host.Content, "arrow_back", "Back", BuildMenu, new Vector2(36f, 32f));
-                Bind("Up", PhoneKeys.GameUp);
-                Bind("Down", PhoneKeys.GameDown);
-                Bind("Left", PhoneKeys.GameLeft);
-                Bind("Right", PhoneKeys.GameRight);
-                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", Plugin.CapturingHotkey ? "Press a key..." : "Shared with the other arcade games. Arrow keys always work. Full list in Settings → Controls.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                hint.color = PhoneUi.TextDim;
-                PhoneUi.Size(hint.gameObject, 36f);
-            }
-
-            private void Bind(string name, string id)
-            {
-                PhoneUi.CreateButton(_host.Content, name + "  " + PhoneKeys.Format(id), () =>
-                {
-                    PhoneKeys.BeginCapture(id, () =>
-                    {
-                        if (_live != null)
-                            BuildControls();
-                    });
-                    _host.ShowToast("Press a key. Esc cancels.");
-                    BuildControls();
-                }, new Vector2(260f, 40f));
-            }
-
-            private void StartGame()
-            {
+                yield return null;
+                _runId++;
+                int run = _runId;
                 _page = "play";
                 _dead = false;
                 _score = 0;
@@ -132,7 +124,7 @@ namespace Crispberry_PiPhone
                 PlaceFood();
                 BuildPlayUi();
                 Draw();
-                _host.StartHostCoroutine(Run());
+                _host.StartHostCoroutine(Run(run));
             }
 
             private void ResetSnake()
@@ -152,12 +144,9 @@ namespace Crispberry_PiPhone
                 Transform center;
                 Transform right;
                 PhoneGames.PlayLayout(_host, out left, out center, out right);
-                _overParent = left;
-                _scoreLabel = PhoneGames.HudBar(left, ScoreText(), BuildMenu);
-                if (_dead)
-                    PhoneGames.OverRow(left, StartGame, BuildMenu);
+                _scoreLabel = PhoneGames.HudBar(left, ScoreText(), () => _host.GoBack(), StartGame, "New");
 
-                float cell = PhoneGames.FitCell(Cols, Rows, 2f);
+                float cell = SnakeCell();
                 var board = new GameObject("Board", typeof(RectTransform));
                 board.transform.SetParent(center, false);
                 var boardLe = board.AddComponent<LayoutElement>();
@@ -183,29 +172,42 @@ namespace Crispberry_PiPhone
                     _cells[i].raycastTarget = false;
                 }
 
-                PhoneGames.Dpad(right, () => Face(Vector2Int.left), () => Face(Vector2Int.right), () => Face(Vector2Int.up), () => Face(Vector2Int.down));
+                PhoneGames.Dpad(right, () => Aim(Vector2Int.left), () => Aim(Vector2Int.right), () => Aim(Vector2Int.up), () => Aim(Vector2Int.down));
             }
 
             private string ScoreText()
             {
+                if (_won)
+                    return "Clear  " + _score + "    " + PhoneLang.T("best", "Best") + " " + PhoneTheme.SnakeHigh;
                 if (_dead)
                     return PhoneLang.T("game_over", "Game over") + "  " + _score + "    " + PhoneLang.T("best", "Best") + " " + PhoneTheme.SnakeHigh;
                 return "Lv " + _level + "   " + _score + "    " + PhoneLang.T("best", "Best") + " " + PhoneTheme.SnakeHigh;
             }
 
-            private void Face(Vector2Int dir)
+            private void Aim(Vector2Int dir)
             {
-                if (_dead)
+                if (_dead || _won)
                     return;
-                if (dir + _dir == Vector2Int.zero)
+                if (dir + _dir == Vector2Int.zero || dir == _pending)
                     return;
                 _pending = dir;
+                PhoneSfx.Play("snake-turn");
             }
 
-            private System.Collections.IEnumerator Run()
+            private float SnakeCell()
+            {
+                float gap = 2f;
+                float availW = _host.IsLandscape ? 560f : 392f;
+                float availH = _host.IsLandscape ? PhoneGames.LandscapeBoardH : 700f;
+                float cw = (availW - (Cols + 1) * gap) / Cols;
+                float ch = (availH - (Rows + 1) * gap) / Rows;
+                return Mathf.Clamp(Mathf.Floor(Mathf.Min(cw, ch)), 14f, 40f);
+            }
+
+            private System.Collections.IEnumerator Run(int run)
             {
                 _tick = 0f;
-                while (_page == "play" && !_dead)
+                while (run == _runId && _page == "play" && !_dead && !_won)
                 {
                     ReadDir();
                     _tick += Time.unscaledDeltaTime;
@@ -221,10 +223,10 @@ namespace Crispberry_PiPhone
 
             private void ReadDir()
             {
-                if ((PhoneKeys.Down(PhoneKeys.GameUp) || PhoneGames.Down(KeyCode.UpArrow)) && _dir != Vector2Int.down) _pending = Vector2Int.up;
-                else if ((PhoneKeys.Down(PhoneKeys.GameDown) || PhoneGames.Down(KeyCode.DownArrow)) && _dir != Vector2Int.up) _pending = Vector2Int.down;
-                else if ((PhoneKeys.Down(PhoneKeys.GameLeft) || PhoneGames.Down(KeyCode.LeftArrow)) && _dir != Vector2Int.right) _pending = Vector2Int.left;
-                else if ((PhoneKeys.Down(PhoneKeys.GameRight) || PhoneGames.Down(KeyCode.RightArrow)) && _dir != Vector2Int.left) _pending = Vector2Int.right;
+                if ((PhoneKeys.Down(PhoneKeys.GameUp) || PhoneGames.Down(KeyCode.UpArrow)) && _dir != Vector2Int.down) Aim(Vector2Int.up);
+                else if ((PhoneKeys.Down(PhoneKeys.GameDown) || PhoneGames.Down(KeyCode.DownArrow)) && _dir != Vector2Int.up) Aim(Vector2Int.down);
+                else if ((PhoneKeys.Down(PhoneKeys.GameLeft) || PhoneGames.Down(KeyCode.LeftArrow)) && _dir != Vector2Int.right) Aim(Vector2Int.left);
+                else if ((PhoneKeys.Down(PhoneKeys.GameRight) || PhoneGames.Down(KeyCode.RightArrow)) && _dir != Vector2Int.left) Aim(Vector2Int.right);
             }
 
             private float TickTime()
@@ -253,14 +255,19 @@ namespace Crispberry_PiPhone
                 if (next == _food)
                 {
                     _score++;
+                    PhoneSfx.Play("snake-eat");
                     if (_snake.Count >= Cols * Rows)
                     {
-                        _level++;
-                        ResetSnake();
-                        PlaceFood();
+                        _won = true;
+                        PhoneSfx.Play("snake-win");
+                        if (_score > PhoneTheme.SnakeHigh)
+                        {
+                            PhoneTheme.SnakeHigh = _score;
+                            PhoneTheme.Commit();
+                        }
                         if (_scoreLabel != null)
                             _scoreLabel.text = ScoreText();
-                        _host.ShowToast("Level " + _level);
+                        _host.ShowToast("The board is full.");
                         return;
                     }
                     if (_scoreLabel != null)
@@ -274,6 +281,7 @@ namespace Crispberry_PiPhone
             private void Die()
             {
                 _dead = true;
+                PhoneSounds.PlayTone(196, 0.2f, "snake-die");
                 if (_score > PhoneTheme.SnakeHigh)
                 {
                     PhoneTheme.SnakeHigh = _score;
@@ -284,8 +292,6 @@ namespace Crispberry_PiPhone
                     _host.ShowToast("Score " + _score + "   Best " + PhoneTheme.SnakeHigh);
                 if (_scoreLabel != null)
                     _scoreLabel.text = ScoreText();
-                if (_overParent != null && _overParent.Find("Again") == null)
-                    PhoneGames.OverRow(_overParent, StartGame, BuildMenu);
             }
 
             private void PlaceFood()
@@ -315,18 +321,41 @@ namespace Crispberry_PiPhone
                 {
                     if (_cells[i] == null)
                         continue;
+                    _cells[i].sprite = PhoneUi.White();
+                    _cells[i].preserveAspect = false;
                     _cells[i].color = new Color(0.08f, 0.09f, 0.1f, 1f);
                 }
-                Set(_food, new Color(0.92f, 0.42f, 0.28f, 1f));
+                if (!_won)
+                {
+                    Image food = CellImage(_food);
+                    if (food != null)
+                    {
+                        Sprite apple = PhoneIcons.Logo();
+                        food.sprite = apple != null ? apple : PhoneUi.White();
+                        food.preserveAspect = apple != null;
+                        food.color = apple != null ? Color.white : new Color(0.92f, 0.42f, 0.28f, 1f);
+                    }
+                }
                 for (int i = 0; i < _snake.Count; i++)
                     Set(_snake[i], i == 0 ? new Color(0.42f, 0.92f, 0.48f, 1f) : new Color(0.22f, 0.72f, 0.34f, 1f));
             }
 
-            private void Set(Vector2Int p, Color c)
+            private Image CellImage(Vector2Int p)
             {
                 int i = (Rows - 1 - p.y) * Cols + p.x;
-                if (i >= 0 && i < _cells.Length && _cells[i] != null)
-                    _cells[i].color = c;
+                if (i < 0 || i >= _cells.Length)
+                    return null;
+                return _cells[i];
+            }
+
+            private void Set(Vector2Int p, Color c)
+            {
+                Image img = CellImage(p);
+                if (img == null)
+                    return;
+                img.sprite = PhoneUi.White();
+                img.preserveAspect = false;
+                img.color = c;
             }
 
             private void Clear()

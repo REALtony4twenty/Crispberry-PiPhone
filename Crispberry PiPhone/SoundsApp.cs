@@ -20,6 +20,7 @@ namespace Crispberry_PiPhone
                 IconBackground = new Color(0.72f, 0.32f, 0.48f, 1f),
                 SortOrder = 55,
                 ShowOnHome = true,
+                RunInBackground = true,
                 OnOpen = host => { _live = new Session(host); _live.ShowPlayer(); },
                 OnClose = () => { _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
@@ -133,7 +134,7 @@ namespace Crispberry_PiPhone
                 {
                     PhoneTheme.SetMusicVolume(v);
                     MusicPlayer.ApplyVolume();
-                });
+                }, null, "music_cast");
 
                 if (wide)
                 {

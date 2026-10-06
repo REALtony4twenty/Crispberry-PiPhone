@@ -20,8 +20,8 @@ namespace Crispberry_PiPhone
                 IconBackground = new Color(0.18f, 0.62f, 0.48f, 1f),
                 SortOrder = 73,
                 ShowOnHome = true,
-                OnOpen = host => { _live = new Session(host); _live.BuildMenu(); },
-                OnClose = () => { _live = null; },
+                OnOpen = host => { _live = new Session(host); _live.StartGame(); },
+                OnClose = () => { if (_live != null) _live.Halt(); _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Relayout(); }
             });
         }
@@ -29,6 +29,11 @@ namespace Crispberry_PiPhone
         internal static bool TryGoBack()
         {
             return _live != null && _live.GoBack();
+        }
+
+        internal static string CastState()
+        {
+            return _live == null ? "menu" : _live.ExportCast();
         }
 
         private sealed class Session
@@ -50,7 +55,7 @@ namespace Crispberry_PiPhone
             private bool _dead;
             private Image[] _pads;
             private TextMeshProUGUI _status;
-            private Transform _overParent;
+            private int _round;
 
             public Session(IPiPhoneHost host)
             {
@@ -59,36 +64,33 @@ namespace Crispberry_PiPhone
 
             public bool GoBack()
             {
-                if (_page == "menu")
-                    return false;
-                BuildMenu();
-                return true;
+                return false;
+            }
+
+            internal void Halt()
+            {
+                _round++;
+                _listen = false;
+                _page = "off";
+            }
+
+            internal string ExportCast()
+            {
+                if (_page != "play")
+                    return "menu";
+                int n = _seq != null ? _seq.Count : 0;
+                return "play|" + n + "|" + (_dead ? "1" : "0");
             }
 
             public void Relayout()
             {
                 if (_page == "play")
                     BuildPlayUi();
-                else
-                    BuildMenu();
             }
 
-            public void BuildMenu()
+            internal void StartGame()
             {
-                _page = "menu";
-                PhoneGames.Clear(_host);
-                _host.SetTitle(PhoneLang.T("app.pip.simon", "Echo"));
-                PhoneUi.MaterialChip(_host.Content, "play", "Play", StartGame, new Vector2(40f, 40f));
-                var high = PhoneUi.CreateLabel(_host.Content, "High", "Best  " + PhoneTheme.HighSimon, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
-                PhoneUi.Size(high.gameObject, 28f);
-                var hint = PhoneUi.CreateLabel(_host.Content, "Hint", "Watch the colors, then tap them back in order.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
-                hint.color = PhoneUi.TextDim;
-                PhoneUi.Wrap(hint);
-                PhoneUi.Size(hint.gameObject, 40f);
-            }
-
-            private void StartGame()
-            {
+                _round++;
                 _page = "play";
                 _seq.Clear();
                 _step = 0;
@@ -106,15 +108,14 @@ namespace Crispberry_PiPhone
                 Transform center;
                 Transform right;
                 PhoneGames.PlayLayout(_host, out left, out center, out right);
-                _overParent = left;
-                _status = PhoneGames.HudBar(left, StatusText(), BuildMenu);
-                if (_dead)
-                    PhoneGames.OverRow(left, StartGame, BuildMenu);
+                _status = PhoneGames.HudBar(left, StatusText(), () => _host.GoBack(), StartGame, "New");
+                PhoneGames.HidePane(right);
 
                 var grid = new GameObject("Pads", typeof(RectTransform));
                 grid.transform.SetParent(center, false);
                 var gle = grid.AddComponent<LayoutElement>();
-                float pad = PhoneGames.FitCell(2, 2, 12f);
+                bool land = _host.IsLandscape;
+                float pad = land ? 156f : 168f;
                 gle.flexibleHeight = 0f;
                 gle.flexibleWidth = 0f;
                 gle.minHeight = pad * 2f + 28f;
@@ -134,12 +135,11 @@ namespace Crispberry_PiPhone
                     int idx = i;
                     var rt = PhoneUi.CreateImage(grid.transform, "P" + i, PhoneUi.Rounded(24), Colors[i]);
                     _pads[i] = rt.GetComponent<Image>();
+                    _pads[i].raycastTarget = true;
                     var btn = rt.gameObject.AddComponent<Button>();
                     btn.transition = Selectable.Transition.None;
                     btn.onClick.AddListener(() => Tap(idx));
                 }
-
-                PhoneGames.PlayMenu(left, null, _dead, StartGame, BuildMenu);
             }
 
             private string StatusText()
@@ -153,6 +153,7 @@ namespace Crispberry_PiPhone
 
             private IEnumerator NextRound()
             {
+                int round = _round;
                 _listen = false;
                 _seq.Add(Random.Range(0, 4));
                 _step = 0;
@@ -160,11 +161,13 @@ namespace Crispberry_PiPhone
                     _status.text = StatusText();
                 yield return new WaitForSecondsRealtime(0.45f);
                 float wait = Mathf.Max(0.22f, 0.55f - _seq.Count * 0.02f);
-                for (int i = 0; i < _seq.Count && _page == "play" && !_dead; i++)
+                for (int i = 0; i < _seq.Count && round == _round && _page == "play" && !_dead; i++)
                 {
                     yield return Flash(_seq[i], wait);
                     yield return new WaitForSecondsRealtime(0.12f);
                 }
+                if (round != _round)
+                    yield break;
                 _listen = true;
                 if (_status != null)
                     _status.text = StatusText();
@@ -174,7 +177,7 @@ namespace Crispberry_PiPhone
             {
                 if (_pads == null || i < 0 || i >= _pads.Length || _pads[i] == null)
                     yield break;
-                PhoneSounds.PlayTone(Tones[i], Mathf.Max(0.08f, wait * 0.7f));
+                PhoneSounds.PlayTone(Tones[i], Mathf.Max(0.08f, wait * 0.7f), "echo-pad");
                 _pads[i].color = Color.Lerp(Colors[i], Color.white, 0.55f);
                 yield return new WaitForSecondsRealtime(wait);
                 if (_pads[i] != null)
@@ -191,12 +194,11 @@ namespace Crispberry_PiPhone
                 {
                     _dead = true;
                     _listen = false;
-                    PhoneSounds.PlayTone(180, 0.35f);
+                    _host.StartHostCoroutine(Song(false));
                     int score = Mathf.Max(0, _seq.Count - 1);
                     PhoneGames.Remember(ref PhoneTheme.HighSimon, score, _host);
                     if (_status != null)
                         _status.text = StatusText();
-                    PhoneGames.OverRow(_overParent != null ? _overParent : _host.Content, StartGame, BuildMenu);
                     return;
                 }
                 _step++;
@@ -208,11 +210,25 @@ namespace Crispberry_PiPhone
 
             private IEnumerator AfterOk()
             {
+                int round = _round;
                 if (_status != null)
                     _status.text = "Nice    " + _seq.Count;
-                yield return new WaitForSecondsRealtime(0.4f);
-                if (_page == "play" && !_dead)
+                yield return Song(true);
+                yield return new WaitForSecondsRealtime(0.15f);
+                if (round == _round && _page == "play" && !_dead)
                     yield return NextRound();
+            }
+
+            private IEnumerator Song(bool win)
+            {
+                int[] notes = win ? new[] { 392, 523, 659, 784 } : new[] { 784, 659, 523, 392 };
+                for (int i = 0; i < notes.Length; i++)
+                {
+                    if (_page != "play")
+                        yield break;
+                    PhoneSounds.PlayTone(notes[i], 0.12f, win ? "echo-win" : "echo-lose");
+                    yield return new WaitForSecondsRealtime(0.13f);
+                }
             }
         }
     }

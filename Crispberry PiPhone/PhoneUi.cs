@@ -21,6 +21,8 @@ namespace Crispberry_PiPhone
         public static Color SurfaceAlt = new Color(0.20f, 0.22f, 0.26f, 1f);
         public static Color Text = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static Color ClockText = new Color(0.96f, 0.97f, 0.98f, 1f);
+        public static Color BatteryText = new Color(0.96f, 0.97f, 0.98f, 1f);
+        public static Color SignalText = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static Color ButtonText = new Color(0.96f, 0.97f, 0.98f, 1f);
         public static Color TextDim = new Color(0.70f, 0.74f, 0.78f, 1f);
         public static Color Accent = new Color(0.24f, 0.86f, 0.52f, 1f);
@@ -75,6 +77,9 @@ namespace Crispberry_PiPhone
             return canvas;
         }
 
+        /// <summary>
+        /// A picture. It does not take clicks. Call <see cref="SetClickable"/> when this picture is a button.
+        /// </summary>
         public static RectTransform CreateImage(Transform parent, string name, Sprite sprite, Color color)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
@@ -83,8 +88,21 @@ namespace Crispberry_PiPhone
             img.sprite = sprite;
             img.type = sprite != null && sprite.border.sqrMagnitude > 0f ? Image.Type.Sliced : Image.Type.Simple;
             img.color = color;
-            img.raycastTarget = true;
+            img.raycastTarget = false;
             return go.GetComponent<RectTransform>();
+        }
+
+        /// <summary>
+        /// Turn click-testing on or off for a picture you built yourself.
+        /// Buttons need this on. Backgrounds, icon art, and card faces should leave it off.
+        /// </summary>
+        public static void SetClickable(GameObject go, bool clickable)
+        {
+            if (go == null)
+                return;
+            Graphic graphic = go.GetComponent<Graphic>();
+            if (graphic != null)
+                graphic.raycastTarget = clickable;
         }
 
         public static TextMeshProUGUI CreateLabel(
@@ -100,6 +118,8 @@ namespace Crispberry_PiPhone
             var tmp = go.AddComponent<TextMeshProUGUI>();
             tmp.text = text ?? string.Empty;
             tmp.fontSize = fontSize * PhoneTheme.FontScale;
+            var basis = go.AddComponent<FontBasis>();
+            basis.Size = fontSize;
             tmp.fontStyle = style;
             tmp.alignment = align;
             tmp.color = Text;
@@ -117,6 +137,7 @@ namespace Crispberry_PiPhone
         {
             var rt = CreateImage(parent, "Btn_" + Sanitize(label), ButtonShape(), SurfaceAlt);
             var img = rt.GetComponent<Image>();
+            img.raycastTarget = true;
             var button = rt.gameObject.AddComponent<Button>();
             button.targetGraphic = img;
             button.colors = TintColors();
@@ -124,17 +145,17 @@ namespace Crispberry_PiPhone
             tmp.color = ButtonText;
             Stretch(tmp.rectTransform, 8f, 4f);
             ApplySize(rt, preferredSize);
-            if (onClick != null)
-                button.onClick.AddListener(onClick);
+            PhoneSfx.BindPress(button, onClick, false, false);
             return button;
         }
 
         /// <summary>Compact shade/toolbar chip. Prefer a sprite icon; <paramref name="glyph"/> is the fallback.</summary>
-        public static Button CreateIconChip(Transform parent, string glyph, Sprite icon, UnityAction onClick, bool lit, Vector2 size, bool tintIcon = true)
+        public static Button CreateIconChip(Transform parent, string glyph, Sprite icon, UnityAction onClick, bool lit, Vector2 size, bool tintIcon = true, bool backSound = false, bool trashSound = false, string pressCue = null)
         {
             Color fill = lit ? Accent : SurfaceAlt;
             var rt = CreateImage(parent, "Chip", ChipShape(), fill);
             var img = rt.GetComponent<Image>();
+            img.raycastTarget = true;
             var button = rt.gameObject.AddComponent<Button>();
             button.targetGraphic = img;
             button.colors = TintColors();
@@ -162,15 +183,23 @@ namespace Crispberry_PiPhone
             le.preferredHeight = size.y;
             le.flexibleWidth = 0f;
             le.flexibleHeight = 0f;
-            if (onClick != null)
-                button.onClick.AddListener(onClick);
+            bool trash = trashSound || glyph == "Delete" || glyph == "Trash" || glyph == "Uninstall";
+            if (!trash && icon != null)
+            {
+                Sprite del = PhoneIcons.Material("delete");
+                trash = del != null && icon == del;
+            }
+            if (!string.IsNullOrEmpty(pressCue))
+                PhoneSfx.BindCue(button, onClick, pressCue);
+            else
+                PhoneSfx.BindPress(button, onClick, backSound, trash);
             return button;
         }
 
         /// <summary>Phone chip for a built-in Material icon name. Falls back to <paramref name="fallback"/> text if the picture is missing.</summary>
         public static Button MaterialChip(Transform parent, string iconName, string fallback, UnityAction onClick, Vector2 size)
         {
-            return CreateIconChip(parent, fallback, PhoneIcons.Material(iconName), onClick, false, size);
+            return CreateIconChip(parent, fallback, PhoneIcons.Material(iconName), onClick, false, size, true, iconName == "arrow_back", iconName == "delete");
         }
 
         public static void SetChipIcon(Button button, Sprite icon, string glyph, bool tintIcon = true)
@@ -252,6 +281,7 @@ namespace Crispberry_PiPhone
             var rt = CreateImage(parent, "CircleBtn_" + Sanitize(label), Circle(), color);
             var img = rt.GetComponent<Image>();
             img.type = Image.Type.Simple;
+            img.raycastTarget = true;
             var button = rt.gameObject.AddComponent<Button>();
             button.targetGraphic = img;
             button.colors = TintColors();
@@ -259,8 +289,7 @@ namespace Crispberry_PiPhone
             tmp.color = ButtonText;
             Stretch(tmp.rectTransform, 4f, 4f);
             ApplySize(rt, new Vector2(diameter, diameter));
-            if (onClick != null)
-                button.onClick.AddListener(onClick);
+            PhoneSfx.BindPress(button, onClick, false, false);
             return button;
         }
 
@@ -352,15 +381,20 @@ namespace Crispberry_PiPhone
             rootLe.minHeight = 22f;
             rootLe.preferredHeight = 22f;
 
-            var bg = CreateImage(root.transform, "Background", Rounded(8), new Color(0.12f, 0.13f, 0.16f, 1f));
-            Stretch(bg, 0f, 7f);
-            bg.GetComponent<Image>().raycastTarget = true;
+            Color fillColor = Accent;
+            Color track = new Color(fillColor.r * 0.28f, fillColor.g * 0.28f, fillColor.b * 0.28f, 1f);
+            var bg = CreateImage(root.transform, "Background", White(), track);
+            Stretch(bg, 0f, 0f);
+            var bgImg = bg.GetComponent<Image>();
+            bgImg.type = Image.Type.Simple;
+            bgImg.raycastTarget = true;
 
             var fillArea = new GameObject("Fill Area", typeof(RectTransform));
             fillArea.transform.SetParent(root.transform, false);
-            Stretch(fillArea.GetComponent<RectTransform>(), 0f, 7f);
+            Stretch(fillArea.GetComponent<RectTransform>(), 0f, 0f);
 
-            var fill = CreateImage(fillArea.transform, "Fill", Rounded(8), Accent);
+            var fill = CreateImage(fillArea.transform, "Fill", White(), fillColor);
+            fill.GetComponent<Image>().type = Image.Type.Simple;
             var fillRt = fill.GetComponent<RectTransform>();
             fillRt.anchorMin = Vector2.zero;
             fillRt.anchorMax = Vector2.one;
@@ -374,19 +408,18 @@ namespace Crispberry_PiPhone
             var ha = handleArea.GetComponent<RectTransform>();
             ha.anchorMin = Vector2.zero;
             ha.anchorMax = Vector2.one;
-            ha.offsetMin = new Vector2(9f, 0f);
-            ha.offsetMax = new Vector2(-9f, 0f);
+            ha.offsetMin = Vector2.zero;
+            ha.offsetMax = Vector2.zero;
 
-            var handle = CreateImage(handleArea.transform, "Handle", Circle(), Color.white);
+            var handle = CreateImage(handleArea.transform, "Handle", White(), new Color(1f, 1f, 1f, 0f));
             var handleRt = handle.GetComponent<RectTransform>();
             handleRt.anchorMin = new Vector2(0f, 0.5f);
             handleRt.anchorMax = new Vector2(0f, 0.5f);
             handleRt.pivot = new Vector2(0.5f, 0.5f);
-            handleRt.sizeDelta = new Vector2(18f, 18f);
+            handleRt.sizeDelta = new Vector2(1f, 1f);
             handleRt.anchoredPosition = Vector2.zero;
             var handleImg = handle.GetComponent<Image>();
-            handleImg.type = Image.Type.Simple;
-            handleImg.raycastTarget = true;
+            handleImg.raycastTarget = false;
 
             var slider = root.GetComponent<Slider>();
             slider.fillRect = fillRt;
@@ -397,9 +430,54 @@ namespace Crispberry_PiPhone
             slider.maxValue = max;
             slider.wholeNumbers = wholeNumbers;
             slider.SetValueWithoutNotify(value);
-            if (onChanged != null)
-                slider.onValueChanged.AddListener(onChanged);
+            slider.onValueChanged.AddListener(v =>
+            {
+                if (onChanged != null)
+                    onChanged(v);
+                PhoneSfx.PlayTick();
+            });
+            var drag = root.AddComponent<FillDrag>();
+            drag.Slider = slider;
             return slider;
+        }
+
+        private sealed class FillDrag : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
+        {
+            public Slider Slider;
+
+            public void OnPointerDown(PointerEventData eventData)
+            {
+                Apply(eventData);
+            }
+
+            public void OnDrag(PointerEventData eventData)
+            {
+                Apply(eventData);
+            }
+
+            public void OnPointerUp(PointerEventData eventData)
+            {
+                PhoneTheme.EndLivePaint();
+            }
+
+            private void Apply(PointerEventData eventData)
+            {
+                if (Slider == null)
+                    return;
+                var rt = transform as RectTransform;
+                if (rt == null)
+                    return;
+                Vector2 local;
+                if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, eventData.position, eventData.pressEventCamera, out local))
+                    return;
+                bool vertical = Slider.direction == Slider.Direction.BottomToTop || Slider.direction == Slider.Direction.TopToBottom;
+                float t = vertical
+                    ? Mathf.InverseLerp(rt.rect.yMin, rt.rect.yMax, local.y)
+                    : Mathf.InverseLerp(rt.rect.xMin, rt.rect.xMax, local.x);
+                if (Slider.direction == Slider.Direction.RightToLeft || Slider.direction == Slider.Direction.TopToBottom)
+                    t = 1f - t;
+                Slider.value = Mathf.Lerp(Slider.minValue, Slider.maxValue, Mathf.Clamp01(t));
+            }
         }
 
         public static Slider CreateThinSlider(Transform parent, bool vertical, float min, float max, float value, UnityAction<float> onChanged)
@@ -425,12 +503,6 @@ namespace Crispberry_PiPhone
                 le.preferredHeight = 32f;
                 le.flexibleHeight = 0f;
                 slider.direction = Slider.Direction.LeftToRight;
-            }
-            if (slider.fillRect != null)
-            {
-                Image fill = slider.fillRect.GetComponent<Image>();
-                if (fill != null)
-                    fill.color = new Color(0.12f, 0.13f, 0.16f, 1f);
             }
             RectTransform handleRt = slider.handleRect;
             if (handleRt != null)
@@ -465,42 +537,93 @@ namespace Crispberry_PiPhone
             UnityAction<float> onLow,
             UnityAction<float> onHigh)
         {
-            var root = CreateImage(parent, "DualRange", Rounded(12), new Color(0.12f, 0.13f, 0.16f, 1f));
-            var le = root.gameObject.AddComponent<LayoutElement>();
+            var root = new GameObject("DualRange", typeof(RectTransform));
+            root.transform.SetParent(parent, false);
+            var le = root.AddComponent<LayoutElement>();
+            Color fillColor = Accent;
+            Color track = new Color(fillColor.r * 0.28f, fillColor.g * 0.28f, fillColor.b * 0.28f, 1f);
+            RectTransform bar;
             if (vertical)
             {
-                le.minWidth = 36f;
-                le.preferredWidth = 40f;
-                le.flexibleWidth = 0f;
-                le.minHeight = 180f;
-                le.preferredHeight = 240f;
+                le.minWidth = 120f;
+                le.preferredWidth = 200f;
+                le.flexibleWidth = 1f;
+                le.minHeight = 140f;
+                le.preferredHeight = 180f;
                 le.flexibleHeight = 1f;
+                bar = CreateImage(root.transform, "Track", White(), track);
+                bar.anchorMin = new Vector2(0.5f, 0f);
+                bar.anchorMax = new Vector2(0.5f, 1f);
+                bar.pivot = new Vector2(0.5f, 0.5f);
+                bar.sizeDelta = new Vector2(22f, 0f);
+                bar.anchoredPosition = Vector2.zero;
             }
             else
             {
-                le.minWidth = 120f;
-                le.preferredWidth = 400f;
+                le.minWidth = 160f;
+                le.preferredWidth = 320f;
                 le.flexibleWidth = 1f;
-                le.minHeight = 40f;
-                le.preferredHeight = 48f;
-                le.flexibleHeight = 1f;
+                le.minHeight = 44f;
+                le.preferredHeight = 44f;
+                le.flexibleHeight = 0f;
+                bar = CreateImage(root.transform, "Track", White(), track);
+                bar.anchorMin = new Vector2(0f, 1f);
+                bar.anchorMax = new Vector2(1f, 1f);
+                bar.pivot = new Vector2(0.5f, 1f);
+                bar.sizeDelta = new Vector2(0f, 22f);
+                bar.anchoredPosition = Vector2.zero;
             }
+            var barImg = bar.GetComponent<Image>();
+            barImg.type = Image.Type.Simple;
+            barImg.raycastTarget = true;
 
-            var fill = CreateImage(root, "Fill", Rounded(10), new Color(Accent.r, Accent.g, Accent.b, 0.45f));
+            var fill = CreateImage(bar, "Fill", White(), fillColor);
             var fillImg = fill.GetComponent<Image>();
             fillImg.raycastTarget = false;
             fillImg.type = Image.Type.Simple;
 
-            var lowH = CreateImage(root, "Low", Circle(), Color.white);
+            var lowH = CreateImage(bar, "Low", White(), new Color(1f, 1f, 1f, 0f));
             lowH.GetComponent<Image>().raycastTarget = false;
-            lowH.GetComponent<Image>().type = Image.Type.Simple;
-            var highH = CreateImage(root, "High", Circle(), Color.white);
+            var highH = CreateImage(bar, "High", White(), new Color(1f, 1f, 1f, 0f));
             highH.GetComponent<Image>().raycastTarget = false;
-            highH.GetComponent<Image>().type = Image.Type.Simple;
 
-            var dual = root.gameObject.AddComponent<DualRangeSlider>();
-            dual.Bind(root, fill, lowH, highH, vertical, min, max, low, high, onLow, onHigh);
+            var dual = bar.gameObject.AddComponent<DualRangeSlider>();
+            dual.Bind(bar, fill, lowH, highH, vertical, min, max, low, high, onLow, onHigh);
             return dual;
+        }
+
+        public static void TintToggle(Button chip, bool on)
+        {
+            if (chip == null)
+                return;
+            Transform art = chip.transform.Find("I");
+            var img = art != null ? art.GetComponent<Image>() : null;
+            if (img != null)
+                img.color = on ? PhoneTheme.ToggleOnColor : PhoneTheme.ToggleOffColor;
+        }
+
+        /// <summary>Short chip that hugs the toggle glyph. The icon art is a square with empty space above and below the switch.</summary>
+        public static Button CreateToggleChip(Transform parent, bool on, UnityAction onClick)
+        {
+            string cue = on ? "toggle-off" : "toggle-on";
+            var button = CreateIconChip(parent, on ? "On" : "Off", PhoneIcons.Material(on ? "toggle_on" : "toggle_off"), onClick, false, new Vector2(32f, 18f), true, false, false, cue);
+            FitToggleArt(button);
+            TintToggle(button, on);
+            return button;
+        }
+
+        public static void FitToggleArt(Button chip)
+        {
+            if (chip == null)
+                return;
+            Transform art = chip.transform.Find("I");
+            var rt = art != null ? art.GetComponent<RectTransform>() : null;
+            if (rt == null)
+                return;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(30f, 30f);
+            rt.anchoredPosition = Vector2.zero;
         }
 
         public static Button CreateCheckRow(Transform parent, string label, bool on, UnityAction onClick)
@@ -519,10 +642,11 @@ namespace Crispberry_PiPhone
             boxLe.minHeight = 32f;
             boxLe.preferredHeight = 32f;
             boxLe.flexibleWidth = 0f;
+            var boxImg = boxRt.GetComponent<Image>();
+            boxImg.raycastTarget = true;
             var boxBtn = boxRt.gameObject.AddComponent<Button>();
-            boxBtn.targetGraphic = boxRt.GetComponent<Image>();
-            if (onClick != null)
-                boxBtn.onClick.AddListener(onClick);
+            boxBtn.targetGraphic = boxImg;
+            PhoneSfx.BindPress(boxBtn, onClick, false, false);
             var mark = CreateLabel(boxRt, "M", on ? "X" : string.Empty, 16f, FontStyles.Normal, TextAlignmentOptions.Center);
             Stretch(mark.rectTransform, 0f, 0f);
             var name = CreateLabel(row.transform, "L", label, 15f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
@@ -532,42 +656,67 @@ namespace Crispberry_PiPhone
 
         public static Slider CreateSliderRow(Transform parent, string label, float min, float max, float value, UnityAction<float> onChanged)
         {
-            return CreateSliderRow(parent, label, min, max, value, onChanged, null);
+            return CreateSliderRow(parent, label, min, max, value, onChanged, null, null);
         }
 
         public static Slider CreateSliderRow(Transform parent, string label, float min, float max, float value, UnityAction<float> onChanged, System.Func<float, string> format)
         {
-            var row = new GameObject("Slide_" + Sanitize(label), typeof(RectTransform));
+            return CreateSliderRow(parent, label, min, max, value, onChanged, format, null);
+        }
+
+        public static Slider CreateSliderRow(Transform parent, string label, float min, float max, float value, UnityAction<float> onChanged, System.Func<float, string> format, string icon)
+        {
+            var row = new GameObject("Slide_" + Sanitize(string.IsNullOrEmpty(label) ? icon : label), typeof(RectTransform));
             row.transform.SetParent(parent, false);
-            var rowLe = Size(row, 32f);
-            rowLe.minWidth = 280f;
+            var rowLe = Size(row, 26f);
+            rowLe.minWidth = 180f;
             rowLe.preferredWidth = 280f;
             rowLe.flexibleWidth = 1f;
-            var h = AddHorizontal(row, 8f);
-            h.padding = new RectOffset(4, 4, 2, 2);
+            var h = AddHorizontal(row, 0f);
+            h.padding = new RectOffset(0, 0, 0, 0);
+            h.childForceExpandWidth = true;
+            h.childForceExpandHeight = true;
             h.childAlignment = TextAnchor.MiddleCenter;
-            if (!string.IsNullOrEmpty(label))
-            {
-                var name = CreateLabel(row.transform, "N", label, 13f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
-                var nameLe = name.gameObject.AddComponent<LayoutElement>();
-                nameLe.minWidth = 72f;
-                nameLe.preferredWidth = 72f;
-                nameLe.flexibleWidth = 0f;
-            }
-            TextMeshProUGUI pct = CreateLabel(row.transform, "Pct", FormatValue(value, min, max, format), 14f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
+            Slider slider = CreateSlider(row.transform, min, max, value, false, null);
+            var sliderLe = slider.GetComponent<LayoutElement>();
+            sliderLe.minHeight = 26f;
+            sliderLe.preferredHeight = 26f;
+            TextMeshProUGUI pct = CreateLabel(slider.transform, "Pct", FormatValue(value, min, max, format), 12f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
             pct.color = Text;
-            var pctLe = pct.gameObject.AddComponent<LayoutElement>();
-            pctLe.minWidth = 52f;
-            pctLe.preferredWidth = 52f;
-            pctLe.flexibleWidth = 0f;
+            pct.raycastTarget = false;
+            var pctRt = pct.rectTransform;
+            pctRt.anchorMin = new Vector2(1f, 0f);
+            pctRt.anchorMax = new Vector2(1f, 1f);
+            pctRt.pivot = new Vector2(1f, 0.5f);
+            pctRt.sizeDelta = new Vector2(44f, 0f);
+            pctRt.anchoredPosition = new Vector2(-8f, 0f);
+            IgnoreLayout(pct.gameObject);
+            if (!string.IsNullOrEmpty(icon))
+            {
+                Sprite sprite = PhoneIcons.Material(icon);
+                if (sprite != null)
+                {
+                    var glyph = CreateImage(slider.transform, "Ico", sprite, Text);
+                    glyph.anchorMin = new Vector2(0f, 0.5f);
+                    glyph.anchorMax = new Vector2(0f, 0.5f);
+                    glyph.pivot = new Vector2(0f, 0.5f);
+                    glyph.sizeDelta = new Vector2(16f, 16f);
+                    glyph.anchoredPosition = new Vector2(8f, 0f);
+                    var glyphImg = glyph.GetComponent<Image>();
+                    glyphImg.preserveAspect = true;
+                    glyphImg.raycastTarget = false;
+                    IgnoreLayout(glyph.gameObject);
+                }
+            }
             pct.transform.SetAsLastSibling();
-            Slider slider = CreateSlider(row.transform, min, max, value, false, v =>
+            if (!string.IsNullOrEmpty(label))
+                SetTooltip(slider.gameObject, label);
+            slider.onValueChanged.AddListener(v =>
             {
                 pct.text = FormatValue(v, min, max, format);
                 if (onChanged != null)
                     onChanged(v);
             });
-            slider.transform.SetSiblingIndex(pct.transform.GetSiblingIndex());
             return slider;
         }
 
@@ -1017,6 +1166,28 @@ namespace Crispberry_PiPhone
 
         private sealed class ReadableLabel : MonoBehaviour
         {
+        }
+
+        private sealed class FontBasis : MonoBehaviour
+        {
+            public float Size;
+        }
+
+        public static void ApplyFontSizes(Transform root)
+        {
+            if (root == null)
+                return;
+            float scale = PhoneTheme.FontScale;
+            FontBasis[] marks = root.GetComponentsInChildren<FontBasis>(true);
+            for (int i = 0; i < marks.Length; i++)
+            {
+                FontBasis mark = marks[i];
+                if (mark == null)
+                    continue;
+                var tmp = mark.GetComponent<TextMeshProUGUI>();
+                if (tmp != null)
+                    tmp.fontSize = mark.Size * scale;
+            }
         }
 
         public static void ApplyFont(TextMeshProUGUI text)
