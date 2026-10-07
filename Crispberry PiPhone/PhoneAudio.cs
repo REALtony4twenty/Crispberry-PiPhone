@@ -74,9 +74,13 @@ namespace Crispberry_PiPhone
         private static PropertyInfo _srcTimeSamples;
         private static PropertyInfo _srcVolume;
         private static float[] _shotBuf;
-        private static int _mixSeq;
-        private static int _mixPredictor;
-        private static int _mixIndex;
+        private static readonly List<int> MixGroup = new List<int>();
+        private static readonly List<int> MixGone = new List<int>();
+        private static readonly Dictionary<int, MixEar> MixEars = new Dictionary<int, MixEar>();
+        private static readonly int[] RungSeq = new int[4];
+        private static readonly int[] RungPredictor = new int[4];
+        private static readonly int[] RungIndex = new int[4];
+        private static readonly bool[] RungLive = new bool[4];
         private static readonly object TapLock = new object();
         private static float[] _tap;
         private static int _tapHead;
@@ -102,6 +106,18 @@ namespace Crispberry_PiPhone
         private static float _listenLast;
         private static int _listenRung = -1;
         private static int _listenSeq;
+        private static int _hearGot;
+        private static int _hearLost;
+        private static float _hearNext;
+
+        private sealed class MixEar
+        {
+            public int Rung = 1;
+            public int Clean;
+            public int Unheard;
+            public readonly int[] Falls = new int[4];
+            public readonly float[] BarUntil = new float[4];
+        }
 
         private sealed class MixVoice
         {
@@ -212,7 +228,19 @@ namespace Crispberry_PiPhone
             if (watching)
                 _listenHost.transform.position = point;
             if (watching == _listening && (!watching || id == _listenId))
+            {
+                if (watching && Time.unscaledTime >= _hearNext)
+                {
+                    _hearNext = Time.unscaledTime + 2f;
+                    if (_hearGot > 0)
+                    {
+                        PhoneNet.SendCastHear(owner, id, _hearGot, _hearLost);
+                        _hearGot = 0;
+                        _hearLost = 0;
+                    }
+                }
                 return;
+            }
             _listening = watching;
             _listenId = watching ? id : null;
             ResetListen();
@@ -245,6 +273,9 @@ namespace Crispberry_PiPhone
             _listenRung = -1;
             _listenSeq = 0;
             _listenLast = 0f;
+            _hearGot = 0;
+            _hearLost = 0;
+            _hearNext = Time.unscaledTime + 2f;
         }
 
         private static Component ListenSourceFor()
@@ -299,9 +330,15 @@ namespace Crispberry_PiPhone
                 return;
             if (rung != _listenRung)
                 _listenRung = rung;
-            else if (seq <= _listenSeq && _listenSeq - seq < 64)
-                return;
+            else if (seq <= _listenSeq)
+            {
+                if (_listenSeq - seq < 64)
+                    return;
+            }
+            else if (_listenSeq > 0)
+                _hearLost += seq - _listenSeq - 1;
             _listenSeq = seq;
+            _hearGot++;
             float[] pcm = _listenPcm;
             if (pcm == null)
             {
@@ -465,8 +502,8 @@ namespace Crispberry_PiPhone
                 _tapCount = 0;
             }
             MixDeaf.Clear();
-            _mixPredictor = 0;
-            _mixIndex = 0;
+            for (int i = 0; i < RungLive.Length; i++)
+                RungLive[i] = false;
             _mixClock = 0f;
         }
 
@@ -708,18 +745,105 @@ namespace Crispberry_PiPhone
             }
             if (peak < 0.0005f)
             {
-                _mixPredictor = 0;
-                _mixIndex = 0;
+                for (int i = 0; i < RungLive.Length; i++)
+                    RungLive[i] = false;
                 return;
             }
             string device = PhoneCast.CopyAudience(MixAudience);
-            if (MixAudience.Count == 0)
+            MixGone.Clear();
+            foreach (KeyValuePair<int, MixEar> pair in MixEars)
+            {
+                if (!MixAudience.Contains(pair.Key))
+                    MixGone.Add(pair.Key);
+            }
+            for (int i = 0; i < MixGone.Count; i++)
+                MixEars.Remove(MixGone[i]);
+            for (int i = 0; i < MixAudience.Count; i++)
+            {
+                if (!MixEars.ContainsKey(MixAudience[i]))
+                    MixEars[MixAudience[i]] = new MixEar();
+            }
+            for (int rung = 0; rung < 4; rung++)
+            {
+                MixGroup.Clear();
+                for (int i = 0; i < MixAudience.Count; i++)
+                {
+                    if (MixEars[MixAudience[i]].Rung == rung)
+                        MixGroup.Add(MixAudience[i]);
+                }
+                if (MixGroup.Count == 0)
+                {
+                    RungLive[rung] = false;
+                    continue;
+                }
+                if (!RungLive[rung])
+                {
+                    RungLive[rung] = true;
+                    RungPredictor[rung] = 0;
+                    RungIndex[rung] = 0;
+                }
+                int predictor = RungPredictor[rung];
+                int index = RungIndex[rung];
+                byte[] data = rung == 3 ? EncodePcm() : EncodeIma(rung == 2 ? 1 : (rung == 1 ? 2 : 4), ref RungPredictor[rung], ref RungIndex[rung]);
+                RungSeq[rung]++;
+                PhoneNet.SendCastAudio(MixGroup.ToArray(), device, rung, RungSeq[rung], predictor, index, data);
+            }
+            for (int i = 0; i < MixAudience.Count; i++)
+            {
+                MixEar ear = MixEars[MixAudience[i]];
+                ear.Unheard++;
+                if (ear.Unheard >= 63)
+                    StepDown(MixAudience[i], ear);
+            }
+        }
+
+        public static void CastHeard(int actor, int received, int lost)
+        {
+            MixEar ear;
+            if (received < 0 || lost < 0 || received + lost <= 0 || !MixEars.TryGetValue(actor, out ear))
                 return;
-            int predictor = _mixPredictor;
-            int index = _mixIndex;
-            byte[] data = EncodeIma(2, ref _mixPredictor, ref _mixIndex);
-            _mixSeq++;
-            PhoneNet.SendCastAudio(MixAudience.ToArray(), device, 1, _mixSeq, predictor, index, data);
+            ear.Unheard = 0;
+            if (lost * 100L > (received + (long)lost) * 5L)
+            {
+                StepDown(actor, ear);
+                return;
+            }
+            if (lost > 0)
+            {
+                ear.Clean = 0;
+                return;
+            }
+            ear.Clean++;
+            if (ear.Clean < 5 || ear.Rung >= 3 || Time.unscaledTime < ear.BarUntil[ear.Rung + 1])
+                return;
+            ear.Rung++;
+            ear.Clean = 0;
+            Plugin.LogInfo("Cast audio: watcher " + actor + " up to rung " + ear.Rung);
+        }
+
+        private static void StepDown(int actor, MixEar ear)
+        {
+            ear.Clean = 0;
+            ear.Unheard = 0;
+            if (ear.Rung <= 0)
+                return;
+            int rung = ear.Rung;
+            ear.Falls[rung]++;
+            ear.BarUntil[rung] = Time.unscaledTime + 60f * (1 << Mathf.Min(ear.Falls[rung] - 1, 10));
+            ear.Rung = rung - 1;
+            Plugin.LogInfo("Cast audio: watcher " + actor + " down to rung " + ear.Rung);
+        }
+
+        private static byte[] EncodePcm()
+        {
+            var data = new byte[MixBlock * 2];
+            for (int i = 0; i < MixBlock; i++)
+            {
+                int sample = Mathf.RoundToInt(MixOut[i] * 32767f);
+                data[i * 2] = (byte)(sample & 0xff);
+                data[i * 2 + 1] = (byte)((sample >> 8) & 0xff);
+            }
+            return data;
         }
 
         private static byte[] EncodeIma(int group, ref int predictor, ref int index)

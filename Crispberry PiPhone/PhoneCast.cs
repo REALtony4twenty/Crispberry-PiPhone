@@ -706,6 +706,16 @@ namespace Crispberry_PiPhone
             PhoneAudio.HearCast(Convert.ToInt32(data[4]), Convert.ToInt32(data[5]), Convert.ToInt32(data[6]), Convert.ToInt32(data[7]), data[8] as byte[]);
         }
 
+        public static void OnHear(int actor, object[] data)
+        {
+            if (data == null || data.Length < 6 || !_casting)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _deviceId || !_watcherIds.Contains(actor))
+                return;
+            PhoneAudio.CastHeard(actor, Convert.ToInt32(data[4]), Convert.ToInt32(data[5]));
+        }
+
         public static bool UseBoard(bool on)
         {
             if (!on)

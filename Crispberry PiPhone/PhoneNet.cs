@@ -43,6 +43,7 @@ namespace Crispberry_PiPhone
         internal const byte KindCastWatch = 26;
         internal const byte KindCastState = 27;
         internal const byte KindCastAudio = 28;
+        internal const byte KindCastHear = 29;
         public const int MaxMediaBytes = 8388608;
 
         public static PhoneNet Instance;
@@ -387,6 +388,10 @@ namespace Crispberry_PiPhone
                         if (data.Length >= 9)
                             PhoneCast.OnAudio(photonEvent.Sender, data);
                         break;
+                    case KindCastHear:
+                        if (data.Length >= 6)
+                            PhoneCast.OnHear(photonEvent.Sender, data);
+                        break;
                 }
             }
             catch (Exception ex)
@@ -619,6 +624,11 @@ namespace Crispberry_PiPhone
             if (data == null)
                 return;
             SendToList(actors, new object[] { Magic, Protocol, KindCastAudio, deviceId ?? string.Empty, rung, seq, predictor, index, data }, false);
+        }
+
+        public static void SendCastHear(int actor, string deviceId, int received, int lost)
+        {
+            SendTo(actor, new object[] { Magic, Protocol, KindCastHear, deviceId ?? string.Empty, received, lost }, true);
         }
 
         public static void SendCastFrame(string deviceId, int seq, byte[] jpg)
