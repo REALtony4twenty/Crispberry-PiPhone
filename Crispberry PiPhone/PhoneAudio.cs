@@ -33,6 +33,7 @@ namespace Crispberry_PiPhone
         private static volatile string _streamError;
         private static volatile float _streamGain;
         private static float _streamGainNow;
+        private static float[] _streamPlace;
 
         private static Component _musicSource;
         private static float _musicVol = -1f;
@@ -42,6 +43,10 @@ namespace Crispberry_PiPhone
         private static bool _callMuted;
         private static PropertyInfo _isPlaying;
         private static Pump _pump;
+
+        private const float SpeakerNear = 3f;
+        private const float SpeakerFar = 40f;
+        private static volatile bool _spatial;
 
         public static void Ensure()
         {
@@ -84,6 +89,37 @@ namespace Crispberry_PiPhone
                 WriteMediaVolume();
             }
             WriteMusicVolume();
+            FollowCast();
+        }
+
+        private static void FollowCast()
+        {
+            Vector3 point;
+            bool spatial = PhoneCast.TrySpeakerPoint(out point);
+            GameObject host = VoiceIo.Host;
+            if (spatial && host != null)
+                host.transform.position = point;
+            if (spatial == _spatial)
+                return;
+            _spatial = spatial;
+            for (int i = 0; i < ChannelCount; i++)
+            {
+                WriteSpatial(Sources[i]);
+                WriteSpatial(ShotSources[i]);
+            }
+            WriteSpatial(_musicSource);
+            WriteSpatial(_vibrateSource);
+            WriteSpatial(_streamSource);
+        }
+
+        private static void WriteSpatial(Component source)
+        {
+            if (source == null)
+                return;
+            VoiceIo.TrySet(source, "spatialBlend", _spatial ? 1f : 0f);
+            VoiceIo.TrySet(source, "dopplerLevel", 0f);
+            VoiceIo.TrySet(source, "minDistance", SpeakerNear);
+            VoiceIo.TrySet(source, "maxDistance", SpeakerFar);
         }
 
         private static bool AlertSounding()
@@ -326,11 +362,28 @@ namespace Crispberry_PiPhone
 
         private static void RenderStream(float[] data, int channels)
         {
-            Action<float[], int> reader = _streamReader;
-            if (!_streamLive || reader == null || data == null || channels <= 0)
+            if (data == null)
                 return;
+            Action<float[], int> reader = _streamReader;
+            if (!_streamLive || reader == null || channels <= 0)
+            {
+                Array.Clear(data, 0, data.Length);
+                return;
+            }
             try
             {
+                float[] place = null;
+                if (_spatial)
+                {
+                    place = _streamPlace;
+                    if (place == null || place.Length < data.Length)
+                    {
+                        place = new float[data.Length];
+                        _streamPlace = place;
+                    }
+                    Array.Copy(data, place, data.Length);
+                }
+                Array.Clear(data, 0, data.Length);
                 reader(data, channels);
                 float from = _streamGainNow;
                 float to = _streamGain;
@@ -340,7 +393,7 @@ namespace Crispberry_PiPhone
                     float gain = from + (to - from) * (i + 1) / frames;
                     int at = i * channels;
                     for (int c = 0; c < channels; c++)
-                        data[at + c] *= gain;
+                        data[at + c] *= place != null ? gain * place[at + c] : gain;
                 }
                 _streamGainNow = to;
             }
@@ -371,7 +424,13 @@ namespace Crispberry_PiPhone
             Type type = VoiceIo.AudioSourceType;
             if (host == null || type == null)
                 return null;
-            object carrier = VoiceIo.FromPcm16(new byte[StreamCarrierRate * 2], StreamCarrierRate, 1);
+            byte[] level = new byte[StreamCarrierRate * 2];
+            for (int i = 0; i < level.Length; i += 2)
+            {
+                level[i] = 0xFF;
+                level[i + 1] = 0x7F;
+            }
+            object carrier = VoiceIo.FromPcm16(level, StreamCarrierRate, 1);
             if (carrier == null)
                 return null;
             var go = new GameObject("PiP_MediaStream");
@@ -379,10 +438,10 @@ namespace Crispberry_PiPhone
             Component source = go.AddComponent(type);
             VoiceIo.TrySet(source, "playOnAwake", false);
             VoiceIo.TrySet(source, "loop", true);
-            VoiceIo.TrySet(source, "spatialBlend", 0f);
+            WriteSpatial(source);
             VoiceIo.TrySet(source, "ignoreListenerPause", true);
             VoiceIo.TrySet(source, "ignoreListenerVolume", true);
-            VoiceIo.TrySet(source, "bypassEffects", true);
+            VoiceIo.TrySet(source, "bypassEffects", false);
             VoiceIo.TrySet(source, "bypassListenerEffects", true);
             VoiceIo.TrySet(source, "mute", false);
             VoiceIo.TrySet(source, "volume", 1f);
@@ -430,7 +489,7 @@ namespace Crispberry_PiPhone
             VoiceIo.TrySet(source, "mute", false);
             VoiceIo.TrySet(source, "volume", LevelOf(channel));
             VoiceIo.TrySet(source, "pitch", 1f);
-            VoiceIo.TrySet(source, "spatialBlend", 0f);
+            WriteSpatial(source);
             VoiceIo.TrySet(source, "outputAudioMixerGroup", null);
             if (!loop && fade)
                 VoiceIo.FadeEdges(clip);
@@ -580,7 +639,7 @@ namespace Crispberry_PiPhone
             Component source = host.AddComponent(type);
             VoiceIo.TrySet(source, "playOnAwake", false);
             VoiceIo.TrySet(source, "loop", false);
-            VoiceIo.TrySet(source, "spatialBlend", 0f);
+            WriteSpatial(source);
             VoiceIo.TrySet(source, "ignoreListenerPause", true);
             VoiceIo.TrySet(source, "ignoreListenerVolume", true);
             VoiceIo.TrySet(source, "bypassEffects", true);

@@ -654,6 +654,18 @@ namespace Crispberry_PiPhone
             get { return _parked; }
         }
 
+        public static bool TrySpeakerPoint(out Vector3 point)
+        {
+            Display show;
+            if (_casting && Shows.TryGetValue(_deviceId, out show) && show != null && show.Host != null)
+            {
+                point = show.Host.transform.position;
+                return true;
+            }
+            point = Vector3.zero;
+            return false;
+        }
+
         public static bool UseBoard(bool on)
         {
             if (!on)
