@@ -736,7 +736,41 @@ namespace Crispberry_PiPhone
             }
         }
 
-        private static int DspRate()
+        internal static bool ClipShape(object clip, out int samples, out int channels, out int rate)
+        {
+            samples = 0;
+            channels = 0;
+            rate = 0;
+            if (clip == null)
+                return false;
+            try
+            {
+                samples = (int)ClipSamples.Invoke(clip, null);
+                channels = (int)ClipChannels.Invoke(clip, null);
+                rate = (int)ClipFreq.Invoke(clip, null);
+            }
+            catch
+            {
+                return false;
+            }
+            return samples > 0 && channels > 0 && rate > 0;
+        }
+
+        internal static bool ReadClip(object clip, float[] dest, int offset)
+        {
+            if (clip == null || dest == null)
+                return false;
+            try
+            {
+                return (bool)ClipGetData.Invoke(clip, new object[] { dest, offset });
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal static int DspRate()
         {
             try
             {

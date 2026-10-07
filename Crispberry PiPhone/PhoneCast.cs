@@ -666,6 +666,46 @@ namespace Crispberry_PiPhone
             return false;
         }
 
+        public static bool AudienceOpen
+        {
+            get { return _casting && _share && _watcherIds.Count > 0 && PhotonNetwork.InRoom && !CastIsPrivate(); }
+        }
+
+        public static string CopyAudience(List<int> into)
+        {
+            into.Clear();
+            foreach (int actor in _watcherIds)
+                into.Add(actor);
+            return _deviceId;
+        }
+
+        public static bool TryWatchPoint(out Vector3 point, out string id, out int owner)
+        {
+            Display show;
+            id = _watchId;
+            owner = 0;
+            if (!string.IsNullOrEmpty(id) && Shows.TryGetValue(id, out show) && show != null && show.Host != null && Owners.TryGetValue(id, out owner))
+            {
+                point = show.Host.transform.position;
+                return true;
+            }
+            point = Vector3.zero;
+            return false;
+        }
+
+        public static void OnAudio(int actor, object[] data)
+        {
+            if (data == null || data.Length < 9)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _watchId)
+                return;
+            int owner;
+            if (!Owners.TryGetValue(id, out owner) || owner != actor)
+                return;
+            PhoneAudio.HearCast(Convert.ToInt32(data[4]), Convert.ToInt32(data[5]), Convert.ToInt32(data[6]), Convert.ToInt32(data[7]), data[8] as byte[]);
+        }
+
         public static bool UseBoard(bool on)
         {
             if (!on)

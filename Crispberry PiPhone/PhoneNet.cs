@@ -42,6 +42,7 @@ namespace Crispberry_PiPhone
         internal const byte KindCastFrame = 25;
         internal const byte KindCastWatch = 26;
         internal const byte KindCastState = 27;
+        internal const byte KindCastAudio = 28;
         public const int MaxMediaBytes = 8388608;
 
         public static PhoneNet Instance;
@@ -382,6 +383,10 @@ namespace Crispberry_PiPhone
                         if (data.Length >= 19)
                             PhoneCast.OnState(photonEvent.Sender, data);
                         break;
+                    case KindCastAudio:
+                        if (data.Length >= 9)
+                            PhoneCast.OnAudio(photonEvent.Sender, data);
+                        break;
                 }
             }
             catch (Exception ex)
@@ -609,6 +614,13 @@ namespace Crispberry_PiPhone
             SendOthers(fields, reliable);
         }
 
+        public static void SendCastAudio(int[] actors, string deviceId, int rung, int seq, int predictor, int index, byte[] data)
+        {
+            if (data == null)
+                return;
+            SendToList(actors, new object[] { Magic, Protocol, KindCastAudio, deviceId ?? string.Empty, rung, seq, predictor, index, data }, false);
+        }
+
         public static void SendCastFrame(string deviceId, int seq, byte[] jpg)
         {
             if (jpg == null || jpg.Length == 0 || !PhotonNetwork.InRoom)
@@ -665,6 +677,21 @@ namespace Crispberry_PiPhone
             {
                 SendOptions opts = reliable ? SendOptions.SendReliable : SendOptions.SendUnreliable;
                 PhotonNetwork.RaiseEvent(EventCode, payload, new RaiseEventOptions { TargetActors = new[] { actor } }, opts);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogError("Phone send failed: " + ex.Message);
+            }
+        }
+
+        private static void SendToList(int[] actors, object[] payload, bool reliable)
+        {
+            if (actors == null || actors.Length == 0 || !PhotonNetwork.InRoom)
+                return;
+            try
+            {
+                SendOptions opts = reliable ? SendOptions.SendReliable : SendOptions.SendUnreliable;
+                PhotonNetwork.RaiseEvent(EventCode, payload, new RaiseEventOptions { TargetActors = actors }, opts);
             }
             catch (Exception ex)
             {
