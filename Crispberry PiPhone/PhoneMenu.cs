@@ -1184,6 +1184,7 @@ namespace Crispberry_PiPhone
             _playMode = PiPhonePlayThrough.Off;
             CameraApp.UiLocked = true;
             PhoneShade.SizeOpen = false;
+            PhoneShade.VolumesOpen = false;
             _lastLand = true;
             ApplyPresentation();
             _visible = false;
@@ -3725,7 +3726,7 @@ namespace Crispberry_PiPhone
         {
             PhoneTheme.SetMasterVolume(PhoneTheme.MasterVolume + delta);
             PhoneSfx.PlayMaster(delta >= 0f ? "vol-up" : "vol-down");
-            PhoneNotify.Quiet("Volume", Mathf.RoundToInt(PhoneTheme.MasterVolume * 100f) + "%");
+            PhoneNotify.Quiet("Master",Mathf.RoundToInt(PhoneTheme.MasterVolume * 100f) + "%");
         }
 
         private void BuildShade(RectTransform screen)
@@ -3766,10 +3767,26 @@ namespace Crispberry_PiPhone
                     PhoneUi.CreateSliderRow(_shadeRoot.transform, "Size", 0.55f, 1.35f, PhoneTheme.PhoneScale, v => PhoneTheme.SetPhoneScale(v), null, "aspect_ratio");
             }
             PhoneUi.CreateSliderRow(_shadeRoot.transform, "Brightness", PhoneTheme.MinBrightness, 1f, PhoneTheme.Brightness, v => PhoneTheme.SetBrightness(v), null, "brightness_6");
-            PhoneUi.CreateSliderRow(_shadeRoot.transform, "Volume", 0f, 1f, PhoneTheme.MasterVolume, v => PhoneTheme.SetMasterVolume(v), null, "ring_volume");
+            var masterRow = new GameObject("MasterRow", typeof(RectTransform));
+            masterRow.transform.SetParent(_shadeRoot.transform, false);
+            PhoneUi.Size(masterRow, 26f);
+            PhoneUi.AddHorizontal(masterRow, 6f).childForceExpandWidth = false;
+            PhoneUi.CreateSliderRow(masterRow.transform, "Master", 0f, 1f, PhoneTheme.MasterVolume, v => PhoneTheme.SetMasterVolume(v), null, "volume_up");
+            PhoneUi.CreateIconChip(masterRow.transform, PhoneShade.VolumesOpen ? "^" : "v", PhoneIcons.Material(PhoneShade.VolumesOpen ? "expand_less" : "expand_more"), () =>
+            {
+                PhoneShade.VolumesOpen = !PhoneShade.VolumesOpen;
+                RebuildShade();
+            }, false, new Vector2(28f, 24f));
+            if (PhoneShade.VolumesOpen)
+            {
+                ShadeChannelRow("Media", PhoneAudioChannel.Media, "music_cast");
+                ShadeChannelRow("Call", PhoneAudioChannel.Call, "call");
+                ShadeChannelRow("Ringtone", PhoneAudioChannel.Ringtone, "ring_volume");
+                ShadeChannelRow("Notification", PhoneAudioChannel.Notification, "notifications");
+                ShadeChannelRow("System", PhoneAudioChannel.System, "instant_mix");
+            }
             if (PhoneStore.IsInstalled(BuiltinApps.SoundsId))
             {
-                PhoneUi.CreateSliderRow(_shadeRoot.transform, "Music", 0f, 1f, PhoneTheme.MusicVolume, v => PhoneTheme.SetMusicVolume(v), null, "music_cast");
                 var musicRow = new GameObject("MusicBtns", typeof(RectTransform));
                 musicRow.transform.SetParent(_shadeRoot.transform, false);
                 PhoneUi.Size(musicRow, PhoneShade.MediaChip);
@@ -3799,6 +3816,8 @@ namespace Crispberry_PiPhone
             if (shadeRt != null)
             {
                 float extra = Mathf.Max(0, tileRows - 1) * (PhoneShade.Chip + 8f);
+                if (PhoneShade.VolumesOpen)
+                    extra += PhoneAudio.ChannelCount * (26f + 8f);
                 shadeRt.sizeDelta = new Vector2(0f, 420f + extra);
             }
 
@@ -3831,6 +3850,11 @@ namespace Crispberry_PiPhone
                 empty.color = PhoneUi.TextDim;
                 PhoneUi.Size(empty.gameObject, 22f);
             }
+        }
+
+        private void ShadeChannelRow(string label, PhoneAudioChannel channel, string icon)
+        {
+            PhoneUi.CreateSliderRow(_shadeRoot.transform, label, 0f, 1f, PhoneAudio.VolumeOf(channel), v => PhoneTheme.SetChannelVolume(channel, v), null, icon);
         }
 
         private void EnsureShadeButtons()
