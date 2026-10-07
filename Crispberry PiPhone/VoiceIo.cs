@@ -278,7 +278,7 @@ namespace Crispberry_PiPhone
                 Plugin.LogError("Voice wav could not be read: " + path);
                 return;
             }
-            PhoneAudio.Play(PhoneAudioChannel.Media, clip, false, ClipSeconds(clip) + 0.45f);
+            PhoneAudio.Play(PhoneAudioChannel.Media, clip, false);
         }
 
         public static float ClipSeconds(object clip)

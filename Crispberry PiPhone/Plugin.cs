@@ -67,7 +67,7 @@ namespace Crispberry_PiPhone
             PhoneLang.Ensure();
             PhoneTones.Load();
             PhoneContacts.Ensure();
-            VoiceIo.Ensure();
+            PhoneAudio.Ensure();
             MusicPlayer.Ensure();
             PhoneNet.Ensure();
             PhoneCast.Ensure();

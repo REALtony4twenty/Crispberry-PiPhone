@@ -19,8 +19,8 @@ namespace Crispberry_PiPhone
         }
         public static float MusicVolume
         {
-            get { return PhoneAudio.VolumeOf(PhoneAudioChannel.Media); }
-            set { PhoneAudio.SetVolume(PhoneAudioChannel.Media, value); }
+            get { return PhoneAudio.MusicVolume; }
+            set { PhoneAudio.MusicVolume = value; }
         }
         private static readonly bool[] VolumeClaimed = new bool[PhoneAudio.ChannelCount];
         public static float UiSfxVolume = 0.7f;
@@ -39,6 +39,7 @@ namespace Crispberry_PiPhone
         public static int RingerMode;
         public static bool DoNotDisturb;
         public static bool AutoAnswer;
+        public static bool PrioritizeCallAudio = true;
         public static bool Clock24Hour;
         public static bool UsePeakTime;
         public static bool HideDate;
@@ -128,6 +129,7 @@ namespace Crispberry_PiPhone
             bool sawBattery = false;
             bool sawSignal = false;
             bool masterClaimed = false;
+            bool musicClaimed = false;
             bool uiClaimed = false;
             bool uiCuesClaimed = false;
             bool appsClaimed = false;
@@ -155,13 +157,14 @@ namespace Crispberry_PiPhone
                     else if (key == "vol_ch_ringtone") LoadVolume(PhoneAudioChannel.Ringtone, f, true);
                     else if (key == "vol_ch_notification") LoadVolume(PhoneAudioChannel.Notification, f, true);
                     else if (key == "vol_ch_system") LoadVolume(PhoneAudioChannel.System, f, true);
+                    else if (key == "vol_music") { MusicVolume = f; musicClaimed = true; }
                     else if (key == "vol_ui") { UiSfxVolume = Mathf.Clamp01(f); uiClaimed = true; }
                     else if (key == "vol_ui_cues") { UiSndCsv = val ?? string.Empty; uiCuesClaimed = true; }
                     else if (key == "vol_apps") { GameSfxCsv = val ?? string.Empty; appsClaimed = true; }
                     else if (key == "ringf") { if (!masterClaimed) MasterVolume = f; }
                     else if (key == "ring" && val.IndexOf('.') >= 0) { if (!masterClaimed) MasterVolume = f; }
                     else if (key == "ring") { if (!masterClaimed) MasterVolume = n / 10f; }
-                    else if (key == "musicvol") LoadVolume(PhoneAudioChannel.Media, f, false);
+                    else if (key == "musicvol") { if (!musicClaimed) MusicVolume = f; }
                     else if (key == "uisfx") { if (!uiClaimed) UiSfxVolume = Mathf.Clamp01(f); }
                     else if (key == "uisnd") { if (!uiCuesClaimed) UiSndCsv = val ?? string.Empty; }
                     else if (key == "gsfx") { if (!appsClaimed) GameSfxCsv = val ?? string.Empty; }
@@ -204,6 +207,7 @@ namespace Crispberry_PiPhone
                     else if (key == "ringer") RingerMode = Clamp(n, 0, 2);
                     else if (key == "dnd") DoNotDisturb = n != 0 || val == "true";
                     else if (key == "autoanswer") AutoAnswer = n != 0 || val == "true";
+                    else if (key == "callpriority") PrioritizeCallAudio = n != 0 || val == "true";
                     else if (key == "snakehigh") SnakeHigh = n < 0 ? 0 : n;
                     else if (key == "high2048") High2048 = n < 0 ? 0 : n;
                     else if (key == "highmines") HighMines = n < 0 ? 0 : n;
@@ -293,6 +297,7 @@ namespace Crispberry_PiPhone
                     + "vol_ch_ringtone=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Ringtone).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "vol_ch_notification=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Notification).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "vol_ch_system=" + PhoneAudio.VolumeOf(PhoneAudioChannel.System).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_music=" + MusicVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "vol_ui=" + UiSfxVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "vol_ui_cues=" + (UiSndCsv ?? string.Empty) + "\n"
                     + "vol_apps=" + (GameSfxCsv ?? string.Empty) + "\n"
@@ -332,6 +337,7 @@ namespace Crispberry_PiPhone
                     + "ringer=" + RingerMode + "\n"
                     + "dnd=" + (DoNotDisturb ? "1" : "0") + "\n"
                     + "autoanswer=" + (AutoAnswer ? "1" : "0") + "\n"
+                    + "callpriority=" + (PrioritizeCallAudio ? "1" : "0") + "\n"
                     + "snakehigh=" + SnakeHigh + "\n"
                     + "high2048=" + High2048 + "\n"
                     + "highmines=" + HighMines + "\n"
@@ -410,6 +416,12 @@ namespace Crispberry_PiPhone
         public static void SetAutoAnswer(bool on)
         {
             AutoAnswer = on;
+            Commit();
+        }
+
+        public static void SetPrioritizeCallAudio(bool on)
+        {
+            PrioritizeCallAudio = on;
             Commit();
         }
 

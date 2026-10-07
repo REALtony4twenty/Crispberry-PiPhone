@@ -299,6 +299,11 @@ namespace Crispberry_PiPhone
                     PhoneTones.SetDuckMusic(!PhoneTones.DuckMusic);
                     ShowNotifications();
                 });
+                IconToggle(content, "call", "Prioritize call audio", PhoneTheme.PrioritizeCallAudio, () =>
+                {
+                    PhoneTheme.SetPrioritizeCallAudio(!PhoneTheme.PrioritizeCallAudio);
+                    ShowNotifications();
+                });
 
                 var hint = PhoneUi.CreateLabel(content, "Hint", "These are the defaults until you set a per-person sound. Phone is the ringtone, Messages is the text tone. Drop files in the alerts folder. Each row can go back to Default.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 hint.color = PhoneUi.TextDim;

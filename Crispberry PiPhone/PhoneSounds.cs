@@ -30,14 +30,12 @@ namespace Crispberry_PiPhone
             float vol = PhoneTheme.GameCueVolume(app != null ? app.Id : null, cue);
             if (vol <= 0.001f)
                 return;
-            if (PhoneTones.DuckMusic)
-                MusicPlayer.DuckFor(Mathf.Clamp(seconds + 0.04f, 0.06f, 0.35f));
             PhoneAudio.PlayOneShot(PhoneAudioChannel.Media, MakeBeep(hz, seconds), vol);
         }
 
         public static void PlayPower(bool on)
         {
-            PhoneAudio.Play(PhoneAudioChannel.System, on ? MakeChord(523, 784, 0.16f, "PiP_On") : MakeChord(659, 392, 0.18f, "PiP_Off"), false, 0.9f);
+            PhoneAudio.Play(PhoneAudioChannel.System, on ? MakeChord(523, 784, 0.16f, "PiP_On") : MakeChord(659, 392, 0.18f, "PiP_Off"), false);
         }
 
         public static void PlayRingtone()
@@ -47,7 +45,7 @@ namespace Crispberry_PiPhone
 
         public static void PlayRingtoneFor(string contactId)
         {
-            PlayId(PhoneAudioChannel.Ringtone, PhoneTones.ResolveRing(contactId), 880, 0.45f, 20f, true);
+            PlayId(PhoneAudioChannel.Ringtone, PhoneTones.ResolveRing(contactId), 880, 0.45f, true);
         }
 
         public static void StopRing()
@@ -99,7 +97,7 @@ namespace Crispberry_PiPhone
 
         public static void PlayTextFor(string contactId)
         {
-            PlayId(PhoneAudioChannel.Notification, PhoneTones.ResolveText(contactId), 1200, 0.12f, 1.6f);
+            PlayId(PhoneAudioChannel.Notification, PhoneTones.ResolveText(contactId), 1200, 0.12f);
         }
 
         public static void PlayVibrate(bool call)
@@ -109,7 +107,6 @@ namespace Crispberry_PiPhone
             object clip = PhoneSfx.UiClip("vibrate");
             if (clip == null)
                 clip = MakeBuzz(call ? 0.7f : 0.32f);
-            MusicPlayer.DuckFor(call ? 2.2f : 0.55f);
             PhoneAudio.PlayVibrate(clip, PhoneTheme.UiCueVolume("vibrate"));
         }
 
@@ -120,22 +117,16 @@ namespace Crispberry_PiPhone
 
         public static void PlayApp(string appId)
         {
-            PlayId(PhoneAudioChannel.Notification, PhoneTones.ResolveApp(appId), 990, 0.16f, 1.6f);
+            PlayId(PhoneAudioChannel.Notification, PhoneTones.ResolveApp(appId), 990, 0.16f);
         }
 
         public static void PlayId(PhoneAudioChannel channel, string id, int fallbackHz, float fallbackSec)
         {
-            PlayId(channel, id, fallbackHz, fallbackSec, 1.6f, false);
+            PlayId(channel, id, fallbackHz, fallbackSec, false);
         }
 
-        public static void PlayId(PhoneAudioChannel channel, string id, int fallbackHz, float fallbackSec, float duckSec)
+        public static void PlayId(PhoneAudioChannel channel, string id, int fallbackHz, float fallbackSec, bool loop)
         {
-            PlayId(channel, id, fallbackHz, fallbackSec, duckSec, false);
-        }
-
-        public static void PlayId(PhoneAudioChannel channel, string id, int fallbackHz, float fallbackSec, float duckSec, bool loop)
-        {
-            MusicPlayer.DuckFor(duckSec);
             object builtIn = PhoneSfx.GetClip(id);
             if (builtIn != null)
             {

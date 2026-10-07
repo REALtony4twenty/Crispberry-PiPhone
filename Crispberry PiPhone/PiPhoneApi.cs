@@ -176,10 +176,14 @@ namespace Crispberry_PiPhone
     ///
     /// Media audio: <see cref="PlayMedia"/> plays a WAV file or raw 16-bit PCM through
     /// the phone, and <see cref="PlayMediaClip"/> plays an AudioClip you already hold.
-    /// Both use the phone's media volume and lower the Music app like any other phone
-    /// sound. <see cref="PlayMediaStream"/> is for live audio your mod makes as it
-    /// goes: the phone calls you to fill its output buffer, with no clip in between.
-    /// <see cref="StopMedia"/> stops all three. Mods can only play as media, never as a
+    /// Both use the phone's media volume. <see cref="PlayMediaStream"/> is for live
+    /// audio your mod makes as it goes: the phone calls you to fill its output buffer,
+    /// with no clip in between. <see cref="StopMedia"/> stops all three. Media sounds
+    /// play over one another at full level. A ringtone, an alert or a vibrate buzz
+    /// lowers everything on Media while it sounds, your sound included, unless the
+    /// player has switched "Fade music on alerts" off. With
+    /// <see cref="PrioritizeCallAudio"/> on, Media is also lowered while a call rings
+    /// in and silent, but still running, while a call is connected. Mods can only play as media, never as a
     /// ringtone or alert. <see cref="GetChannelVolume"/> / <see cref="SetChannelVolume"/>
     /// read and write the saved volume of each <see cref="PiPhoneAudioChannel"/>.
     ///
@@ -987,7 +991,7 @@ namespace Crispberry_PiPhone
         }
 
         /// <summary>
-        /// The phone volume, 0 to 1: the Volume slider and the side keys. It scales every
+        /// The phone volume, 0 to 1: the Master slider and the side keys. It scales every
         /// channel, so sound played through the phone already uses it. <see cref="GetChannelVolume"/>
         /// does not include it; a mod that keeps its own AudioSource multiplies the two to
         /// follow the phone. Setting it saves it and applies to sound already playing.
@@ -996,6 +1000,21 @@ namespace Crispberry_PiPhone
         {
             get { return PhoneTheme.MasterVolume; }
             set { PhoneTheme.SetMasterVolume(value); }
+        }
+
+        /// <summary>
+        /// The player's "Prioritize call audio" setting, on by default. While it is on,
+        /// everything on <see cref="PiPhoneAudioChannel.Media"/> is lowered for as long as
+        /// a call is ringing in, and silent for as long as a call is connected. Your sound
+        /// is not stopped while silent: a clip keeps elapsing and a
+        /// <see cref="PlayMediaStream"/> reader keeps being called, and both are heard
+        /// again at hang-up. The Music app is paused for the call and resumes after it.
+        /// Setting it saves it and takes effect at once, mid-call included.
+        /// </summary>
+        public static bool PrioritizeCallAudio
+        {
+            get { return PhoneTheme.PrioritizeCallAudio; }
+            set { PhoneTheme.SetPrioritizeCallAudio(value); }
         }
 
         /// <summary>Trim for interface sounds that do not have their own slider yet. The phone volume still scales the result. 0 is silent, 1 is full.</summary>
@@ -1040,7 +1059,7 @@ namespace Crispberry_PiPhone
                 PhoneSfx.PlayUi(cue);
         }
 
-        /// <summary>Play your own short WAV or MP3 on the Media channel, so it follows the Music slider and the phone volume.</summary>
+        /// <summary>Play your own short WAV or MP3 on the Media channel, so it follows the Media slider and the phone volume.</summary>
         public static bool PlayClip(byte[] wavOrMp3)
         {
             return PlayClip(wavOrMp3, 1f);
@@ -1246,8 +1265,9 @@ namespace Crispberry_PiPhone
         /// for a WAV, which carries its own). Replaces whatever a mod was already
         /// playing as media. Plays on this player's phone only. Uses the media volume,
         /// and still plays when the ringer is Silent, because it is media and not an
-        /// alert. Lowers the Music app for the length of the clip, unless
-        /// <paramref name="loop"/> is true. Stops when the phone closes.
+        /// alert. Plays over the Music app without lowering it. A ringtone, an alert
+        /// or a vibrate buzz lowers it while that sounds, along with everything else
+        /// on Media, unless the player has switched that off. Stops when the phone closes.
         /// Returns false if the bytes could not be read.
         /// </summary>
         public static bool PlayMedia(byte[] wavOrPcm16, int rate, int channels, bool loop)
@@ -1277,8 +1297,9 @@ namespace Crispberry_PiPhone
         /// The phone owns the source: it applies the media volume after your samples, so
         /// write them at full level, and it stops the stream when the phone closes. Call
         /// this again to start it back up. A new stream replaces the last one; sound from
-        /// <see cref="PlayMedia"/> plays alongside it. Does not lower the Music app, since
-        /// a stream has no end. If <paramref name="reader"/> throws, the stream is stopped
+        /// <see cref="PlayMedia"/> plays alongside it. Does not lower the Music app. A
+        /// ringtone, an alert or a vibrate buzz lowers the stream while that sounds,
+        /// unless the player has switched that off. If <paramref name="reader"/> throws, the stream is stopped
         /// and the error is logged. Returns false if the stream could not start.
         /// </summary>
         public static bool PlayMediaStream(Action<float[], int> reader)
@@ -1320,8 +1341,9 @@ namespace Crispberry_PiPhone
         /// <summary>
         /// Set and save the volume of a channel, clamped to 0 to 1. Applies to sound
         /// already playing. Every channel can be set, including the ones a mod cannot
-        /// play into. <see cref="PiPhoneAudioChannel.Media"/> is the level the Music
-        /// slider shows. The Volume slider is <see cref="MasterVolume"/>, not a channel.
+        /// play into. <see cref="PiPhoneAudioChannel.Media"/> is the Media channel's
+        /// level; the slider inside the Music app is a further trim on music alone. The
+        /// Master slider is <see cref="MasterVolume"/>, not a channel.
         /// </summary>
         public static void SetChannelVolume(PiPhoneAudioChannel channel, float value)
         {
@@ -1646,7 +1668,9 @@ namespace Crispberry_PiPhone
     /// <see cref="PiPhoneApi.GetChannelVolume"/> / <see cref="PiPhoneApi.SetChannelVolume"/>,
     /// and plays at that volume times <see cref="PiPhoneApi.MasterVolume"/>.
     /// Media = <see cref="PiPhoneApi.PlayMedia"/>, <see cref="PiPhoneApi.PlayMediaStream"/>,
-    /// <see cref="PiPhoneApi.PlayClip(byte[])"/>, the Music app and the built-in games' effects.
+    /// <see cref="PiPhoneApi.PlayClip(byte[])"/>, the Music app and the built-in games' effects;
+    /// lowered while an alert sounds or a call rings in, and silent during a call, see
+    /// <see cref="PiPhoneApi.PrioritizeCallAudio"/>.
     /// Call = other scouts' voices while on a call with them.
     /// Ringtone = incoming calls. Notification = text and app alerts.
     /// System = interface cues, button presses and icon hovers.

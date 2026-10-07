@@ -22,8 +22,9 @@ namespace Crispberry_PiPhone
         private static readonly Component[] ShotSources = new Component[ChannelCount];
         private static MethodInfo _oneShot;
         private static Component _vibrateSource;
-        private static readonly float[] Volumes = new float[ChannelCount] { 0.7f, 1f, 1f, 1f, 1f };
+        private static readonly float[] Volumes = new float[ChannelCount] { 1f, 1f, 1f, 1f, 1f };
         private static float _master = 0.7f;
+        private static float _music = 0.7f;
 
         private const int StreamCarrierRate = 44100;
         private static Component _streamSource;
@@ -33,19 +34,169 @@ namespace Crispberry_PiPhone
         private static volatile float _streamGain;
         private static float _streamGainNow;
 
+        private static Component _musicSource;
+        private static float _musicVol = -1f;
+        private static float _gain = 1f;
+        private static float _gainTarget = 1f;
+        private static float _alertUntil;
+        private static bool _callMuted;
+        private static PropertyInfo _isPlaying;
+        private static Pump _pump;
+
         public static void Ensure()
         {
             VoiceIo.Ensure();
+            if (_pump != null)
+                return;
+            GameObject host = VoiceIo.Host;
+            if (host != null)
+                _pump = host.AddComponent<Pump>();
+        }
+
+        private sealed class Pump : MonoBehaviour
+        {
+            private void Update()
+            {
+                Tick();
+            }
+        }
+
+        private static void Tick()
+        {
+            if (AlertSounding())
+                _alertUntil = Time.unscaledTime + 0.4f;
+            CallService.Phase phase = PhoneTheme.PrioritizeCallAudio ? CallService.State : CallService.Phase.Idle;
+            bool muted = phase == CallService.Phase.Active;
+            if (muted != _callMuted)
+            {
+                _callMuted = muted;
+                if (muted)
+                    MusicPlayer.PauseForCall();
+                else
+                    MusicPlayer.ResumeAfterCall();
+            }
+            bool dimmed = phase == CallService.Phase.Incoming || (PhoneTones.DuckMusic && Time.unscaledTime < _alertUntil);
+            _gainTarget = muted ? 0f : (dimmed ? 0.08f : 1f);
+            float gain = Mathf.MoveTowards(_gain, _gainTarget, Time.unscaledDeltaTime / 0.28f);
+            if (gain != _gain)
+            {
+                _gain = gain;
+                WriteMediaVolume();
+            }
+            WriteMusicVolume();
+        }
+
+        private static bool AlertSounding()
+        {
+            return SourcePlaying(Sources[(int)PhoneAudioChannel.Ringtone])
+                || SourcePlaying(ShotSources[(int)PhoneAudioChannel.Ringtone])
+                || SourcePlaying(Sources[(int)PhoneAudioChannel.Notification])
+                || SourcePlaying(ShotSources[(int)PhoneAudioChannel.Notification])
+                || SourcePlaying(_vibrateSource);
+        }
+
+        private static float LevelOf(PhoneAudioChannel channel)
+        {
+            float level = EffectiveVolume(channel);
+            return channel == PhoneAudioChannel.Media ? level * _gain : level;
+        }
+
+        private static void WriteMediaVolume()
+        {
+            float level = LevelOf(PhoneAudioChannel.Media);
+            Component source = Sources[(int)PhoneAudioChannel.Media];
+            if (source != null)
+                VoiceIo.TrySet(source, "volume", level);
+            Component shots = ShotSources[(int)PhoneAudioChannel.Media];
+            if (shots != null)
+                VoiceIo.TrySet(shots, "volume", level);
+            _streamGain = level;
+        }
+
+        public static bool MusicReady
+        {
+            get { return _musicSource != null; }
+        }
+
+        public static bool MusicSounding
+        {
+            get { return SourcePlaying(_musicSource); }
+        }
+
+        public static bool MusicHeld
+        {
+            get { return _gainTarget <= 0.9f; }
+        }
+
+        public static bool PlayMusic(object clip)
+        {
+            if (clip == null)
+                return false;
+            if (_musicSource == null)
+            {
+                _musicSource = NewSource(0f);
+                _musicVol = -1f;
+            }
+            Component source = _musicSource;
+            if (source == null)
+                return false;
+            Type type = VoiceIo.AudioSourceType;
+            try
+            {
+                type.GetMethod("Stop", Type.EmptyTypes).Invoke(source, null);
+                type.GetProperty("clip").SetValue(source, clip, null);
+                type.GetProperty("time").SetValue(source, 0f, null);
+                WriteMusicVolume();
+                type.GetMethod("Play", Type.EmptyTypes).Invoke(source, null);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogError("Music play failed: " + ex.Message);
+                return false;
+            }
+            return true;
+        }
+
+        public static void PauseMusic()
+        {
+            if (_musicSource == null)
+                return;
+            try
+            {
+                VoiceIo.AudioSourceType.GetMethod("Pause", Type.EmptyTypes).Invoke(_musicSource, null);
+            }
+            catch
+            {
+            }
+        }
+
+        public static void ResumeMusic()
+        {
+            if (_musicSource == null)
+                return;
+            try
+            {
+                VoiceIo.AudioSourceType.GetMethod("UnPause", Type.EmptyTypes).Invoke(_musicSource, null);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void WriteMusicVolume()
+        {
+            if (_musicSource == null)
+                return;
+            float v = _music * EffectiveVolume(PhoneAudioChannel.Media) * _gain;
+            if (Mathf.Abs(v - _musicVol) < 0.002f)
+                return;
+            _musicVol = v;
+            VoiceIo.TrySet(_musicSource, "volume", v);
         }
 
         public static void Play(PhoneAudioChannel channel, object clip, bool loop)
         {
-            Play(channel, clip, loop, 0f);
-        }
-
-        public static void Play(PhoneAudioChannel channel, object clip, bool loop, float duckSeconds)
-        {
-            Start(channel, clip, loop, duckSeconds, true);
+            Start(channel, clip, loop, true);
         }
 
         public static void PlayOneShot(PhoneAudioChannel channel, object clip, float scale)
@@ -126,8 +277,7 @@ namespace Crispberry_PiPhone
             UnityEngine.Object live = clip as UnityEngine.Object;
             if (live == null || ClipType == null || !ClipType.IsInstanceOfType(clip))
                 return false;
-            float duck = loop ? 0f : VoiceIo.ClipSeconds(clip) + 0.45f;
-            return Start(PhoneAudioChannel.Media, clip, loop, duck, fade);
+            return Start(PhoneAudioChannel.Media, clip, loop, fade);
         }
 
         public static bool PlayMediaStream(Action<float[], int> reader)
@@ -140,7 +290,7 @@ namespace Crispberry_PiPhone
             _streamLive = false;
             _streamReader = reader;
             _streamError = null;
-            _streamGain = EffectiveVolume(PhoneAudioChannel.Media);
+            _streamGain = LevelOf(PhoneAudioChannel.Media);
             _streamGainNow = _streamGain;
             VoiceIo.TrySet(source, "mute", false);
             VoiceIo.TrySet(source, "volume", 1f);
@@ -257,7 +407,7 @@ namespace Crispberry_PiPhone
             }
         }
 
-        private static bool Start(PhoneAudioChannel channel, object clip, bool loop, float duckSeconds, bool fade)
+        private static bool Start(PhoneAudioChannel channel, object clip, bool loop, bool fade)
         {
             if (channel == PhoneAudioChannel.Call)
                 return false;
@@ -272,15 +422,13 @@ namespace Crispberry_PiPhone
                 Plugin.LogError("Voice play skipped: no source.");
                 return false;
             }
-            if (duckSeconds > 0f)
-                MusicPlayer.DuckFor(duckSeconds);
             Type type = VoiceIo.AudioSourceType;
             VoiceIo.TrySet(source, "ignoreListenerPause", true);
             VoiceIo.TrySet(source, "ignoreListenerVolume", true);
             VoiceIo.TrySet(source, "bypassEffects", true);
             VoiceIo.TrySet(source, "bypassListenerEffects", true);
             VoiceIo.TrySet(source, "mute", false);
-            VoiceIo.TrySet(source, "volume", EffectiveVolume(channel));
+            VoiceIo.TrySet(source, "volume", LevelOf(channel));
             VoiceIo.TrySet(source, "pitch", 1f);
             VoiceIo.TrySet(source, "spatialBlend", 0f);
             VoiceIo.TrySet(source, "outputAudioMixerGroup", null);
@@ -363,6 +511,12 @@ namespace Crispberry_PiPhone
             set { _master = Mathf.Clamp01(value); }
         }
 
+        public static float MusicVolume
+        {
+            get { return _music; }
+            set { _music = Mathf.Clamp01(value); }
+        }
+
         public static float EffectiveVolume(PhoneAudioChannel channel)
         {
             return VolumeOf(channel) * _master;
@@ -374,13 +528,13 @@ namespace Crispberry_PiPhone
             {
                 Component source = Sources[i];
                 if (source != null)
-                    VoiceIo.TrySet(source, "volume", EffectiveVolume((PhoneAudioChannel)i));
+                    VoiceIo.TrySet(source, "volume", LevelOf((PhoneAudioChannel)i));
                 Component shots = ShotSources[i];
                 if (shots != null)
-                    VoiceIo.TrySet(shots, "volume", EffectiveVolume((PhoneAudioChannel)i));
+                    VoiceIo.TrySet(shots, "volume", LevelOf((PhoneAudioChannel)i));
             }
-            _streamGain = EffectiveVolume(PhoneAudioChannel.Media);
-            MusicPlayer.ApplyVolume();
+            _streamGain = LevelOf(PhoneAudioChannel.Media);
+            WriteMusicVolume();
         }
 
         private static bool SourcePlaying(Component source)
@@ -389,10 +543,11 @@ namespace Crispberry_PiPhone
                 return false;
             try
             {
-                PropertyInfo prop = VoiceIo.AudioSourceType.GetProperty("isPlaying");
-                if (prop == null)
+                if (_isPlaying == null)
+                    _isPlaying = VoiceIo.AudioSourceType.GetProperty("isPlaying");
+                if (_isPlaying == null)
                     return false;
-                return (bool)prop.GetValue(source, null);
+                return (bool)_isPlaying.GetValue(source, null);
             }
             catch
             {
@@ -404,7 +559,7 @@ namespace Crispberry_PiPhone
         {
             int index = (int)channel;
             if (Sources[index] == null)
-                Sources[index] = NewSource(EffectiveVolume(channel));
+                Sources[index] = NewSource(LevelOf(channel));
             return Sources[index];
         }
 
@@ -412,7 +567,7 @@ namespace Crispberry_PiPhone
         {
             int index = (int)channel;
             if (ShotSources[index] == null)
-                ShotSources[index] = NewSource(EffectiveVolume(channel));
+                ShotSources[index] = NewSource(LevelOf(channel));
             return ShotSources[index];
         }
 

@@ -18,20 +18,15 @@ namespace Crispberry_PiPhone
 
         public static void Play(string name)
         {
-            Play(name, true, false);
-        }
-
-        public static void Play(string name, bool duck)
-        {
-            Play(name, duck, false);
+            Play(name, false);
         }
 
         public static void PlayUi(string name)
         {
-            Play(name, false, true);
+            Play(name, true);
         }
 
-        private static void Play(string name, bool duck, bool ui)
+        private static void Play(string name, bool ui)
         {
             if (ui && (name == "vibrate" || !PhoneTheme.UiCueOn(name)))
                 return;
@@ -41,11 +36,6 @@ namespace Crispberry_PiPhone
             float vol = ui ? PhoneTheme.UiCueVolume(name) : PhoneTheme.GameCueVolume(OpenId(), name);
             if (vol <= 0.001f)
                 return;
-            if (duck && PhoneTones.DuckMusic)
-            {
-                float sec = VoiceIo.ClipSeconds(clip);
-                MusicPlayer.DuckFor(Mathf.Clamp(sec, 0.05f, 0.4f));
-            }
             PhoneAudio.PlayOneShot(ui ? PhoneAudioChannel.System : PhoneAudioChannel.Media, clip, vol);
         }
 
