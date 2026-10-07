@@ -12,8 +12,18 @@ namespace Crispberry_PiPhone
         public const float MinBrightness = 0.10f;
 
         public static float Brightness = 1f;
-        public static float RingVolume = 0.7f;
-        public static float MusicVolume = 0.7f;
+        public static float RingVolume
+        {
+            get { return PhoneAudio.VolumeOf(PhoneAudioChannel.Ringtone); }
+            set { PhoneAudio.SetVolume(PhoneAudioChannel.Ringtone, value); }
+        }
+        public static float MusicVolume
+        {
+            get { return PhoneAudio.VolumeOf(PhoneAudioChannel.Media); }
+            set { PhoneAudio.SetVolume(PhoneAudioChannel.Media, value); }
+        }
+        private static readonly bool[] VolumeClaimed = new bool[PhoneAudio.ChannelCount];
+        private static readonly bool[] VolumeLoaded = new bool[PhoneAudio.ChannelCount];
         public static float UiSfxVolume = 0.7f;
         public static string UiSndCsv = string.Empty;
         public static string GameSfxCsv = string.Empty;
@@ -118,6 +128,8 @@ namespace Crispberry_PiPhone
             }
             bool sawBattery = false;
             bool sawSignal = false;
+            Array.Clear(VolumeClaimed, 0, VolumeClaimed.Length);
+            Array.Clear(VolumeLoaded, 0, VolumeLoaded.Length);
             try
             {
                 string[] lines = File.ReadAllLines(path);
@@ -135,10 +147,15 @@ namespace Crispberry_PiPhone
                     float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out f);
                     if (key == "brightness") Brightness = ClampBright(f);
                     else if (key == "bright" && val.IndexOf('.') >= 0) Brightness = Mathf.Clamp01(f);
-                    else if (key == "ringf") RingVolume = Mathf.Clamp01(f);
-                    else if (key == "ring" && val.IndexOf('.') >= 0) RingVolume = Mathf.Clamp01(f);
-                    else if (key == "ring") RingVolume = Mathf.Clamp01(n / 10f);
-                    else if (key == "musicvol") MusicVolume = Mathf.Clamp01(f);
+                    else if (key == "vol_media") LoadVolume(PhoneAudioChannel.Media, f, true);
+                    else if (key == "vol_call") LoadVolume(PhoneAudioChannel.Call, f, true);
+                    else if (key == "vol_ringtone") LoadVolume(PhoneAudioChannel.Ringtone, f, true);
+                    else if (key == "vol_notification") LoadVolume(PhoneAudioChannel.Notification, f, true);
+                    else if (key == "vol_system") LoadVolume(PhoneAudioChannel.System, f, true);
+                    else if (key == "ringf") LoadVolume(PhoneAudioChannel.Ringtone, f, false);
+                    else if (key == "ring" && val.IndexOf('.') >= 0) LoadVolume(PhoneAudioChannel.Ringtone, f, false);
+                    else if (key == "ring") LoadVolume(PhoneAudioChannel.Ringtone, n / 10f, false);
+                    else if (key == "musicvol") LoadVolume(PhoneAudioChannel.Media, f, false);
                     else if (key == "uisfx") UiSfxVolume = Mathf.Clamp01(f);
                     else if (key == "uisnd") UiSndCsv = val ?? string.Empty;
                     else if (key == "gsfx") GameSfxCsv = val ?? string.Empty;
@@ -219,7 +236,23 @@ namespace Crispberry_PiPhone
                 BatteryColor = ClockColor;
             if (!sawSignal)
                 SignalColor = ClockColor;
+            for (int i = 0; i < VolumeLoaded.Length; i++)
+            {
+                if (!VolumeLoaded[i])
+                    PhoneAudio.SetVolume((PhoneAudioChannel)i, RingVolume);
+            }
             Apply();
+        }
+
+        private static void LoadVolume(PhoneAudioChannel channel, float value, bool modern)
+        {
+            int index = (int)channel;
+            if (!modern && VolumeClaimed[index])
+                return;
+            if (modern)
+                VolumeClaimed[index] = true;
+            VolumeLoaded[index] = true;
+            PhoneAudio.SetVolume(channel, value);
         }
 
         private static bool _saveDirty;
@@ -254,8 +287,11 @@ namespace Crispberry_PiPhone
                 PhoneStore.EnsureDir();
                 File.WriteAllText(Path.Combine(PhoneStore.RootDir, "theme.txt"),
                     "brightness=" + Brightness.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
-                    + "ringf=" + RingVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
-                    + "musicvol=" + MusicVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_media=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Media).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_call=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Call).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_ringtone=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Ringtone).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_notification=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Notification).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_system=" + PhoneAudio.VolumeOf(PhoneAudioChannel.System).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "uisfx=" + UiSfxVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "uisnd=" + (UiSndCsv ?? string.Empty) + "\n"
                     + "gsfx=" + (GameSfxCsv ?? string.Empty) + "\n"
@@ -478,7 +514,14 @@ namespace Crispberry_PiPhone
         public static void SetMusicVolume(float value)
         {
             MusicVolume = Mathf.Clamp01(value);
-            MusicPlayer.ApplyVolume();
+            PhoneAudio.ApplyVolume();
+            Save();
+        }
+
+        public static void SetChannelVolume(PhoneAudioChannel channel, float value)
+        {
+            PhoneAudio.SetVolume(channel, Mathf.Clamp01(value));
+            PhoneAudio.ApplyVolume();
             Save();
         }
 
