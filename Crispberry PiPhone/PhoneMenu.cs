@@ -662,7 +662,7 @@ namespace Crispberry_PiPhone
                     StopCoroutine(_fgRoutines[i]);
             }
             _fgRoutines.Clear();
-            VoiceIo.StopOneShots();
+            PhoneAudio.StopOneShots();
             if (!CallService.IsBusy)
                 PhoneAudio.StopAll();
         }
@@ -3723,9 +3723,9 @@ namespace Crispberry_PiPhone
 
         private static void NudgeVolume(float delta)
         {
-            PhoneTheme.SetRingVolume(PhoneTheme.RingVolume + delta);
+            PhoneTheme.SetMasterVolume(PhoneTheme.MasterVolume + delta);
             PhoneSfx.PlayMaster(delta >= 0f ? "vol-up" : "vol-down");
-            PhoneNotify.Quiet("Volume", Mathf.RoundToInt(PhoneTheme.RingVolume * 100f) + "%");
+            PhoneNotify.Quiet("Volume", Mathf.RoundToInt(PhoneTheme.MasterVolume * 100f) + "%");
         }
 
         private void BuildShade(RectTransform screen)
@@ -3766,7 +3766,7 @@ namespace Crispberry_PiPhone
                     PhoneUi.CreateSliderRow(_shadeRoot.transform, "Size", 0.55f, 1.35f, PhoneTheme.PhoneScale, v => PhoneTheme.SetPhoneScale(v), null, "aspect_ratio");
             }
             PhoneUi.CreateSliderRow(_shadeRoot.transform, "Brightness", PhoneTheme.MinBrightness, 1f, PhoneTheme.Brightness, v => PhoneTheme.SetBrightness(v), null, "brightness_6");
-            PhoneUi.CreateSliderRow(_shadeRoot.transform, "Volume", 0f, 1f, PhoneTheme.RingVolume, v => PhoneTheme.SetRingVolume(v), null, "ring_volume");
+            PhoneUi.CreateSliderRow(_shadeRoot.transform, "Volume", 0f, 1f, PhoneTheme.MasterVolume, v => PhoneTheme.SetMasterVolume(v), null, "ring_volume");
             if (PhoneStore.IsInstalled(BuiltinApps.SoundsId))
             {
                 PhoneUi.CreateSliderRow(_shadeRoot.transform, "Music", 0f, 1f, PhoneTheme.MusicVolume, v => PhoneTheme.SetMusicVolume(v), null, "music_cast");

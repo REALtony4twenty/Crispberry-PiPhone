@@ -33,13 +33,12 @@ namespace Crispberry_PiPhone
 
         private static void Play(string name, bool duck, bool ui)
         {
-            if (ui && !PhoneTheme.UiCueOn(name))
+            if (ui && (name == "vibrate" || !PhoneTheme.UiCueOn(name)))
                 return;
-            string file = ui ? PhoneTheme.UiCueFile(name) : null;
-            object clip = ui && !string.IsNullOrEmpty(file) ? Resolve(file) : Clip(name);
+            object clip = ui ? UiClip(name) : Clip(name);
             if (clip == null)
                 return;
-            float vol = (ui ? PhoneTheme.UiCueVolume(name) : PhoneTheme.GameCueVolume(OpenId(), name)) * PhoneTheme.RingVolume;
+            float vol = ui ? PhoneTheme.UiCueVolume(name) : PhoneTheme.GameCueVolume(OpenId(), name);
             if (vol <= 0.001f)
                 return;
             if (duck && PhoneTones.DuckMusic)
@@ -47,7 +46,37 @@ namespace Crispberry_PiPhone
                 float sec = VoiceIo.ClipSeconds(clip);
                 MusicPlayer.DuckFor(Mathf.Clamp(sec, 0.05f, 0.4f));
             }
-            VoiceIo.PlayOneShot(clip, vol);
+            PhoneAudio.PlayOneShot(ui ? PhoneAudioChannel.System : PhoneAudioChannel.Media, clip, vol);
+        }
+
+        /// <summary>The clip a Sounds-page row plays: its replacement file when one is set, else the built-in.</summary>
+        public static object UiClip(string slot)
+        {
+            string file = PhoneTheme.UiCueFile(slot);
+            return string.IsNullOrEmpty(file) ? Clip(slot) : Resolve(file);
+        }
+
+        /// <summary>Cues another mod may name. The Sounds-page rows, without vibrate.</summary>
+        public static bool IsInterfaceCue(string name)
+        {
+            switch (name)
+            {
+                case "click":
+                case "toggle-off":
+                case "toggle-on":
+                case "back-btn":
+                case "hover":
+                case "shutter":
+                case "rec-start":
+                case "rec-stop":
+                case "tick":
+                case "trash":
+                case "type":
+                case "back":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private static string OpenId()
@@ -89,11 +118,7 @@ namespace Crispberry_PiPhone
         /// <summary>Side-key ticks. Always the built-in clip at the phone volume, with no Sounds-page slot.</summary>
         public static void PlayMaster(string name)
         {
-            object clip = Clip(name);
-            float vol = PhoneTheme.RingVolume;
-            if (clip == null || vol <= 0.001f)
-                return;
-            VoiceIo.PlayOneShot(clip, vol);
+            PhoneAudio.PlayOneShot(PhoneAudioChannel.System, Clip(name), 1f);
         }
 
         public static void PlayTick()
@@ -117,17 +142,15 @@ namespace Crispberry_PiPhone
             object custom;
             if (!string.IsNullOrEmpty(appId) && HoverClips.TryGetValue(appId, out custom) && custom != null)
             {
-                if (!PhoneTheme.UiCueOn("hover"))
-                    return;
-                float vol = PhoneTheme.UiCueVolume("hover") * PhoneTheme.RingVolume;
-                if (vol > 0.001f)
-                    VoiceIo.PlayOneShot(custom, vol);
+                if (PhoneTheme.UiCueOn("hover"))
+                    PhoneAudio.PlayOneShot(PhoneAudioChannel.System, custom, PhoneTheme.UiCueVolume("hover"));
                 return;
             }
             PiPhoneApp app;
-            if (!string.IsNullOrEmpty(appId) && PiPhoneApi.TryGetApp(appId, out app) && app != null && !string.IsNullOrEmpty(app.HoverSound))
+            if (!string.IsNullOrEmpty(appId) && PiPhoneApi.TryGetApp(appId, out app) && app != null && app.HoverSound != "hover" && IsInterfaceCue(app.HoverSound))
             {
-                PlayUi(app.HoverSound);
+                if (PhoneTheme.UiCueOn("hover"))
+                    PhoneAudio.PlayOneShot(PhoneAudioChannel.System, Clip(app.HoverSound), PhoneTheme.UiCueVolume("hover"));
                 return;
             }
             PlayUi("hover");
@@ -220,28 +243,33 @@ namespace Crispberry_PiPhone
                 }
                 if (!PhoneTheme.UiCueOn("click"))
                     return;
-                float vol = PhoneTheme.UiCueVolume("click") * PhoneTheme.RingVolume;
-                if (vol > 0.001f)
-                    VoiceIo.PlayOneShot(clip, vol);
+                PhoneAudio.PlayOneShot(PhoneAudioChannel.System, clip, PhoneTheme.UiCueVolume("click"));
             });
         }
 
-        public static void PlayRaw(string name, float volume)
+        public static void PlayRaw(PhoneAudioChannel channel, string name, float scale)
         {
-            object clip = Clip(name);
-            if (clip == null || volume <= 0.001f)
-                return;
-            VoiceIo.PlayOneShot(clip, volume);
+            PhoneAudio.PlayOneShot(channel, Clip(name), scale);
         }
 
         public static void PreviewUi(string slot)
         {
-            string file = PhoneTheme.UiCueFile(slot);
-            object clip = string.IsNullOrEmpty(file) ? Clip(slot) : Resolve(file);
-            float vol = PhoneTheme.UiCueVolume(slot) * PhoneTheme.RingVolume;
-            if (clip == null || vol <= 0.001f)
-                return;
-            VoiceIo.PlayOneShot(clip, vol);
+            Preview(slot, UiClip(slot));
+        }
+
+        /// <summary>Preview a candidate sound for a Sounds-page row, at that row's volume.</summary>
+        public static void PreviewFile(string slot, string id)
+        {
+            Preview(slot, Resolve(id));
+        }
+
+        private static void Preview(string slot, object clip)
+        {
+            float vol = PhoneTheme.UiCueVolume(slot);
+            if (slot == "vibrate")
+                PhoneAudio.PlayVibrate(clip, vol);
+            else
+                PhoneAudio.PlayOneShot(PhoneAudioChannel.System, clip, vol);
         }
 
         public static void BindKeys(TMP_InputField field)

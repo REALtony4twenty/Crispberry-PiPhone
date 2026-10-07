@@ -17,6 +17,7 @@ namespace Crispberry_PiPhone
         private static Type _audioTypeEnum;
         private static bool _audioTypesTried;
         private static string _previewPath;
+        private static PhoneAudioChannel _previewChannel = PhoneAudioChannel.System;
 
         public static void PlayTone(int hz, float seconds)
         {
@@ -26,12 +27,12 @@ namespace Crispberry_PiPhone
         public static void PlayTone(int hz, float seconds, string cue)
         {
             PiPhoneApp app = PhoneMenu.OpenApp();
-            float vol = PhoneTheme.GameCueVolume(app != null ? app.Id : null, cue) * PhoneTheme.RingVolume;
+            float vol = PhoneTheme.GameCueVolume(app != null ? app.Id : null, cue);
             if (vol <= 0.001f)
                 return;
             if (PhoneTones.DuckMusic)
                 MusicPlayer.DuckFor(Mathf.Clamp(seconds + 0.04f, 0.06f, 0.35f));
-            VoiceIo.PlayOneShot(MakeBeep(hz, seconds), vol);
+            PhoneAudio.PlayOneShot(PhoneAudioChannel.Media, MakeBeep(hz, seconds), vol);
         }
 
         public static void PlayPower(bool on)
@@ -62,6 +63,11 @@ namespace Crispberry_PiPhone
 
         public static void TogglePreview(string path)
         {
+            TogglePreview(path, PhoneAudioChannel.System);
+        }
+
+        public static void TogglePreview(string path, PhoneAudioChannel channel)
+        {
             if (IsPreviewing(path))
             {
                 StopPreview();
@@ -71,16 +77,19 @@ namespace Crispberry_PiPhone
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 return;
             _previewPath = path;
+            _previewChannel = channel;
             if (PhoneMenu.InstanceHost != null)
-                VoiceIo.Run(LoadAndPlay(PhoneAudioChannel.System, path, false));
+                VoiceIo.Run(LoadAndPlay(channel, path, false));
             else
-                PlayFileImmediate(PhoneAudioChannel.System, path, false);
+                PlayFileImmediate(channel, path, false);
         }
 
         public static void StopPreview()
         {
+            if (_previewPath == null)
+                return;
             _previewPath = null;
-            PhoneAudio.Stop(PhoneAudioChannel.System);
+            PhoneAudio.Stop(_previewChannel);
         }
 
         public static void PlayText()
@@ -95,17 +104,13 @@ namespace Crispberry_PiPhone
 
         public static void PlayVibrate(bool call)
         {
-            if (PhoneSfx.GetClip("vibrate") != null)
-            {
-                MusicPlayer.DuckFor(call ? 2.2f : 0.55f);
-                PhoneSfx.PlayUi("vibrate");
+            if (!PhoneTheme.UiCueOn("vibrate"))
                 return;
-            }
-            PhoneAudio.Play(
-                call ? PhoneAudioChannel.Ringtone : PhoneAudioChannel.Notification,
-                MakeBuzz(call ? 0.7f : 0.32f),
-                false,
-                call ? 2.2f : 0.55f);
+            object clip = PhoneSfx.UiClip("vibrate");
+            if (clip == null)
+                clip = MakeBuzz(call ? 0.7f : 0.32f);
+            MusicPlayer.DuckFor(call ? 2.2f : 0.55f);
+            PhoneAudio.PlayVibrate(clip, PhoneTheme.UiCueVolume("vibrate"));
         }
 
         public static void PlayNotify()

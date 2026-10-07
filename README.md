@@ -70,12 +70,12 @@ Landscape boards sit lower on the phone, closer to the navigation, and they are 
 
 ## For other mods
 
-Phone volume scales every sound below. A Sounds-page row, when that cue has one, is a trim under that volume.
+Phone volume scales every sound below, and `PiPhoneApi.MasterVolume` reads and sets it. Each sound plays on a channel with its own volume under that master. A Sounds-page row, when that cue has one, is a trim under both.
 
-- `PiPhoneApi.PlayInterfaceSound(cue)` plays a built-in clip. Cues include `click`, `toggle-on`, `toggle-off`, `back-btn`, `hover`, `tick`, `trash`, `shutter`, `rec-start`, `rec-stop`, `vibrate`, `type`, and `back`, plus the game cues.
-- `PiPhoneApi.PlayClip(bytes)` plays your own short WAV or MP3 at the phone volume. The second argument is a 0–1 trim.
-- `PiPhoneApi.BindButton(button, action)` plays the phone click, then runs the action. Pass a cue name, or use `BindButtonClip`, to play something else.
-- `PiPhoneApp.HoverSound` is a built-in cue for that app's icon. `SetAppHoverClip` uses your own recording instead. `SetAppHoverSound` changes the cue later.
+- `PiPhoneApi.PlayInterfaceSound(cue)` plays an interface cue on the System channel. The cues are `click`, `toggle-on`, `toggle-off`, `back-btn`, `hover`, `tick`, `trash`, `shutter`, `rec-start`, `rec-stop`, `type`, and `back`. Any other name plays nothing: alert tones, `vibrate`, and the game cues cannot be played by name.
+- `PiPhoneApi.PlayClip(bytes)` plays your own short WAV or MP3 on the Media channel, so it follows the Music slider and the phone volume. The second argument is a 0–1 trim.
+- `PiPhoneApi.BindButton(button, action)` plays the phone click, then runs the action. Pass an interface cue, or use `BindButtonClip`, to play something else. A name that is not an interface cue runs the action with no sound. Presses play on the System channel and keep the player's Button row.
+- `PiPhoneApp.HoverSound` is an interface cue for that app's icon. `SetAppHoverClip` uses your own recording instead. `SetAppHoverSound` changes the cue later. Either way the hover plays on the System channel, and the player's App hover switch and volume still apply.
 - `GetAppSfxVolume` / `SetAppSfxVolume` and `GetAppCueVolume` / `SetAppCueVolume` are the per-app and per-effect trims. `UiSfxVolume` is the fallback for an interface sound that has no row yet.
 - `PiPhoneApp.RunInBackground` stays false unless the app must keep working after the player goes home.
 

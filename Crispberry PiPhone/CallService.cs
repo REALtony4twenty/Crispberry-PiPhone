@@ -597,7 +597,7 @@ namespace Crispberry_PiPhone
             AudioSource src = VoiceSource(handler);
             if (src == null)
                 return;
-            src.volume = handler.audioLevel * PhoneAudio.VolumeOf(PhoneAudioChannel.Call);
+            src.volume = handler.audioLevel * PhoneAudio.EffectiveVolume(PhoneAudioChannel.Call);
         }
 
         private static void RestoreSpatial(CharacterVoiceHandler handler)

@@ -19,7 +19,11 @@ namespace Crispberry_PiPhone
 
         private static readonly Type ClipType = Type.GetType("UnityEngine.AudioClip, UnityEngine.AudioModule");
         private static readonly Component[] Sources = new Component[ChannelCount];
-        private static readonly float[] Volumes = new float[ChannelCount] { 0.7f, 0.7f, 0.7f, 0.7f, 0.7f };
+        private static readonly Component[] ShotSources = new Component[ChannelCount];
+        private static MethodInfo _oneShot;
+        private static Component _vibrateSource;
+        private static readonly float[] Volumes = new float[ChannelCount] { 0.7f, 1f, 1f, 1f, 1f };
+        private static float _master = 0.7f;
 
         private const int StreamCarrierRate = 44100;
         private static Component _streamSource;
@@ -42,6 +46,56 @@ namespace Crispberry_PiPhone
         public static void Play(PhoneAudioChannel channel, object clip, bool loop, float duckSeconds)
         {
             Start(channel, clip, loop, duckSeconds, true);
+        }
+
+        public static void PlayOneShot(PhoneAudioChannel channel, object clip, float scale)
+        {
+            if (channel == PhoneAudioChannel.Call || clip == null || scale <= 0.001f)
+                return;
+            Component source = ShotSourceFor(channel);
+            if (source == null)
+                return;
+            if (_oneShot == null)
+                _oneShot = VoiceIo.AudioSourceType.GetMethod("PlayOneShot", new[] { ClipType, typeof(float) });
+            if (_oneShot == null)
+                return;
+            try
+            {
+                _oneShot.Invoke(source, new object[] { clip, Mathf.Clamp01(scale) });
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogError("Sfx play failed: " + ex.Message);
+            }
+        }
+
+        public static void StopOneShots()
+        {
+            for (int i = 0; i < ChannelCount; i++)
+                StopSource(ShotSources[i]);
+        }
+
+        public static void PlayVibrate(object clip, float volume)
+        {
+            if (clip == null || volume <= 0.001f)
+                return;
+            if (_vibrateSource == null)
+                _vibrateSource = NewSource(volume);
+            Component source = _vibrateSource;
+            if (source == null)
+                return;
+            Type type = VoiceIo.AudioSourceType;
+            VoiceIo.TrySet(source, "volume", Mathf.Clamp01(volume));
+            try
+            {
+                type.GetMethod("Stop", Type.EmptyTypes).Invoke(source, null);
+                type.GetProperty("clip").SetValue(source, clip, null);
+                type.GetMethod("Play", Type.EmptyTypes).Invoke(source, null);
+            }
+            catch (Exception ex)
+            {
+                Plugin.LogError("Vibrate play failed: " + ex.Message);
+            }
         }
 
         public static bool PlayMedia(byte[] data, int rate, int channels, bool loop)
@@ -86,7 +140,7 @@ namespace Crispberry_PiPhone
             _streamLive = false;
             _streamReader = reader;
             _streamError = null;
-            _streamGain = VolumeOf(PhoneAudioChannel.Media);
+            _streamGain = EffectiveVolume(PhoneAudioChannel.Media);
             _streamGainNow = _streamGain;
             VoiceIo.TrySet(source, "mute", false);
             VoiceIo.TrySet(source, "volume", 1f);
@@ -226,7 +280,7 @@ namespace Crispberry_PiPhone
             VoiceIo.TrySet(source, "bypassEffects", true);
             VoiceIo.TrySet(source, "bypassListenerEffects", true);
             VoiceIo.TrySet(source, "mute", false);
-            VoiceIo.TrySet(source, "volume", VolumeOf(channel));
+            VoiceIo.TrySet(source, "volume", EffectiveVolume(channel));
             VoiceIo.TrySet(source, "pitch", 1f);
             VoiceIo.TrySet(source, "spatialBlend", 0f);
             VoiceIo.TrySet(source, "outputAudioMixerGroup", null);
@@ -253,7 +307,12 @@ namespace Crispberry_PiPhone
                 return;
             if (channel == PhoneAudioChannel.Media)
                 StopStream();
-            Component source = Sources[(int)channel];
+            StopSource(Sources[(int)channel]);
+            StopSource(ShotSources[(int)channel]);
+        }
+
+        private static void StopSource(Component source)
+        {
             if (source == null)
                 return;
             try
@@ -298,15 +357,29 @@ namespace Crispberry_PiPhone
             Volumes[(int)channel] = Mathf.Clamp01(value);
         }
 
+        public static float MasterVolume
+        {
+            get { return _master; }
+            set { _master = Mathf.Clamp01(value); }
+        }
+
+        public static float EffectiveVolume(PhoneAudioChannel channel)
+        {
+            return VolumeOf(channel) * _master;
+        }
+
         public static void ApplyVolume()
         {
             for (int i = 0; i < ChannelCount; i++)
             {
                 Component source = Sources[i];
                 if (source != null)
-                    VoiceIo.TrySet(source, "volume", VolumeOf((PhoneAudioChannel)i));
+                    VoiceIo.TrySet(source, "volume", EffectiveVolume((PhoneAudioChannel)i));
+                Component shots = ShotSources[i];
+                if (shots != null)
+                    VoiceIo.TrySet(shots, "volume", EffectiveVolume((PhoneAudioChannel)i));
             }
-            _streamGain = VolumeOf(PhoneAudioChannel.Media);
+            _streamGain = EffectiveVolume(PhoneAudioChannel.Media);
             MusicPlayer.ApplyVolume();
         }
 
@@ -330,8 +403,21 @@ namespace Crispberry_PiPhone
         private static Component SourceFor(PhoneAudioChannel channel)
         {
             int index = (int)channel;
-            if (Sources[index] != null)
-                return Sources[index];
+            if (Sources[index] == null)
+                Sources[index] = NewSource(EffectiveVolume(channel));
+            return Sources[index];
+        }
+
+        private static Component ShotSourceFor(PhoneAudioChannel channel)
+        {
+            int index = (int)channel;
+            if (ShotSources[index] == null)
+                ShotSources[index] = NewSource(EffectiveVolume(channel));
+            return ShotSources[index];
+        }
+
+        private static Component NewSource(float volume)
+        {
             GameObject host = VoiceIo.Host;
             Type type = VoiceIo.AudioSourceType;
             if (host == null || type == null)
@@ -345,10 +431,9 @@ namespace Crispberry_PiPhone
             VoiceIo.TrySet(source, "bypassEffects", true);
             VoiceIo.TrySet(source, "bypassListenerEffects", true);
             VoiceIo.TrySet(source, "mute", false);
-            VoiceIo.TrySet(source, "volume", VolumeOf(channel));
+            VoiceIo.TrySet(source, "volume", volume);
             VoiceIo.TrySet(source, "pitch", 1f);
             VoiceIo.TrySet(source, "outputAudioMixerGroup", null);
-            Sources[index] = source;
             return source;
         }
     }

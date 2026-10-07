@@ -496,7 +496,7 @@ namespace Crispberry_PiPhone
                     else
                         PhoneTones.SetContactText(_threadId, captured.Id);
                     ShowContactTones();
-                }, stored);
+                }, stored, ring ? PhoneAudioChannel.Ringtone : PhoneAudioChannel.Notification);
             }
 
             private void ToggleSelect()

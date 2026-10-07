@@ -612,7 +612,7 @@ namespace Crispberry_PiPhone
                     else
                         PhoneTones.SetContactText(_toneContactId, captured.Id);
                     DrawContactTones();
-                }, stored);
+                }, stored, ring ? PhoneAudioChannel.Ringtone : PhoneAudioChannel.Notification);
             }
 
             private static void ClearPage(GameObject page)
