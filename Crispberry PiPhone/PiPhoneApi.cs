@@ -170,6 +170,15 @@ namespace Crispberry_PiPhone
     /// An active call with that scout uses PiPhone's call tone until hangup.
     /// Presets: <see cref="PiPhoneVoiceFilter.Dry"/>, <see cref="PiPhoneVoiceFilter.Realm"/>.
     ///
+    /// Media audio: <see cref="PlayMedia"/> plays a WAV file or raw 16-bit PCM through
+    /// the phone, and <see cref="PlayMediaClip"/> plays an AudioClip you already hold.
+    /// Both use the phone's media volume and lower the Music app like any other phone
+    /// sound. <see cref="PlayMediaStream"/> is for live audio your mod makes as it
+    /// goes: the phone calls you to fill its output buffer, with no clip in between.
+    /// <see cref="StopMedia"/> stops all three. Mods can only play as media, never as a
+    /// ringtone or alert. <see cref="GetChannelVolume"/> / <see cref="SetChannelVolume"/>
+    /// read and write the saved volume of each <see cref="PiPhoneAudioChannel"/>.
+    ///
     /// Contacts: keyed by Photon UserId (Steam id on PEAK). See
     /// <see cref="SetContactName"/> / <see cref="SetContactPhoto"/> /
     /// <see cref="TryGetContact"/>. Incoming calls and texts use the custom name
@@ -1199,6 +1208,109 @@ namespace Crispberry_PiPhone
         }
 
         /// <summary>
+        /// Play sound through the phone on <see cref="PiPhoneAudioChannel.Media"/>.
+        /// Pass a whole WAV file, or raw little-endian signed 16-bit PCM with its
+        /// <paramref name="rate"/> and <paramref name="channels"/> (both are ignored
+        /// for a WAV, which carries its own). Replaces whatever a mod was already
+        /// playing as media. Plays on this player's phone only. Uses the media volume,
+        /// and still plays when the ringer is Silent, because it is media and not an
+        /// alert. Lowers the Music app for the length of the clip, unless
+        /// <paramref name="loop"/> is true. Stops when the phone closes.
+        /// Returns false if the bytes could not be read.
+        /// </summary>
+        public static bool PlayMedia(byte[] wavOrPcm16, int rate, int channels, bool loop)
+        {
+            return PhoneAudio.PlayMedia(wavOrPcm16, rate, channels, loop);
+        }
+
+        /// <summary>
+        /// Same as <see cref="PlayMedia"/> for a clip you already hold. Pass a
+        /// UnityEngine.AudioClip. The parameter is typed <c>object</c> on purpose:
+        /// the phone reaches Unity audio by reflection so it has no hard reference to
+        /// UnityEngine.AudioModule. Your clip is played as it is and is not changed.
+        /// Returns false, without throwing, for null, a destroyed clip, or any other type.
+        /// </summary>
+        public static bool PlayMediaClip(object audioClip, bool loop)
+        {
+            return PhoneAudio.PlayMediaClip(audioClip, loop);
+        }
+
+        /// <summary>
+        /// Play live sound through the phone on <see cref="PiPhoneAudioChannel.Media"/>.
+        /// This is the way to play audio your mod makes as it goes: a game, an emulator,
+        /// a synth, a decoder. <paramref name="reader"/> has the same contract as Unity's
+        /// OnAudioFilterRead: it is handed the output buffer and its channel count, and
+        /// fills every sample, interleaved, at AudioSettings.outputSampleRate. It runs on
+        /// the audio thread, so do not touch Unity objects in it and do not block.
+        /// The phone owns the source: it applies the media volume after your samples, so
+        /// write them at full level, and it stops the stream when the phone closes. Call
+        /// this again to start it back up. A new stream replaces the last one; sound from
+        /// <see cref="PlayMedia"/> plays alongside it. Does not lower the Music app, since
+        /// a stream has no end. If <paramref name="reader"/> throws, the stream is stopped
+        /// and the error is logged. Returns false if the stream could not start.
+        /// </summary>
+        public static bool PlayMediaStream(Action<float[], int> reader)
+        {
+            return PhoneAudio.PlayMediaStream(reader);
+        }
+
+        /// <summary>
+        /// Stop sound started with <see cref="PlayMedia"/>, <see cref="PlayMediaClip"/>
+        /// or <see cref="PlayMediaStream"/>. Leaves the Music app alone.
+        /// </summary>
+        public static void StopMedia()
+        {
+            PhoneAudio.Stop(PhoneAudioChannel.Media);
+        }
+
+        /// <summary>
+        /// True while anything is playing on <see cref="PiPhoneAudioChannel.Media"/>.
+        /// That includes the Music app, so this can stay true after <see cref="StopMedia"/>.
+        /// </summary>
+        public static bool IsMediaPlaying()
+        {
+            return PhoneAudio.IsPlaying(PhoneAudioChannel.Media);
+        }
+
+        /// <summary>
+        /// Saved volume of a channel, 0 to 1. Sound played through the phone already
+        /// uses it. A mod that keeps its own AudioSource can read this to follow the
+        /// phone's level; it changes whenever the player or another mod sets it.
+        /// </summary>
+        public static float GetChannelVolume(PiPhoneAudioChannel channel)
+        {
+            PhoneAudioChannel mapped;
+            return TryMapChannel(channel, out mapped) ? PhoneAudio.VolumeOf(mapped) : 0f;
+        }
+
+        /// <summary>
+        /// Set and save the volume of a channel, clamped to 0 to 1. Applies to sound
+        /// already playing. Every channel can be set, including the ones a mod cannot
+        /// play into. <see cref="PiPhoneAudioChannel.Media"/> is the level the Music
+        /// slider shows and <see cref="PiPhoneAudioChannel.Ringtone"/> is the Ringer slider.
+        /// </summary>
+        public static void SetChannelVolume(PiPhoneAudioChannel channel, float value)
+        {
+            PhoneAudioChannel mapped;
+            if (TryMapChannel(channel, out mapped))
+                PhoneTheme.SetChannelVolume(mapped, value);
+        }
+
+        private static bool TryMapChannel(PiPhoneAudioChannel channel, out PhoneAudioChannel mapped)
+        {
+            switch (channel)
+            {
+                case PiPhoneAudioChannel.Media: mapped = PhoneAudioChannel.Media; return true;
+                case PiPhoneAudioChannel.Call: mapped = PhoneAudioChannel.Call; return true;
+                case PiPhoneAudioChannel.Ringtone: mapped = PhoneAudioChannel.Ringtone; return true;
+                case PiPhoneAudioChannel.Notification: mapped = PhoneAudioChannel.Notification; return true;
+                case PiPhoneAudioChannel.System: mapped = PhoneAudioChannel.System; return true;
+            }
+            mapped = PhoneAudioChannel.Media;
+            return false;
+        }
+
+        /// <summary>
         /// Register or replace an app. Safe to call from your plugin Awake after this
         /// plugin has loaded (hard-depend), or whenever <see cref="IsReady"/> is true.
         /// </summary>
@@ -1493,6 +1605,22 @@ namespace Crispberry_PiPhone
         ThreeG,
         Lte,
         FiveG
+    }
+
+    /// <summary>
+    /// The phone's audio channels. Each has its own saved volume, see
+    /// <see cref="PiPhoneApi.GetChannelVolume"/> / <see cref="PiPhoneApi.SetChannelVolume"/>.
+    /// Mods play into <see cref="Media"/> only. Media = <see cref="PiPhoneApi.PlayMedia"/>,
+    /// <see cref="PiPhoneApi.PlayMediaStream"/> and the Music app. Call = other scouts' voices while on a call with them.
+    /// Ringtone = incoming calls. Notification = text and app alerts. System = UI tones.
+    /// </summary>
+    public enum PiPhoneAudioChannel
+    {
+        Media,
+        Call,
+        Ringtone,
+        Notification,
+        System
     }
 
     /// <summary>
