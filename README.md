@@ -20,7 +20,10 @@ This is the player-facing list for 0.17.124. Where an older note below disagrees
 
 ### Volume and sounds
 
-- The side volume buttons, and the shade slider now labeled Volume, are the phone volume. That level is the master for button clicks, app hover, games, music, the power chimes, and clips a mod plays through the phone. Pressing volume up plays the up sound louder. Pressing volume down plays the down sound quieter. Music keeps its own slider under that master.
+- The side volume buttons, and the shade slider labeled Master, are the phone volume. That level is the master for button clicks, app hover, games, music, the power chimes, and clips a mod plays through the phone. Pressing volume up plays the up sound louder. Pressing volume down plays the down sound quieter.
+- The arrow next to Master opens five more sliders: Media, Call, Ringtone, Notification, and System. Each one sits under the master. Media is music, games, videos, voice memos, and sound from other mods. Call is the other scouts' voices on a call. System is the interface sounds. Music keeps its own slider in the Music app, under Media. Vibrate follows only its own row on the Sounds page.
+- A ringtone, an alert, or a vibrate buzz lowers Media while it sounds. Fade music on alerts, on the Notifications page, turns that off.
+- Prioritize call audio, on the Notifications page, is on by default. Media is lowered while a call rings in. While a call is connected, the Music app pauses and other media is silent. Both come back at hang-up.
 - Personalize, then Sounds, has a row for each interface sound. Each row can be turned off, turned down, or pointed at any other phone sound. The rows are Button, Toggle off, Toggle on, Back, App hover, Camera, Record start, Record stop, Slider, Trash, Vibrate, Typing, and Backspace. Volume up and volume down follow the phone volume and are not on that page. The power chimes are not on that page either.
 - The shipped clips were leveled so a quiet tap and a loud beep sit near the same loudness.
 - Notification and ringtone pickers show which sound is in use.
@@ -64,8 +67,10 @@ Landscape boards sit lower on the phone, closer to the navigation, and they are 
 - Camera and Closet can show the world view.
 - The phone can sit on the cast, or stay in your hand. F4 switches that. The app keeps running either way.
 - The side volume buttons, the ringer key, and the front camera hole are not drawn on the cast.
-- Messages, the dialer, voicemail, notes, and voice memos stay private on a shared cast.
-- Another mod's app shows as the phone picture, so the UI that mod built is what people see.
+- Photos, Messages, the dialer, voicemail, notes, and voice memos stay private on a shared cast. Watchers see a padlock instead.
+- Players watching a shared cast see a rebuilt copy of the phone, so text and shapes stay sharp. A still picture is sent to each watcher once. A picture that keeps changing, such as a game another mod draws, is sent as video. Watchers see another mod's app whether or not they have it installed.
+- While you cast, the phone's sound comes from the cast screen instead of from the phone. Players watching a shared cast hear it from that screen too. Sound and video quality step down for a watcher on a weak connection, and back up when it clears.
+- Only one player in the room can cast at a time.
 - You can still cast to airport flight boards that are in the scene, and mods can still register more screens.
 
 ## For other mods
@@ -80,6 +85,14 @@ Phone volume scales every sound below, and `PiPhoneApi.MasterVolume` reads and s
 - `GetAppSfxVolume` / `SetAppSfxVolume` and `GetAppCueVolume` / `SetAppCueVolume` are the per-app and per-effect trims. `UiSfxVolume` is the fallback for an interface sound that has no row yet.
 - `PiPhoneApp.RunInBackground` stays false unless the app must keep working after the player goes home.
 
+Longer audio goes through the phone on the Media channel:
+
+- `PiPhoneApi.PlayMedia(bytes, rate, channels, loop)` plays a whole WAV file, or raw 16-bit PCM at the rate and channel count you pass. `PlayMediaClip(clip, loop)` plays an AudioClip you already hold.
+- `PiPhoneApi.PlayMediaStream(reader)` is for sound your mod makes as it goes, such as a game or an emulator. The phone calls `reader` on the audio thread to fill its output buffer. Write samples at full level. The phone applies the volume.
+- `PiPhoneApi.StopMedia()` stops all three and leaves the Music app alone. `IsMediaPlaying()` is true while anything is on Media, the Music app included.
+- `GetChannelVolume` / `SetChannelVolume` read and save one `PiPhoneAudioChannel`. A mod can set every channel, but its own sound only plays on Media.
+- Anything played through the phone is heard from the cast screen while the player casts, with nothing extra to do.
+
 Build buttons, toggles, and sliders with `PhoneUi` so they match this release and play the phone sounds:
 
 - `CreateButton`, `CreateIconChip`, and `CreateToggleChip`
@@ -92,7 +105,10 @@ Cast, in addition to `RegisterCastDevice` and `SetCastAspect`:
 
 - `MountPhone` / `UnmountPhone` put the real phone on a world socket.
 - `SetPhoneHeld(false)` leaves the open phone on the cast. `SetPhoneHeld(true)` brings it back to the hand. The app stays open either way.
-- A mod app does not send a separate board. The cast shows the phone picture.
+- A mod app does not send a separate board. Watchers get a rebuilt copy of your screen, and your own pictures are sent to them.
+- `PiPhoneApp.CastHidden` keeps your app off casts. Watchers see a padlock and hear nothing from it.
+- `PiPhoneApp.CastVideo` is `Auto`, `On`, or `Off`. `Auto` sends video only for a picture that keeps being repainted, or a screen the phone cannot describe. `On` always sends the app area as video. `Off` never does.
+- `PhoneUi.CreateVideoCastContainer(parent, name)` is a box for a picture you keep repainting. Only that box is sent as video, and the rest of your screen stays sharp. Use one per screen.
 
 ## Since 0.17.69
 
