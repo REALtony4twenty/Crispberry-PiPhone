@@ -763,12 +763,13 @@ namespace Crispberry_PiPhone
                 if (!MixEars.ContainsKey(MixAudience[i]))
                     MixEars[MixAudience[i]] = new MixEar();
             }
+            int cap = PhoneCast.VideoOpen ? PhoneCastVideo.AudioCap : 3;
             for (int rung = 0; rung < 4; rung++)
             {
                 MixGroup.Clear();
                 for (int i = 0; i < MixAudience.Count; i++)
                 {
-                    if (MixEars[MixAudience[i]].Rung == rung)
+                    if (Mathf.Min(MixEars[MixAudience[i]].Rung, cap) == rung)
                         MixGroup.Add(MixAudience[i]);
                 }
                 if (MixGroup.Count == 0)

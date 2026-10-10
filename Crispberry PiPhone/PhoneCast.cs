@@ -501,6 +501,8 @@ namespace Crispberry_PiPhone
         private void LateUpdate()
         {
             PublishWatch();
+            PhoneCastVideo.Tick();
+            PhoneCastPictures.Tick();
         }
 
         private static int _pictureHides;
@@ -666,9 +668,45 @@ namespace Crispberry_PiPhone
             return false;
         }
 
+        internal static bool TryPhoneRender(out RenderTexture rt)
+        {
+            rt = null;
+            if (!_casting)
+                return false;
+            rt = _parked ? RenderLive() : _grabRt;
+            return rt != null;
+        }
+
         public static bool AudienceOpen
         {
             get { return _casting && _share && _watcherIds.Count > 0 && PhotonNetwork.InRoom && !CastIsPrivate(); }
+        }
+
+        private static bool _video;
+
+        public static bool VideoOpen
+        {
+            get { return _video && AudienceOpen && PhoneMenu.OpenApp() != null; }
+        }
+
+        internal static bool Casting
+        {
+            get { return _casting; }
+        }
+
+        internal static bool Sharing
+        {
+            get { return _casting && _share && _watcherIds.Count > 0 && PhotonNetwork.InRoom; }
+        }
+
+        internal static string DeviceId
+        {
+            get { return _deviceId; }
+        }
+
+        internal static bool IsWatcher(int actor)
+        {
+            return _casting && _watcherIds.Contains(actor);
         }
 
         public static string CopyAudience(List<int> into)
@@ -706,6 +744,19 @@ namespace Crispberry_PiPhone
             PhoneAudio.HearCast(Convert.ToInt32(data[4]), Convert.ToInt32(data[5]), Convert.ToInt32(data[6]), Convert.ToInt32(data[7]), data[8] as byte[]);
         }
 
+        public static void OnVideo(int actor, object[] data)
+        {
+            if (data == null || data.Length < 8)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _watchId)
+                return;
+            int owner;
+            if (!Owners.TryGetValue(id, out owner) || owner != actor)
+                return;
+            PhoneCastVideo.Receive(Convert.ToInt32(data[4]), Convert.ToInt32(data[5]), Convert.ToInt32(data[6]), data[7] as byte[]);
+        }
+
         public static void OnHear(int actor, object[] data)
         {
             if (data == null || data.Length < 6 || !_casting)
@@ -714,6 +765,39 @@ namespace Crispberry_PiPhone
             if (string.IsNullOrEmpty(id) || id != _deviceId || !_watcherIds.Contains(actor))
                 return;
             PhoneAudio.CastHeard(actor, Convert.ToInt32(data[4]), Convert.ToInt32(data[5]));
+        }
+
+        public static void OnSee(int actor, object[] data)
+        {
+            if (data == null || data.Length < 6 || !_casting)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _deviceId || !_watcherIds.Contains(actor))
+                return;
+            PhoneCastVideo.CastSeen(actor, Convert.ToInt32(data[4]), Convert.ToInt32(data[5]));
+        }
+
+        public static void OnWant(int actor, object[] data)
+        {
+            if (data == null || data.Length < 5 || !_casting)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _deviceId || !_watcherIds.Contains(actor))
+                return;
+            PhoneCastPictures.OnWant(actor, data[4] as string);
+        }
+
+        public static void OnPicture(int actor, object[] data)
+        {
+            if (data == null || data.Length < 9)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _watchId)
+                return;
+            int owner;
+            if (!Owners.TryGetValue(id, out owner) || owner != actor)
+                return;
+            PhoneCastPictures.OnPicture(data[4] as string, data[5] as string, Convert.ToInt32(data[6]), Convert.ToInt32(data[7]), data[8] as byte[]);
         }
 
         public static bool UseBoard(bool on)
@@ -778,6 +862,8 @@ namespace Crispberry_PiPhone
             PiPhoneApp app = PhoneMenu.OpenApp();
             if (app == null || string.IsNullOrEmpty(app.Id))
                 return false;
+            if (app.CastHidden)
+                return true;
             string id = app.Id;
             return id == BuiltinApps.MessagesId
                 || id == BuiltinApps.PhoneId
@@ -2307,6 +2393,8 @@ namespace Crispberry_PiPhone
             if (!pictureDue && !poseDue)
                 return;
             string blob = pictureDue ? PhoneCastMirror.Capture(CastIsPrivate()) : _stateSig;
+            if (pictureDue)
+                _video = PhoneCastMirror.VideoMode != 0;
             bool pictureChanged = pictureDue && blob != _stateSig;
             if (!pictureChanged && (!poseDue || pose == _statePose))
             {

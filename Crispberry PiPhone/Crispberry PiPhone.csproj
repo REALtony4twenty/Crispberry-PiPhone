@@ -149,6 +149,8 @@
     <Compile Include="PhoneCast.cs" />
     <Compile Include="PhoneCastView.cs" />
     <Compile Include="PhoneCastMirror.cs" />
+    <Compile Include="PhoneCastVideo.cs" />
+    <Compile Include="PhoneCastPictures.cs" />
     <Compile Include="PhoneCastBoards.cs" />
     <Compile Include="PhoneTheme.cs" />
     <Compile Include="PhoneLang.cs" />

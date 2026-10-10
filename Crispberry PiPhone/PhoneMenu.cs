@@ -175,6 +175,11 @@ namespace Crispberry_PiPhone
             get { return _instance != null ? _instance._bezel : null; }
         }
 
+        internal static RectTransform AppContentRt
+        {
+            get { return _instance != null ? _instance._appContent : null; }
+        }
+
         internal static bool OnCast
         {
             get { return _instance != null && _instance._onCast; }

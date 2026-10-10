@@ -44,6 +44,10 @@ namespace Crispberry_PiPhone
         internal const byte KindCastState = 27;
         internal const byte KindCastAudio = 28;
         internal const byte KindCastHear = 29;
+        internal const byte KindCastVideo = 30;
+        internal const byte KindCastSee = 31;
+        internal const byte KindCastWant = 32;
+        internal const byte KindCastPicture = 33;
         public const int MaxMediaBytes = 8388608;
 
         public static PhoneNet Instance;
@@ -392,6 +396,22 @@ namespace Crispberry_PiPhone
                         if (data.Length >= 6)
                             PhoneCast.OnHear(photonEvent.Sender, data);
                         break;
+                    case KindCastVideo:
+                        if (data.Length >= 8)
+                            PhoneCast.OnVideo(photonEvent.Sender, data);
+                        break;
+                    case KindCastSee:
+                        if (data.Length >= 6)
+                            PhoneCast.OnSee(photonEvent.Sender, data);
+                        break;
+                    case KindCastWant:
+                        if (data.Length >= 5)
+                            PhoneCast.OnWant(photonEvent.Sender, data);
+                        break;
+                    case KindCastPicture:
+                        if (data.Length >= 9)
+                            PhoneCast.OnPicture(photonEvent.Sender, data);
+                        break;
                 }
             }
             catch (Exception ex)
@@ -629,6 +649,30 @@ namespace Crispberry_PiPhone
         public static void SendCastHear(int actor, string deviceId, int received, int lost)
         {
             SendTo(actor, new object[] { Magic, Protocol, KindCastHear, deviceId ?? string.Empty, received, lost }, true);
+        }
+
+        public static void SendCastVideo(int[] actors, string deviceId, int seq, int index, int count, byte[] data)
+        {
+            if (data == null)
+                return;
+            SendToList(actors, new object[] { Magic, Protocol, KindCastVideo, deviceId ?? string.Empty, seq, index, count, data }, false);
+        }
+
+        public static void SendCastSee(int actor, string deviceId, int received, int lost)
+        {
+            SendTo(actor, new object[] { Magic, Protocol, KindCastSee, deviceId ?? string.Empty, received, lost }, true);
+        }
+
+        public static void SendCastWant(int actor, string deviceId, string keys)
+        {
+            SendTo(actor, new object[] { Magic, Protocol, KindCastWant, deviceId ?? string.Empty, keys ?? string.Empty }, true);
+        }
+
+        public static void SendCastPicture(int actor, string deviceId, string key, string border, int index, int count, byte[] data)
+        {
+            if (data == null)
+                return;
+            SendTo(actor, new object[] { Magic, Protocol, KindCastPicture, deviceId ?? string.Empty, key ?? string.Empty, border ?? string.Empty, index, count, data }, true);
         }
 
         public static void SendCastFrame(string deviceId, int seq, byte[] jpg)

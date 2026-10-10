@@ -1686,6 +1686,23 @@ namespace Crispberry_PiPhone
     }
 
     /// <summary>
+    /// How an app's screen reaches players watching a shared cast, see <see cref="PiPhoneApp.CastVideo"/>.
+    /// This is about picture quality. To keep an app off casts, use <see cref="PiPhoneApp.CastHidden"/>.
+    /// </summary>
+    public enum PiPhoneCastVideo
+    {
+        /// <summary>
+        /// The phone chooses. It describes the screen, sends each still picture once, and uses
+        /// moving pictures only for a picture that keeps being repainted or a screen it cannot describe in full.
+        /// </summary>
+        Auto,
+        /// <summary>Always send the whole app area as moving pictures.</summary>
+        On,
+        /// <summary>Never send moving pictures. For an app built to be described. A repainted picture shows as a plain block.</summary>
+        Off
+    }
+
+    /// <summary>
     /// Saved contact. <see cref="Id"/> is Photon UserId (Steam id on PEAK).
     /// <see cref="CustomName"/> is what the player typed; <see cref="RealName"/> is the last seen nick.
     /// </summary>
@@ -1951,6 +1968,25 @@ namespace Crispberry_PiPhone
 
         /// <summary>Cast picture height, in ratio units (9 in 16:9). Zero uses the phone's shape.</summary>
         public float CastAspectHeight;
+
+        /// <summary>
+        /// On a shared cast, watchers see a rebuilt copy of the phone, which is the sharpest they can get.
+        /// Text and the phone's own shapes are described. A still picture of your own is sent to each
+        /// watcher once and kept, so they see it whether or not they have this app. Moving pictures are
+        /// the fallback: with <see cref="PiPhoneCastVideo.Auto"/> the phone uses them when a picture keeps
+        /// being repainted, or when it cannot describe the whole screen. Put a repainted picture inside
+        /// <see cref="PhoneUi.CreateVideoCastContainer"/> and only that box is sent as moving pictures
+        /// while the rest of your screen stays described. <see cref="PiPhoneCastVideo.On"/> and
+        /// <see cref="PiPhoneCastVideo.Off"/> decide for yourself. Video costs the caster upload.
+        /// This does not hide anything. See <see cref="CastHidden"/>.
+        /// </summary>
+        public PiPhoneCastVideo CastVideo;
+
+        /// <summary>
+        /// When true, this app's screen is never shown, heard, or streamed to players watching a cast.
+        /// They see a padlock in its place.
+        /// </summary>
+        public bool CastHidden;
 
         /// <summary>
         /// If true (default), this app covers the wallpaper so the GIF can pause.

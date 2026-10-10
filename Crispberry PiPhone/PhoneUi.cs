@@ -947,6 +947,24 @@ namespace Crispberry_PiPhone
             return go.GetComponent<RectTransform>();
         }
 
+        /// <summary>
+        /// A box for a picture your app keeps repainting, such as a game surface or a video.
+        /// On a shared cast, watchers get what is inside as moving pictures and everything outside
+        /// it described as usual. Parent the picture under the returned box and stretch it yourself.
+        /// Use one per screen. With two showing, the whole app area is sent as moving pictures.
+        /// See <see cref="PiPhoneApp.CastVideo"/>.
+        /// </summary>
+        public static RectTransform CreateVideoCastContainer(Transform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(PhoneCastVideoArea));
+            go.transform.SetParent(parent, false);
+            var le = go.AddComponent<LayoutElement>();
+            le.flexibleWidth = 1f;
+            le.flexibleHeight = 1f;
+            le.minWidth = 80f;
+            return go.GetComponent<RectTransform>();
+        }
+
         public static ContentSizeFitter FitVertical(GameObject go)
         {
             var f = go.GetComponent<ContentSizeFitter>() ?? go.AddComponent<ContentSizeFitter>();
