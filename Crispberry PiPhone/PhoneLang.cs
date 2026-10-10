@@ -282,6 +282,7 @@ namespace Crispberry_PiPhone
             Add("goodbye", "GOODBYE!");
             Add("battery", "Battery");
             Add("cannot_cast", "Cannot cast to this device");
+            Add("cast_one", "Only one screencast is allowed at a time");
             Add("no_cast_screen", "No screen nearby");
             Add("screen_cast", "Screen cast");
             Add("cast_on", "On");
@@ -340,6 +341,7 @@ namespace Crispberry_PiPhone
                 "goodbye", "¡ADIÓS!",
                 "battery", "Batería",
                 "cannot_cast", "No se puede transmitir a este dispositivo",
+                "cast_one", "Solo se permite una transmisión a la vez",
                 "no_cast_screen", "No hay una pantalla cerca",
                 "screen_cast", "Transmitir",
                 "cast_on", "Activo",
@@ -398,6 +400,7 @@ namespace Crispberry_PiPhone
                 "goodbye", "AU REVOIR !",
                 "battery", "Batterie",
                 "cannot_cast", "Impossible de diffuser sur cet appareil",
+                "cast_one", "Une seule diffusion est autorisée à la fois",
                 "no_cast_screen", "Aucun écran à proximité",
                 "screen_cast", "Diffusion",
                 "cast_on", "Actif",

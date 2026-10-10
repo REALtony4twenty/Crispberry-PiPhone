@@ -304,6 +304,11 @@ namespace Crispberry_PiPhone
                 PhoneMenu.Toast(PhoneLang.T("cast_in_use", "That screen is in use"));
                 return;
             }
+            if (OtherCaster(Actor()))
+            {
+                PhoneMenu.Toast(PhoneLang.T("cast_one", "Only one screencast is allowed at a time"));
+                return;
+            }
             if (_casting && _deviceId == id)
             {
                 Release();
@@ -404,7 +409,10 @@ namespace Crispberry_PiPhone
             if (_waiting && (string.IsNullOrEmpty(id) || id == _waitId))
             {
                 _waiting = false;
-                PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
+                if (OtherCaster(Actor()))
+                    PhoneMenu.Toast(PhoneLang.T("cast_one", "Only one screencast is allowed at a time"));
+                else
+                    PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
             }
         }
 
@@ -562,8 +570,21 @@ namespace Crispberry_PiPhone
             int owner;
             if (Owners.TryGetValue(id, out owner) && owner != actor && owner > 0 && PlayerHere(owner))
                 return false;
+            if (OtherCaster(actor))
+                return false;
             Owners[id] = actor;
             return true;
+        }
+
+        private static bool OtherCaster(int actor)
+        {
+            ForgetMissingOwners();
+            foreach (KeyValuePair<string, int> kv in Owners)
+            {
+                if (kv.Value > 0 && kv.Value != actor)
+                    return true;
+            }
+            return false;
         }
 
         public static void SetAspect(float width, float height)
