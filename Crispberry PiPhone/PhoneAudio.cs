@@ -63,6 +63,8 @@ namespace Crispberry_PiPhone
             15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
         };
         private static volatile bool _mixOpen;
+        private static int _mixFalls;
+        private static int _mixLow = 3;
         private static float _mixClock;
         private static readonly float[] MixOut = new float[MixBlock];
         private static readonly MixVoice[] MixVoices = new MixVoice[ChannelCount + 2];
@@ -460,7 +462,12 @@ namespace Crispberry_PiPhone
                     OpenTap();
                 _mixOpen = open;
                 if (!open)
+                {
+                    Plugin.LogInfo("Cast shared. Audio fell " + _mixFalls + " times, lowest rung " + _mixLow + ". " + PhoneCastVideo.Summary() + " " + PhoneCastPictures.Summary());
+                    _mixFalls = 0;
+                    _mixLow = 3;
                     ForgetMix();
+                }
             }
             if (!open)
                 return;
@@ -794,7 +801,7 @@ namespace Crispberry_PiPhone
                 MixEar ear = MixEars[MixAudience[i]];
                 ear.Unheard++;
                 if (ear.Unheard >= 63)
-                    StepDown(MixAudience[i], ear);
+                    StepDown(ear);
             }
         }
 
@@ -806,7 +813,7 @@ namespace Crispberry_PiPhone
             ear.Unheard = 0;
             if (lost * 100L > (received + (long)lost) * 5L)
             {
-                StepDown(actor, ear);
+                StepDown(ear);
                 return;
             }
             if (lost > 0)
@@ -819,10 +826,9 @@ namespace Crispberry_PiPhone
                 return;
             ear.Rung++;
             ear.Clean = 0;
-            Plugin.LogInfo("Cast audio: watcher " + actor + " up to rung " + ear.Rung);
         }
 
-        private static void StepDown(int actor, MixEar ear)
+        private static void StepDown(MixEar ear)
         {
             ear.Clean = 0;
             ear.Unheard = 0;
@@ -832,7 +838,9 @@ namespace Crispberry_PiPhone
             ear.Falls[rung]++;
             ear.BarUntil[rung] = Time.unscaledTime + 60f * (1 << Mathf.Min(ear.Falls[rung] - 1, 10));
             ear.Rung = rung - 1;
-            Plugin.LogInfo("Cast audio: watcher " + actor + " down to rung " + ear.Rung);
+            _mixFalls++;
+            if (ear.Rung < _mixLow)
+                _mixLow = ear.Rung;
         }
 
         private static byte[] EncodePcm()
@@ -1356,16 +1364,6 @@ namespace Crispberry_PiPhone
             if (channel == PhoneAudioChannel.Media && (MusicPlayer.Playing || _streamLive))
                 return true;
             return SourcePlaying(Sources[(int)channel]);
-        }
-
-        public static bool IsAnyPlaying()
-        {
-            for (int i = 0; i < ChannelCount; i++)
-            {
-                if (IsPlaying((PhoneAudioChannel)i))
-                    return true;
-            }
-            return false;
         }
 
         public static float VolumeOf(PhoneAudioChannel channel)

@@ -30,6 +30,13 @@ namespace Crispberry_PiPhone
         private const float ChangeWindow = 2f;
         private const float BytesPerSecond = 64000f;
         private const long MaxKept = 8388608;
+        private const int MaxAsk = 64;
+        private const int MaxWantsEach = 128;
+        private const int MaxKeyLength = 96;
+        private const int MaxParts = 8;
+        private const int MaxHave = 512;
+        private const int MaxAsked = 2048;
+        private const long MaxHaveBytes = 67108864;
 
         private sealed class Entry
         {
@@ -54,6 +61,7 @@ namespace Crispberry_PiPhone
             public float CheckedAt = -100f;
             public bool Stale;
             public string Key;
+            public string Prev;
             public bool Flat;
             public Color32 FlatColor;
         }
@@ -108,6 +116,9 @@ namespace Crispberry_PiPhone
         private static Want _sending;
         private static Blob _sendingBlob;
         private static int _sendingChunk;
+        private static int _sent;
+        private static int _sentBytes;
+        private static bool _encodeFailed;
 
         private static readonly Dictionary<string, Got> Have = new Dictionary<string, Got>(StringComparer.Ordinal);
         private static readonly Dictionary<string, float> Asked = new Dictionary<string, float>(StringComparer.Ordinal);
@@ -115,6 +126,7 @@ namespace Crispberry_PiPhone
         private static readonly HashSet<string> Need = new HashSet<string>(StringComparer.Ordinal);
         private static readonly List<string> Asking = new List<string>();
         private static bool _repaint;
+        private static long _haveBytes;
 
         internal static string KeyFor(Texture tex, Rect rect, Vector4 border, float ppu, float units, string alias, out bool moving, out bool flat, out Color flatColor)
         {
@@ -155,7 +167,7 @@ namespace Crispberry_PiPhone
                 flatColor = entry.FlatColor;
                 return string.Empty;
             }
-            return entry.Key;
+            return entry.Prev != null ? entry.Key + "<" + entry.Prev : entry.Key;
         }
 
         private static bool IsMoving(Entry entry)
@@ -305,6 +317,8 @@ namespace Crispberry_PiPhone
                         if (now - entry.ChangedAt < ChangeWindow)
                         {
                             entry.MovedAt = now;
+                            if (entry.Key != null)
+                                entry.Prev = entry.Key;
                             entry.Key = null;
                             entry.Flat = false;
                             entry.Stale = false;
@@ -392,7 +406,9 @@ namespace Crispberry_PiPhone
             }
             catch (Exception ex)
             {
-                Plugin.LogError("Cast picture encode failed: " + ex.Message);
+                if (!_encodeFailed)
+                    Plugin.LogError("Cast picture encode failed: " + ex.Message);
+                _encodeFailed = true;
             }
             if (tex != null)
                 UnityEngine.Object.Destroy(tex);
@@ -411,6 +427,10 @@ namespace Crispberry_PiPhone
                 Blobs[key] = blob;
                 _kept += bytes.Length;
             }
+            if (entry.Key != null && entry.Key != key)
+                entry.Prev = entry.Key;
+            if (entry.Prev == key)
+                entry.Prev = null;
             entry.Key = key;
             entry.Side = result.Side;
             entry.Stale = false;
@@ -437,10 +457,16 @@ namespace Crispberry_PiPhone
                 return;
             string[] list = keys.Split('\n');
             float until = Time.unscaledTime + 10f;
-            for (int i = 0; i < list.Length && Wants.Count < 512; i++)
+            int mine = 0;
+            for (int j = 0; j < Wants.Count; j++)
+            {
+                if (Wants[j].Actor == actor)
+                    mine++;
+            }
+            for (int i = 0; i < list.Length && i < MaxAsk && Wants.Count < 512; i++)
             {
                 string key = list[i];
-                if (key.Length < 2 || key.Length > 96)
+                if (key.Length < 2 || key.Length > MaxKeyLength)
                     continue;
                 bool known = false;
                 for (int j = 0; j < Wants.Count; j++)
@@ -452,13 +478,14 @@ namespace Crispberry_PiPhone
                         break;
                     }
                 }
-                if (known)
+                if (known || mine >= MaxWantsEach)
                     continue;
                 var want = new Want();
                 want.Actor = actor;
                 want.Key = key;
                 want.Until = until;
                 Wants.Add(want);
+                mine++;
             }
         }
 
@@ -503,9 +530,18 @@ namespace Crispberry_PiPhone
             _sendingChunk++;
             if (_sendingChunk < count)
                 return;
-            Plugin.LogInfo("Cast picture: sent " + _sending.Key + ", " + bytes.Length + " bytes, to watcher " + _sending.Actor);
+            _sent++;
+            _sentBytes += bytes.Length;
             _sending = null;
             _sendingBlob = null;
+        }
+
+        internal static string Summary()
+        {
+            string text = "Sent " + _sent + " pictures, " + PhoneNet.SizeLabel(_sentBytes) + ".";
+            _sent = 0;
+            _sentBytes = 0;
+            return text;
         }
 
         private static Blob Find(string key)
@@ -541,9 +577,18 @@ namespace Crispberry_PiPhone
         internal static Sprite Lookup(string key)
         {
             Got got;
+            string old = null;
+            int cut = key.IndexOf('<');
+            if (cut > 0)
+            {
+                old = key.Substring(cut + 1);
+                key = key.Substring(0, cut);
+            }
             if (Have.TryGetValue(key, out got) && got.Sprite != null)
                 return got.Sprite;
             Need.Add(key);
+            if (old != null && Have.TryGetValue(old, out got) && got.Sprite != null)
+                return got.Sprite;
             return null;
         }
 
@@ -554,7 +599,7 @@ namespace Crispberry_PiPhone
                 _repaint = false;
                 PhoneCastView.Repaint();
             }
-            if (Need.Count == 0)
+            if (Need.Count == 0 || Have.Count >= MaxHave || _haveBytes >= MaxHaveBytes)
                 return;
             Vector3 point;
             string id;
@@ -566,9 +611,12 @@ namespace Crispberry_PiPhone
             foreach (string key in Need)
             {
                 float at;
-                if (Have.ContainsKey(key) || (Asked.TryGetValue(key, out at) && now - at < 6f))
+                bool asked = Asked.TryGetValue(key, out at);
+                if (key.Length > MaxKeyLength || Have.ContainsKey(key) || (asked && now - at < 6f) || (!asked && Asked.Count >= MaxAsked))
                     continue;
                 Asking.Add(key);
+                if (Asking.Count >= MaxAsk)
+                    break;
             }
             if (Asking.Count == 0)
                 return;
@@ -579,13 +627,15 @@ namespace Crispberry_PiPhone
 
         internal static void OnPicture(string key, string border, int index, int count, byte[] data)
         {
-            if (string.IsNullOrEmpty(key) || data == null || count < 1 || count > MaxChunks || index < 0 || index >= count)
+            if (string.IsNullOrEmpty(key) || data == null || data.Length > ChunkBytes || count < 1 || count > MaxChunks || index < 0 || index >= count)
                 return;
             if (!Asked.ContainsKey(key) || Have.ContainsKey(key))
                 return;
             Part part;
             if (!Parts.TryGetValue(key, out part) || part.Chunks.Length != count)
             {
+                if (part == null && Parts.Count >= MaxParts)
+                    return;
                 part = new Part();
                 part.Chunks = new byte[count][];
                 part.Border = border ?? string.Empty;
@@ -608,11 +658,14 @@ namespace Crispberry_PiPhone
                 Buffer.BlockCopy(part.Chunks[i], 0, bytes, at, part.Chunks[i].Length);
                 at += part.Chunks[i].Length;
             }
+            if (!Fits(bytes, MaxSide))
+                return;
             Texture2D tex = PhoneImages.LoadTexture(bytes);
             if (tex == null)
                 return;
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.hideFlags = HideFlags.HideAndDontSave;
+            _haveBytes += (long)tex.width * tex.height * 4;
             Vector4 edge = Vector4.zero;
             float ppu = 100f;
             string[] f = part.Border.Split(',');
@@ -640,6 +693,52 @@ namespace Crispberry_PiPhone
             _repaint = true;
         }
 
+        internal static bool Fits(byte[] bytes, int maxSide)
+        {
+            int w = 0;
+            int h = 0;
+            if (bytes == null)
+                return false;
+            if (bytes.Length >= 24 && bytes[0] == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G')
+            {
+                if (bytes[16] != 0 || bytes[17] != 0 || bytes[20] != 0 || bytes[21] != 0)
+                    return false;
+                w = (bytes[18] << 8) | bytes[19];
+                h = (bytes[22] << 8) | bytes[23];
+            }
+            else if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xD8)
+            {
+                int i = 2;
+                while (i + 9 < bytes.Length)
+                {
+                    if (bytes[i] != 0xFF)
+                        return false;
+                    int marker = bytes[i + 1];
+                    if (marker == 0xFF)
+                    {
+                        i++;
+                        continue;
+                    }
+                    if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
+                    {
+                        i += 2;
+                        continue;
+                    }
+                    int len = (bytes[i + 2] << 8) | bytes[i + 3];
+                    if (len < 2)
+                        return false;
+                    if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)
+                    {
+                        h = (bytes[i + 5] << 8) | bytes[i + 6];
+                        w = (bytes[i + 7] << 8) | bytes[i + 8];
+                        break;
+                    }
+                    i += 2 + len;
+                }
+            }
+            return w >= 1 && h >= 1 && w <= maxSide && h <= maxSide;
+        }
+
         private static bool Num(string text, out float value)
         {
             return float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
@@ -658,6 +757,7 @@ namespace Crispberry_PiPhone
             Asked.Clear();
             Parts.Clear();
             Need.Clear();
+            _haveBytes = 0;
             _repaint = false;
         }
     }

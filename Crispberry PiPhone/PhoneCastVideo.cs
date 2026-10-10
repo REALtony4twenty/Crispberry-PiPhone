@@ -19,6 +19,8 @@ namespace Crispberry_PiPhone
     {
         private const int LongSide = 320;
         private const int ChunkBytes = 900;
+        private const int MaxChunks = 256;
+        private const int MaxSide = 1024;
         internal const int AudioCap = 1;
         private const int TopRung = 3;
         private const int JudgeFrames = 30;
@@ -56,6 +58,8 @@ namespace Crispberry_PiPhone
         private static float _nextShot;
         private static int _seq;
         private static int _rung = TopRung;
+        private static int _falls;
+        private static int _low = TopRung;
 
         private sealed class Eye
         {
@@ -163,7 +167,14 @@ namespace Crispberry_PiPhone
             if (rung == _rung)
                 return;
             _rung = rung;
-            Plugin.LogInfo("Cast video: rung " + rung);
+        }
+
+        internal static string Summary()
+        {
+            string text = "Video fell " + _falls + " times, lowest rung " + _low + ".";
+            _falls = 0;
+            _low = TopRung;
+            return text;
         }
 
         internal static void CastSeen(int actor, int received, int lost)
@@ -203,6 +214,9 @@ namespace Crispberry_PiPhone
             eye.Falls[rung]++;
             eye.BarUntil[rung] = now + 60f * (1 << Mathf.Min(eye.Falls[rung] - 1, 10));
             eye.Rung = rung - 1;
+            _falls++;
+            if (eye.Rung < _low)
+                _low = eye.Rung;
         }
 
         private static void Send(byte[] jpg)
@@ -440,7 +454,7 @@ namespace Crispberry_PiPhone
 
         internal static void Receive(int seq, int index, int count, byte[] data)
         {
-            if (data == null || count < 1 || index < 0 || index > count)
+            if (data == null || data.Length > ChunkBytes + 4 || count < 1 || count > MaxChunks || index < 0 || index > count)
                 return;
             if (seq < _rxSeq && _rxSeq - seq < 1000)
                 return;
@@ -480,15 +494,18 @@ namespace Crispberry_PiPhone
             _rxParts = null;
             _rxParity = null;
             _seeGot++;
-            _pending = jpg;
+            if (PhoneCastPictures.Fits(jpg, MaxSide))
+                _pending = jpg;
         }
 
         private static bool Repair()
         {
             int size = _rxParity.Length - 4;
+            if (size < 1)
+                return false;
             int total = _rxParity[0] | (_rxParity[1] << 8) | (_rxParity[2] << 16) | (_rxParity[3] << 24);
             int count = _rxParts.Length;
-            if (size < 1 || total < 1)
+            if (total < 1)
                 return false;
             int missing = -1;
             var chunk = new byte[size];
