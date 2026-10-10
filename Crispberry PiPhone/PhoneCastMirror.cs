@@ -9,29 +9,84 @@ namespace Crispberry_PiPhone
 {
     /// <summary>
     /// A copy of the phone the caster is looking at. Watchers rebuild the same
-    /// pictures and words. Photos, songs, and apps they do not have are blocked.
+    /// shapes and words, are sent each still picture once, and get moving
+    /// pictures only where a picture keeps changing. A hidden screen is a padlock.
     /// </summary>
     internal static class PhoneCastMirror
     {
         internal static RawImage Hole;
         internal static bool HoleCloset;
+        internal static RawImage VideoHole;
+        internal static bool VideoKeep;
+        internal static int VideoMode;
+        internal static bool Truncated;
+        internal static bool Dropped;
 
         private static readonly Vector3[] Corners = new Vector3[4];
-        private static readonly HashSet<string> Hidden = new HashSet<string>();
+        private static RectTransform _videoRect;
+        private static RectTransform _box;
+        private static RectTransform _largest;
+        private static float _largestArea;
+        private static int _boxes;
+        private static bool _moving;
+        private static bool _never;
+        private static bool _videoAll;
 
         internal static string Capture(bool hideApp)
         {
+            VideoMode = 0;
+            _videoRect = null;
+            _videoAll = false;
+            _never = false;
             RectTransform bezel = PhoneMenu.BezelRt;
             if (bezel == null || !bezel.gameObject.activeInHierarchy)
                 return string.Empty;
             Hole = null;
-            CollectHidden();
+            VideoHole = null;
+            PiPhoneApp app = hideApp ? null : PhoneMenu.OpenApp();
+            _never = app != null && app.CastVideo == PiPhoneCastVideo.Off;
+            string blob = Describe(bezel, hideApp);
+            if (app == null || _never)
+                return blob;
+            bool incomplete = _moving || Truncated || Dropped || _boxes > 1;
+            if (app.CastVideo != PiPhoneCastVideo.On && !incomplete)
+            {
+                if (_boxes == 1 && _box != null)
+                {
+                    VideoMode = 2;
+                    _videoRect = _box;
+                }
+                return blob;
+            }
+            bool truncated = Truncated;
+            bool dropped = Dropped;
+            RectTransform area = PhoneMenu.AppContentRt;
+            VideoMode = 1;
+            if (_boxes == 0 && _largest != null && area != null && _largestArea >= Area(area) * 0.25f)
+                _videoRect = _largest;
+            _videoAll = true;
+            blob = Describe(bezel, false);
+            _videoAll = false;
+            Truncated = truncated;
+            Dropped = dropped;
+            return blob;
+        }
+
+        private static string Describe(RectTransform bezel, bool hideApp)
+        {
+            Truncated = false;
+            Dropped = false;
+            _moving = false;
+            _boxes = 0;
+            _box = null;
+            _largest = null;
+            _largestArea = 0f;
             var sb = new StringBuilder(4096);
             sb.Append("M1|").Append(Mathf.RoundToInt(bezel.rect.width)).Append('|').Append(Mathf.RoundToInt(bezel.rect.height)).Append('\n');
             int count = 0;
             Walk(bezel, bezel, sb, hideApp, ref count);
             if (hideApp)
-                Note(bezel, sb, "Not shared");
+                Note(bezel, sb);
             return sb.ToString();
         }
 
@@ -39,12 +94,12 @@ namespace Crispberry_PiPhone
         {
             Hole = null;
             HoleCloset = false;
+            VideoHole = null;
+            VideoKeep = false;
+            PhoneCastPictures.BeginPaint();
             if (parent == null || string.IsNullOrEmpty(blob))
                 return;
             string[] lines = blob.Split('\n');
-            string openId = PhoneCastView.OpenApp;
-            bool haveApp = string.IsNullOrEmpty(openId) || openId == "home" || openId == "#" || HasApp(openId);
-            bool blocked = false;
             for (int i = 1; i < lines.Length; i++)
             {
                 string line = lines[i];
@@ -53,12 +108,6 @@ namespace Crispberry_PiPhone
                 string[] f = line.Split('~');
                 if (f.Length < 6)
                     continue;
-                bool appZone = f[0] == "a";
-                if (appZone && !haveApp)
-                {
-                    blocked = true;
-                    continue;
-                }
                 float x = Num(f[1]);
                 float y = Num(f[2]);
                 float w = Num(f[3]);
@@ -70,6 +119,7 @@ namespace Crispberry_PiPhone
                 int size = f.Length > 7 ? (int)Num(f[7]) : 14;
                 int align = f.Length > 8 ? (int)Num(f[8]) : (int)TextAlignmentOptions.Center;
                 string text = f.Length > 9 ? Untext(f[9]) : string.Empty;
+                FontStyles style = f.Length > 10 ? (FontStyles)(int)Num(f[10]) : FontStyles.Normal;
                 if (key == "v" || key == "u")
                 {
                     var go = new GameObject(key == "u" ? "Cam" : "Preview", typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
@@ -80,6 +130,18 @@ namespace Crispberry_PiPhone
                     raw.raycastTarget = false;
                     Hole = raw;
                     HoleCloset = key == "u";
+                    continue;
+                }
+                if (key == "s" || key == "h")
+                {
+                    var go = new GameObject("Video", typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
+                    go.transform.SetParent(parent, false);
+                    Place(go.GetComponent<RectTransform>(), x, y, w, h);
+                    RawImage raw = go.GetComponent<RawImage>();
+                    raw.color = Color.black;
+                    raw.raycastTarget = false;
+                    VideoHole = raw;
+                    VideoKeep = key == "h";
                     continue;
                 }
                 if (key.Length > 2 && key[0] == 'o')
@@ -98,6 +160,7 @@ namespace Crispberry_PiPhone
                         artImg.preserveAspect = true;
                         artImg.type = Image.Type.Simple;
                         Place(art, x, y, w, h);
+                        Centre(art);
                         continue;
                     }
                 }
@@ -108,20 +171,34 @@ namespace Crispberry_PiPhone
                 }
                 if (!string.IsNullOrEmpty(text))
                 {
-                    if (key.Length > 1 && key[0] == 'n' && !HasApp(key.Substring(1)))
-                        continue;
-                    var label = PhoneUi.CreateLabel(parent, "T", text, size > 0 ? size : 14f, FontStyles.Normal, (TextAlignmentOptions)align);
+                    var label = PhoneUi.CreateLabel(parent, "T", text, size > 0 ? size : 14f, style, (TextAlignmentOptions)align);
                     label.color = color;
                     label.overflowMode = TextOverflowModes.Ellipsis;
                     Place(label.rectTransform, x, y, w, h);
                     continue;
                 }
+                if (key.Length > 1 && key[0] == 'x')
+                {
+                    Sprite sent = PhoneCastPictures.Lookup(key);
+                    if (sent == null)
+                    {
+                        Block(parent, x, y, w, h, 8);
+                        continue;
+                    }
+                    var pic = PhoneUi.CreateImage(parent, "X", sent, color);
+                    Image picImg = pic.GetComponent<Image>();
+                    picImg.raycastTarget = false;
+                    picImg.type = (size & 2) != 0 && sent.border.sqrMagnitude > 0f ? Image.Type.Sliced : Image.Type.Simple;
+                    picImg.preserveAspect = (size & 1) != 0;
+                    Place(pic, x, y, w, h);
+                    if (picImg.preserveAspect)
+                        Centre(pic);
+                    continue;
+                }
                 Sprite sprite = SpriteFor(key);
                 if (key == "p" || (sprite == null && key.Length > 0 && key[0] != 'r' && key != "c" && key != "w" && key != "logo"))
                 {
-                    var block = PhoneUi.CreateImage(parent, "Block", PhoneUi.Rounded(8), new Color(0.16f, 0.17f, 0.2f, 1f));
-                    Place(block, x, y, w, h);
-                    block.GetComponent<Image>().raycastTarget = false;
+                    Block(parent, x, y, w, h, 8);
                     continue;
                 }
                 var rt = PhoneUi.CreateImage(parent, "P", sprite != null ? sprite : PhoneUi.White(), color);
@@ -130,13 +207,74 @@ namespace Crispberry_PiPhone
                 img.type = key.Length > 0 && key[0] == 'r' ? Image.Type.Sliced : Image.Type.Simple;
                 img.preserveAspect = key.Length > 0 && (key[0] == 'm' || key[0] == 'k' || key == "logo" || key == "c");
                 Place(rt, x, y, w, h);
+                if (img.preserveAspect)
+                    Centre(rt);
             }
-            if (blocked)
+        }
+
+        private static void Block(RectTransform parent, float x, float y, float w, float h, int radius)
+        {
+            var block = PhoneUi.CreateImage(parent, "Block", PhoneUi.Rounded(radius), new Color(0.16f, 0.17f, 0.2f, 1f));
+            Place(block, x, y, w, h);
+            block.GetComponent<Image>().raycastTarget = false;
+        }
+
+        internal static bool VideoBox(RectTransform bezel, out float xMin, out float yMin, out float xMax, out float yMax)
+        {
+            RectTransform picture = _videoRect != null && _videoRect.gameObject.activeInHierarchy ? _videoRect : null;
+            return AreaBox(bezel, picture, out xMin, out yMin, out xMax, out yMax);
+        }
+
+        private static bool AreaBox(RectTransform bezel, RectTransform picture, out float xMin, out float yMin, out float xMax, out float yMax)
+        {
+            xMin = yMin = xMax = yMax = 0f;
+            RectTransform area = PhoneMenu.AppContentRt;
+            if (bezel == null || area == null)
+                return false;
+            Bounds(bezel, area, out xMin, out yMin, out xMax, out yMax);
+            if (picture != null)
             {
-                var note = PhoneUi.CreateLabel(parent, "Blocked", "Unavailable here", 18f, FontStyles.Bold, TextAlignmentOptions.Center);
-                note.color = Color.white;
-                Place(note.rectTransform, 24f, 80f, 360f, 48f);
+                float x0;
+                float y0;
+                float x1;
+                float y1;
+                Bounds(bezel, picture, out x0, out y0, out x1, out y1);
+                x0 = Mathf.Max(x0, xMin);
+                y0 = Mathf.Max(y0, yMin);
+                x1 = Mathf.Min(x1, xMax);
+                y1 = Mathf.Min(y1, yMax);
+                if (x1 - x0 >= 1f && y1 - y0 >= 1f)
+                {
+                    xMin = x0;
+                    yMin = y0;
+                    xMax = x1;
+                    yMax = y1;
+                }
             }
+            return xMax - xMin >= 1f && yMax - yMin >= 1f;
+        }
+
+        private static void Bounds(RectTransform bezel, RectTransform node, out float xMin, out float yMin, out float xMax, out float yMax)
+        {
+            node.GetWorldCorners(Corners);
+            xMin = float.MaxValue;
+            yMin = float.MaxValue;
+            xMax = float.MinValue;
+            yMax = float.MinValue;
+            for (int i = 0; i < 4; i++)
+            {
+                Vector3 p = bezel.InverseTransformPoint(Corners[i]);
+                xMin = Mathf.Min(xMin, p.x);
+                yMin = Mathf.Min(yMin, p.y);
+                xMax = Mathf.Max(xMax, p.x);
+                yMax = Mathf.Max(yMax, p.y);
+            }
+        }
+
+        private static float Area(RectTransform rt)
+        {
+            Vector3 scale = rt.lossyScale;
+            return Mathf.Abs(rt.rect.width * scale.x * rt.rect.height * scale.y);
         }
 
         internal static void ReadSize(string blob, out float w, out float h)
@@ -161,8 +299,13 @@ namespace Crispberry_PiPhone
 
         private static void Walk(RectTransform node, RectTransform bezel, StringBuilder sb, bool hideApp, ref int count)
         {
-            if (node == null || count > 640 || sb.Length > 36000)
+            if (node == null)
                 return;
+            if (count > 640 || sb.Length > 36000)
+            {
+                Truncated = true;
+                return;
+            }
             if (!node.gameObject.activeInHierarchy)
                 return;
             if (Physical(node.name))
@@ -170,6 +313,25 @@ namespace Crispberry_PiPhone
             bool appZone = PhoneMenu.UnderAppContent(node);
             if (hideApp && appZone)
                 return;
+            if (node == PhoneMenu.AppContentRt && _videoAll)
+            {
+                count += WriteHole(sb, bezel, _videoRect, "s") ? 1 : 0;
+                return;
+            }
+            if (appZone && node.GetComponent<PhoneCastVideoArea>() != null)
+            {
+                if (_never)
+                    count += WriteBox(sb, bezel, node, Color.white, "p", 0, 0, string.Empty, 0, true) ? 1 : 0;
+                else if (WriteHole(sb, bezel, node, "h"))
+                {
+                    count++;
+                    _boxes++;
+                    _box = node;
+                }
+                else
+                    Dropped = true;
+                return;
+            }
             Graphic graphic = node.GetComponent<Graphic>();
             if (graphic != null && graphic.enabled && graphic.color.a > 0.02f)
             {
@@ -180,20 +342,40 @@ namespace Crispberry_PiPhone
                     Image image = graphic as Image;
                     TextMeshProUGUI label = graphic as TextMeshProUGUI;
                     if (raw != null)
-                        count += WriteBox(sb, bezel, node, raw.color, RawKey(raw), 0, 0, string.Empty, appZone) ? 1 : 0;
+                    {
+                        Color color = raw.color;
+                        string key = RawKey(raw);
+                        if (key == "p")
+                            key = Foreign(bezel, node, raw.texture, RawRect(raw), Vector4.zero, 100f, null, appZone, ref color);
+                        count += WriteBox(sb, bezel, node, color, key, 0, 0, string.Empty, 0, appZone) ? 1 : 0;
+                    }
                     else if (label != null && !string.IsNullOrEmpty(label.text))
                     {
-                        string text = ShownText(label.text);
                         string owner = AppOwner(label.transform);
                         string key = string.IsNullOrEmpty(owner) ? string.Empty : "n" + owner;
                         int align = (int)label.alignment;
-                        count += WriteBox(sb, bezel, node, label.color, key, Mathf.RoundToInt(label.fontSize), align, text, appZone) ? 1 : 0;
+                        count += WriteBox(sb, bezel, node, label.color, key, Mathf.RoundToInt(label.fontSize), align, label.text, (int)label.fontStyle, appZone) ? 1 : 0;
                     }
                     else if (image != null)
                     {
+                        Color color = image.color;
+                        int flags = 0;
                         string key = SpriteKey(image);
                         bool custom = key.Length > 1 && key[0] == 'g';
-                        count += WriteBox(sb, bezel, node, image.color, key, 0, 0, string.Empty, appZone) ? 1 : 0;
+                        Sprite sprite = image.sprite;
+                        if (custom)
+                        {
+                            Color unused = color;
+                            Foreign(bezel, node, sprite.texture, SpriteRect(sprite), Vector4.zero, 100f, key, false, ref unused);
+                        }
+                        else if (key == "p")
+                        {
+                            bool sliced = image.type == Image.Type.Sliced;
+                            key = Foreign(bezel, node, sprite.texture, SpriteRect(sprite), sliced ? sprite.border : Vector4.zero, sprite.pixelsPerUnit, null, appZone, ref color);
+                            if (key.Length > 1 && key[0] == 'x')
+                                flags = (image.preserveAspect ? 1 : 0) | (sliced ? 2 : 0);
+                        }
+                        count += WriteBox(sb, bezel, node, color, key, flags, 0, string.Empty, 0, appZone) ? 1 : 0;
                         if (custom)
                             return;
                     }
@@ -203,14 +385,66 @@ namespace Crispberry_PiPhone
                 Walk(node.GetChild(i) as RectTransform, bezel, sb, hideApp, ref count);
         }
 
-        private static bool WriteBox(StringBuilder sb, RectTransform bezel, RectTransform node, Color color, string key, int size, int align, string text, bool appZone)
+        private static string Foreign(RectTransform bezel, RectTransform node, Texture tex, Rect rect, Vector4 border, float ppu, string alias, bool appZone, ref Color color)
+        {
+            node.GetWorldCorners(Corners);
+            Vector3 bl = bezel.InverseTransformPoint(Corners[0]);
+            Vector3 tr = bezel.InverseTransformPoint(Corners[2]);
+            float units = Mathf.Max(Mathf.Abs(tr.x - bl.x), Mathf.Abs(tr.y - bl.y));
+            bool moving;
+            bool flat;
+            Color flatColor;
+            string key = PhoneCastPictures.KeyFor(tex, rect, border, ppu, units, alias, out moving, out flat, out flatColor);
+            if (moving && appZone && !_never)
+            {
+                _moving = true;
+                float area = Area(node);
+                if (area > _largestArea)
+                {
+                    _largestArea = area;
+                    _largest = node;
+                }
+            }
+            if (flat)
+                color *= flatColor;
+            return key;
+        }
+
+        private static Rect RawRect(RawImage raw)
+        {
+            Texture tex = raw.texture;
+            if (tex == null)
+                return new Rect();
+            Rect uv = raw.uvRect;
+            if (uv.width > 0f && uv.height > 0f && uv.xMin >= 0f && uv.yMin >= 0f && uv.xMax <= 1f && uv.yMax <= 1f)
+                return new Rect(uv.x * tex.width, uv.y * tex.height, uv.width * tex.width, uv.height * tex.height);
+            return new Rect(0f, 0f, tex.width, tex.height);
+        }
+
+        private static Rect SpriteRect(Sprite sprite)
+        {
+            try
+            {
+                return sprite.textureRect;
+            }
+            catch (System.Exception)
+            {
+                return sprite.rect;
+            }
+        }
+
+        private static bool WriteBox(StringBuilder sb, RectTransform bezel, RectTransform node, Color color, string key, int size, int align, string text, int style, bool appZone)
         {
             float x;
             float y;
             float w;
             float h;
             if (!Box(bezel, node, out x, out y, out w, out h))
+            {
+                if (appZone && Turned(bezel, node))
+                    Dropped = true;
                 return false;
+            }
             if (w < 1f || h < 1f)
                 return false;
             sb.Append(appZone ? 'a' : 'c');
@@ -223,19 +457,54 @@ namespace Crispberry_PiPhone
             sb.Append('~').Append(size);
             sb.Append('~').Append(align);
             sb.Append('~').Append(Esc(text));
+            if (style != 0 && !string.IsNullOrEmpty(text))
+                sb.Append('~').Append(style);
             sb.Append('\n');
             return true;
         }
 
-        private static void Note(RectTransform bezel, StringBuilder sb, string text)
+        private static bool Turned(RectTransform bezel, RectTransform node)
+        {
+            node.GetWorldCorners(Corners);
+            Vector3 bl = bezel.InverseTransformPoint(Corners[0]);
+            Vector3 tr = bezel.InverseTransformPoint(Corners[2]);
+            return tr.x - bl.x < 0f || tr.y - bl.y < 0f;
+        }
+
+        private static bool WriteHole(StringBuilder sb, RectTransform bezel, RectTransform picture, string key)
+        {
+            float xMin;
+            float yMin;
+            float xMax;
+            float yMax;
+            if (picture != null && !picture.gameObject.activeInHierarchy)
+                picture = null;
+            if (!AreaBox(bezel, picture, out xMin, out yMin, out xMax, out yMax))
+                return false;
+            float bw = bezel.rect.width;
+            float bh = bezel.rect.height;
+            float x = xMin + bw * 0.5f;
+            float y = bh * 0.5f - yMax;
+            float w = xMax - xMin;
+            float h = yMax - yMin;
+            Clip(ref x, ref y, ref w, ref h, 0f, 0f, bw, bh);
+            if (w < 1f || h < 1f)
+                return false;
+            sb.Append("c~").Append(Mathf.RoundToInt(x));
+            sb.Append('~').Append(Mathf.RoundToInt(y));
+            sb.Append('~').Append(Mathf.RoundToInt(w));
+            sb.Append('~').Append(Mathf.RoundToInt(h));
+            sb.Append("~FFFFFFFF~").Append(key).Append("~0~0~\n");
+            return true;
+        }
+
+        private static void Note(RectTransform bezel, StringBuilder sb)
         {
             float w = bezel.rect.width;
             float h = bezel.rect.height;
-            sb.Append("c~").Append(Mathf.RoundToInt(w * 0.12f));
-            sb.Append('~').Append(Mathf.RoundToInt(h * 0.42f));
-            sb.Append('~').Append(Mathf.RoundToInt(w * 0.76f));
-            sb.Append("~48~FFFFFFFF~~18~").Append((int)TextAlignmentOptions.Center);
-            sb.Append('~').Append(Esc(text)).Append('\n');
+            sb.Append("c~").Append(Mathf.RoundToInt(w * 0.5f - 48f));
+            sb.Append('~').Append(Mathf.RoundToInt(h * 0.5f - 48f));
+            sb.Append("~96~96~FFFFFFFF~mlock~0~0~\n");
         }
 
         private static bool Box(RectTransform bezel, RectTransform node, out float x, out float y, out float w, out float h)
@@ -418,12 +687,23 @@ namespace Crispberry_PiPhone
             PiPhoneApp app;
             if (!PiPhoneApi.TryGetApp(id, out app) || app == null)
             {
-                var block = PhoneUi.CreateImage(parent, "Gone", PhoneUi.Rounded(16), new Color(0.22f, 0.23f, 0.26f, 1f));
-                Place(block, x, y, w, h);
-                block.GetComponent<Image>().raycastTarget = false;
-                var label = PhoneUi.CreateLabel(block, "U", "Unavailable", Mathf.Clamp(h * 0.22f, 9f, 14f), FontStyles.Bold, TextAlignmentOptions.Center);
-                label.color = Color.white;
-                PhoneUi.Stretch(label.rectTransform, 4f, 4f);
+                Sprite sent = PhoneCastPictures.Lookup("g" + id);
+                if (sent == null)
+                {
+                    Block(parent, x, y, w, h, 16);
+                    return;
+                }
+                var well = PhoneUi.CreateImage(parent, "Icon", PhoneUi.IconWellShape(), Color.white);
+                well.GetComponent<Image>().raycastTarget = false;
+                var mask = well.gameObject.AddComponent<Mask>();
+                mask.showMaskGraphic = false;
+                var art = PhoneUi.CreateImage(well, "Art", sent, Color.white);
+                PhoneUi.Stretch(art, 0f, 0f);
+                Image artImg = art.GetComponent<Image>();
+                artImg.type = Image.Type.Simple;
+                artImg.preserveAspect = true;
+                artImg.raycastTarget = false;
+                Place(well, x, y, w, h);
                 return;
             }
             float side = Mathf.Max(8f, Mathf.Min(w, h));
@@ -464,43 +744,13 @@ namespace Crispberry_PiPhone
             rt.sizeDelta = new Vector2(w, h);
         }
 
-        private static void CollectHidden()
+        private static void Centre(RectTransform rt)
         {
-            Hidden.Clear();
-            PiPhoneApp app = PhoneMenu.OpenApp();
-            if (app == null || app.Id != BuiltinApps.SoundsId)
+            if (rt == null)
                 return;
-            List<SoundItem> tracks = PhoneStore.MusicTracks();
-            for (int i = 0; i < tracks.Count; i++)
-            {
-                if (tracks[i] != null && !string.IsNullOrEmpty(tracks[i].Name))
-                    Hidden.Add(tracks[i].Name);
-            }
-            for (int i = 0; i < PhoneStore.Playlists.Count; i++)
-            {
-                PlaylistItem list = PhoneStore.Playlists[i];
-                if (list != null && !string.IsNullOrEmpty(list.Name))
-                    Hidden.Add(list.Name);
-            }
-            if (!string.IsNullOrEmpty(MusicPlayer.CurrentName))
-                Hidden.Add(MusicPlayer.CurrentName);
-            if (!string.IsNullOrEmpty(MusicPlayer.UpcomingLine))
-                Hidden.Add(MusicPlayer.UpcomingLine);
-        }
-
-        private static string ShownText(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return string.Empty;
-            if (Hidden.Contains(text))
-                return "Not on this phone";
-            return text;
-        }
-
-        private static bool HasApp(string id)
-        {
-            PiPhoneApp app;
-            return PiPhoneApi.TryGetApp(id, out app) && app != null;
+            Vector2 size = rt.sizeDelta;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition += new Vector2(size.x * 0.5f, -size.y * 0.5f);
         }
 
         private static string Hex(Color color)

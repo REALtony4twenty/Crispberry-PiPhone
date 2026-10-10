@@ -22,6 +22,7 @@ namespace Crispberry_PiPhone
                 IconBackground = PhoneUi.PhotosIcon,
                 SortOrder = 26,
                 ShowOnHome = true,
+                CastHidden = true,
                 OnOpen = host => { _live = new Session(host); _live.ShowFolders(); },
                 OnClose = () =>
                 {

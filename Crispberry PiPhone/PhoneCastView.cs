@@ -35,7 +35,7 @@ namespace Crispberry_PiPhone
         private static float _faceW;
         private static float _faceH;
         private static string _key = string.Empty;
-        internal static string OpenApp = string.Empty;
+        private static string _blob = string.Empty;
         private static Snap _snap;
         private static Camera _cam;
         private static RenderTexture _rt;
@@ -75,14 +75,26 @@ namespace Crispberry_PiPhone
             Canvas canvas = _root.GetComponent<Canvas>();
             if (canvas != null && canvas.worldCamera == null)
                 canvas.worldCamera = Camera.main;
-            OpenApp = snap.App ?? string.Empty;
             string blob = snap.Blob ?? string.Empty;
             bool mirror = blob.StartsWith("M1|");
             if (!mirror)
                 return;
             if (blob == _key)
                 return;
+            Paint(blob);
+        }
+
+        internal static void Repaint()
+        {
+            if (_root == null || string.IsNullOrEmpty(_blob))
+                return;
+            Paint(_blob);
+        }
+
+        private static void Paint(string blob)
+        {
             _key = blob;
+            _blob = blob;
             float pw;
             float ph;
             PhoneCastMirror.ReadSize(blob, out pw, out ph);
@@ -92,6 +104,20 @@ namespace Crispberry_PiPhone
             _live = null;
             StopCam();
             PhoneCastMirror.Paint(_root, blob);
+            RawImage video = PhoneCastMirror.VideoHole;
+            if (video != null && !PhoneCastMirror.VideoKeep)
+            {
+                for (int i = _root.childCount - 1; i >= 0; i--)
+                {
+                    Transform child = _root.GetChild(i);
+                    if (child != video.transform)
+                        UnityEngine.Object.DestroyImmediate(child.gameObject);
+                }
+                Vector2 size = video.rectTransform.sizeDelta;
+                video.rectTransform.anchoredPosition = Vector2.zero;
+                FitSize(size.x, size.y);
+            }
+            PhoneCastVideo.Show(video);
             if (PhoneCastMirror.Hole != null)
             {
                 EnsureCam();
@@ -107,7 +133,9 @@ namespace Crispberry_PiPhone
         public static void Drop()
         {
             StopCam();
+            PhoneCastPictures.EndWatch();
             _key = string.Empty;
+            _blob = string.Empty;
             _host = null;
             if (_root != null)
             {

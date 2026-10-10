@@ -149,6 +149,8 @@
     <Compile Include="PhoneCast.cs" />
     <Compile Include="PhoneCastView.cs" />
     <Compile Include="PhoneCastMirror.cs" />
+    <Compile Include="PhoneCastVideo.cs" />
+    <Compile Include="PhoneCastPictures.cs" />
     <Compile Include="PhoneCastBoards.cs" />
     <Compile Include="PhoneTheme.cs" />
     <Compile Include="PhoneLang.cs" />
@@ -178,6 +180,7 @@
     <Compile Include="AlertHud.cs" />
     <Compile Include="PhoneNotify.cs" />
     <Compile Include="PhoneSounds.cs" />
+    <Compile Include="PhoneAudio.cs" />
     <Compile Include="SoundsApp.cs" />
     <Compile Include="MakeNotiApp.cs" />
     <Compile Include="MusicPlayer.cs" />

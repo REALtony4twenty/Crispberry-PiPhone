@@ -136,14 +136,18 @@ namespace Crispberry_PiPhone
     /// separate board: the cast shows the phone picture, so the UI you built is
     /// what other players see. The side volume buttons are not part of that picture.
     ///
-    /// Sounds: the phone volume is the master. <see cref="PlayInterfaceSound"/> plays
-    /// a built-in cue (click, toggle-on, toggle-off, back-btn, hover, tick, trash,
-    /// shutter, rec-start, rec-stop, vibrate, type, back, and the game cues).
-    /// <see cref="PlayClip(byte[])"/> plays your WAV or MP3 at that volume.
+    /// Sounds: the phone volume is the master, <see cref="MasterVolume"/>. Every sound
+    /// plays on a <see cref="PiPhoneAudioChannel"/>, at that channel's volume times the
+    /// master. <see cref="PlayInterfaceSound"/> plays an interface cue (click, toggle-on,
+    /// toggle-off, back-btn, hover, tick, trash, shutter, rec-start, rec-stop, type,
+    /// back) on the System channel. Alert tones, vibrate, and the game cues cannot be
+    /// played by name. <see cref="PlayClip(byte[])"/> plays your WAV or MP3 on the Media channel.
     /// <see cref="BindButton(Button, UnityAction)"/> plays the phone click, then your action.
-    /// Pass a cue, or call <see cref="BindButtonClip"/>, for a different press.
+    /// Pass an interface cue, or call <see cref="BindButtonClip"/>, for a different press.
     /// <see cref="PiPhoneApp.HoverSound"/> and <see cref="SetAppHoverClip"/> choose the
-    /// home-icon hover. <see cref="GetAppCueVolume"/> is a trim under the phone volume.
+    /// home-icon hover. Presses and hovers stay on the System channel and keep the
+    /// player's Button and App hover rows, whoever supplied the sound.
+    /// <see cref="GetAppCueVolume"/> is a trim under the Media channel.
     /// <see cref="PiPhoneApp.RunInBackground"/> stays false unless the app must keep
     /// working after the player goes home.
     ///
@@ -169,6 +173,19 @@ namespace Crispberry_PiPhone
     /// (listener-side only). <see cref="ClearVoiceFilter"/> gives PEAK the voice back.
     /// An active call with that scout uses PiPhone's call tone until hangup.
     /// Presets: <see cref="PiPhoneVoiceFilter.Dry"/>, <see cref="PiPhoneVoiceFilter.Realm"/>.
+    ///
+    /// Media audio: <see cref="PlayMedia"/> plays a WAV file or raw 16-bit PCM through
+    /// the phone, and <see cref="PlayMediaClip"/> plays an AudioClip you already hold.
+    /// Both use the phone's media volume. <see cref="PlayMediaStream"/> is for live
+    /// audio your mod makes as it goes: the phone calls you to fill its output buffer,
+    /// with no clip in between. <see cref="StopMedia"/> stops all three. Media sounds
+    /// play over one another at full level. A ringtone, an alert or a vibrate buzz
+    /// lowers everything on Media while it sounds, your sound included, unless the
+    /// player has switched "Fade music on alerts" off. With
+    /// <see cref="PrioritizeCallAudio"/> on, Media is also lowered while a call rings
+    /// in and silent, but still running, while a call is connected. Mods can only play as media, never as a
+    /// ringtone or alert. <see cref="GetChannelVolume"/> / <see cref="SetChannelVolume"/>
+    /// read and write the saved volume of each <see cref="PiPhoneAudioChannel"/>.
     ///
     /// Contacts: keyed by Photon UserId (Steam id on PEAK). See
     /// <see cref="SetContactName"/> / <see cref="SetContactPhoto"/> /
@@ -973,6 +990,33 @@ namespace Crispberry_PiPhone
             return PhoneTones.AppTone(appId);
         }
 
+        /// <summary>
+        /// The phone volume, 0 to 1: the Master slider and the side keys. It scales every
+        /// channel, so sound played through the phone already uses it. <see cref="GetChannelVolume"/>
+        /// does not include it; a mod that keeps its own AudioSource multiplies the two to
+        /// follow the phone. Setting it saves it and applies to sound already playing.
+        /// </summary>
+        public static float MasterVolume
+        {
+            get { return PhoneTheme.MasterVolume; }
+            set { PhoneTheme.SetMasterVolume(value); }
+        }
+
+        /// <summary>
+        /// The player's "Prioritize call audio" setting, on by default. While it is on,
+        /// everything on <see cref="PiPhoneAudioChannel.Media"/> is lowered for as long as
+        /// a call is ringing in, and silent for as long as a call is connected. Your sound
+        /// is not stopped while silent: a clip keeps elapsing and a
+        /// <see cref="PlayMediaStream"/> reader keeps being called, and both are heard
+        /// again at hang-up. The Music app is paused for the call and resumes after it.
+        /// Setting it saves it and takes effect at once, mid-call included.
+        /// </summary>
+        public static bool PrioritizeCallAudio
+        {
+            get { return PhoneTheme.PrioritizeCallAudio; }
+            set { PhoneTheme.SetPrioritizeCallAudio(value); }
+        }
+
         /// <summary>Trim for interface sounds that do not have their own slider yet. The phone volume still scales the result. 0 is silent, 1 is full.</summary>
         public static float UiSfxVolume
         {
@@ -1005,39 +1049,49 @@ namespace Crispberry_PiPhone
         }
 
         /// <summary>
-        /// Play a built-in phone sound at the phone volume. The cue keeps its Sounds-page slider when it has one.
-        /// Keys include click, back-btn, hover, tick, trash, shutter, rec-start, rec-stop, type, and back.
+        /// Play an interface cue on the System channel. The cue keeps its Sounds-page switch, slider and file.
+        /// Keys are click, toggle-on, toggle-off, back-btn, hover, tick, trash, shutter, rec-start, rec-stop, type, and back.
+        /// Any other name plays nothing: alert tones, vibrate, and the game cues are not interface cues.
         /// </summary>
         public static void PlayInterfaceSound(string cue)
         {
-            PhoneSfx.PlayUi(cue);
+            if (PhoneSfx.IsInterfaceCue(cue))
+                PhoneSfx.PlayUi(cue);
         }
 
-        /// <summary>Play your own short WAV or MP3 at the phone volume.</summary>
+        /// <summary>Play your own short WAV or MP3 on the Media channel, so it follows the Media slider and the phone volume.</summary>
         public static bool PlayClip(byte[] wavOrMp3)
         {
             return PlayClip(wavOrMp3, 1f);
         }
 
-        /// <summary>Play your own short WAV or MP3. <paramref name="scale"/> is 0–1, then the phone volume.</summary>
+        /// <summary>
+        /// Play your own short WAV or MP3 on the Media channel. <paramref name="scale"/> is a 0–1 trim
+        /// under the Media volume and the phone volume. Clips overlap instead of cutting each other.
+        /// </summary>
         public static bool PlayClip(byte[] wavOrMp3, float scale)
         {
             object clip = PhoneSfx.FromBytes(wavOrMp3);
             if (clip == null)
                 return false;
-            float vol = Mathf.Clamp01(scale) * PhoneTheme.RingVolume;
-            if (vol > 0.001f)
-                VoiceIo.PlayOneShot(clip, vol);
+            PhoneAudio.PlayOneShot(PhoneAudioChannel.Media, clip, scale);
             return true;
         }
 
-        /// <summary>Home-icon hover uses a built-in cue. Null or empty restores the phone hover.</summary>
+        /// <summary>
+        /// Home-icon hover uses an interface cue, see <see cref="PlayInterfaceSound"/> for the keys.
+        /// Null or empty restores the phone hover. Any other name is ignored.
+        /// The player's App hover switch and slider still apply.
+        /// </summary>
         public static void SetAppHoverSound(string appId, string cue)
         {
             PiPhoneApp app;
             if (!TryGetApp(appId, out app) || app == null)
                 return;
-            app.HoverSound = string.IsNullOrEmpty(cue) ? null : cue;
+            if (string.IsNullOrEmpty(cue))
+                app.HoverSound = null;
+            else if (PhoneSfx.IsInterfaceCue(cue))
+                app.HoverSound = cue;
         }
 
         /// <summary>Home-icon hover uses your WAV or MP3. Pass null or empty to clear it and use <see cref="PiPhoneApp.HoverSound"/>.</summary>
@@ -1052,10 +1106,16 @@ namespace Crispberry_PiPhone
             PhoneSfx.BindPress(button, action, false, false);
         }
 
-        /// <summary>Button plays a built-in phone sound, then runs <paramref name="action"/>.</summary>
+        /// <summary>
+        /// Button plays an interface cue, then runs <paramref name="action"/>. See <see cref="PlayInterfaceSound"/>
+        /// for the keys. Null or empty plays the phone click. Any other name runs the action with no sound.
+        /// </summary>
         public static void BindButton(Button button, UnityAction action, string cue)
         {
-            PhoneSfx.BindCue(button, action, cue);
+            if (string.IsNullOrEmpty(cue) || PhoneSfx.IsInterfaceCue(cue))
+                PhoneSfx.BindCue(button, action, cue);
+            else if (button != null && action != null)
+                button.onClick.AddListener(action);
         }
 
         /// <summary>Button plays your WAV or MP3 at the button level, then runs <paramref name="action"/>.</summary>
@@ -1196,6 +1256,114 @@ namespace Crispberry_PiPhone
         public static bool VoiceFilterHeld(string id)
         {
             return VoiceFx.IsHeld(id);
+        }
+
+        /// <summary>
+        /// Play sound through the phone on <see cref="PiPhoneAudioChannel.Media"/>.
+        /// Pass a whole WAV file, or raw little-endian signed 16-bit PCM with its
+        /// <paramref name="rate"/> and <paramref name="channels"/> (both are ignored
+        /// for a WAV, which carries its own). Replaces whatever a mod was already
+        /// playing as media. Plays on this player's phone only. Uses the media volume,
+        /// and still plays when the ringer is Silent, because it is media and not an
+        /// alert. Plays over the Music app without lowering it. A ringtone, an alert
+        /// or a vibrate buzz lowers it while that sounds, along with everything else
+        /// on Media, unless the player has switched that off. Stops when the phone closes.
+        /// Returns false if the bytes could not be read.
+        /// </summary>
+        public static bool PlayMedia(byte[] wavOrPcm16, int rate, int channels, bool loop)
+        {
+            return PhoneAudio.PlayMedia(wavOrPcm16, rate, channels, loop);
+        }
+
+        /// <summary>
+        /// Same as <see cref="PlayMedia"/> for a clip you already hold. Pass a
+        /// UnityEngine.AudioClip. The parameter is typed <c>object</c> on purpose:
+        /// the phone reaches Unity audio by reflection so it has no hard reference to
+        /// UnityEngine.AudioModule. Your clip is played as it is and is not changed.
+        /// Returns false, without throwing, for null, a destroyed clip, or any other type.
+        /// </summary>
+        public static bool PlayMediaClip(object audioClip, bool loop)
+        {
+            return PhoneAudio.PlayMediaClip(audioClip, loop);
+        }
+
+        /// <summary>
+        /// Play live sound through the phone on <see cref="PiPhoneAudioChannel.Media"/>.
+        /// This is the way to play audio your mod makes as it goes: a game, an emulator,
+        /// a synth, a decoder. <paramref name="reader"/> has the same contract as Unity's
+        /// OnAudioFilterRead: it is handed the output buffer and its channel count, and
+        /// fills every sample, interleaved, at AudioSettings.outputSampleRate. It runs on
+        /// the audio thread, so do not touch Unity objects in it and do not block.
+        /// The phone owns the source: it applies the media volume after your samples, so
+        /// write them at full level, and it stops the stream when the phone closes. Call
+        /// this again to start it back up. A new stream replaces the last one; sound from
+        /// <see cref="PlayMedia"/> plays alongside it. Does not lower the Music app. A
+        /// ringtone, an alert or a vibrate buzz lowers the stream while that sounds,
+        /// unless the player has switched that off. If <paramref name="reader"/> throws, the stream is stopped
+        /// and the error is logged. Returns false if the stream could not start.
+        /// </summary>
+        public static bool PlayMediaStream(Action<float[], int> reader)
+        {
+            return PhoneAudio.PlayMediaStream(reader);
+        }
+
+        /// <summary>
+        /// Stop sound started with <see cref="PlayMedia"/>, <see cref="PlayMediaClip"/>
+        /// or <see cref="PlayMediaStream"/>. Leaves the Music app alone.
+        /// </summary>
+        public static void StopMedia()
+        {
+            PhoneAudio.Stop(PhoneAudioChannel.Media);
+        }
+
+        /// <summary>
+        /// True while anything is playing on <see cref="PiPhoneAudioChannel.Media"/>.
+        /// That includes the Music app, so this can stay true after <see cref="StopMedia"/>.
+        /// </summary>
+        public static bool IsMediaPlaying()
+        {
+            return PhoneAudio.IsPlaying(PhoneAudioChannel.Media);
+        }
+
+        /// <summary>
+        /// Saved volume of a channel, 0 to 1. Sound played through the phone already
+        /// uses it. This is the channel's own level and does not include the phone
+        /// volume: a mod that keeps its own AudioSource multiplies it by
+        /// <see cref="MasterVolume"/> to follow the phone's level. It changes whenever
+        /// the player or another mod sets it.
+        /// </summary>
+        public static float GetChannelVolume(PiPhoneAudioChannel channel)
+        {
+            PhoneAudioChannel mapped;
+            return TryMapChannel(channel, out mapped) ? PhoneAudio.VolumeOf(mapped) : 0f;
+        }
+
+        /// <summary>
+        /// Set and save the volume of a channel, clamped to 0 to 1. Applies to sound
+        /// already playing. Every channel can be set, including the ones a mod cannot
+        /// play into. <see cref="PiPhoneAudioChannel.Media"/> is the Media channel's
+        /// level; the slider inside the Music app is a further trim on music alone. The
+        /// Master slider is <see cref="MasterVolume"/>, not a channel.
+        /// </summary>
+        public static void SetChannelVolume(PiPhoneAudioChannel channel, float value)
+        {
+            PhoneAudioChannel mapped;
+            if (TryMapChannel(channel, out mapped))
+                PhoneTheme.SetChannelVolume(mapped, value);
+        }
+
+        private static bool TryMapChannel(PiPhoneAudioChannel channel, out PhoneAudioChannel mapped)
+        {
+            switch (channel)
+            {
+                case PiPhoneAudioChannel.Media: mapped = PhoneAudioChannel.Media; return true;
+                case PiPhoneAudioChannel.Call: mapped = PhoneAudioChannel.Call; return true;
+                case PiPhoneAudioChannel.Ringtone: mapped = PhoneAudioChannel.Ringtone; return true;
+                case PiPhoneAudioChannel.Notification: mapped = PhoneAudioChannel.Notification; return true;
+                case PiPhoneAudioChannel.System: mapped = PhoneAudioChannel.System; return true;
+            }
+            mapped = PhoneAudioChannel.Media;
+            return false;
         }
 
         /// <summary>
@@ -1496,6 +1664,45 @@ namespace Crispberry_PiPhone
     }
 
     /// <summary>
+    /// The phone's audio channels. Each has its own saved volume, see
+    /// <see cref="PiPhoneApi.GetChannelVolume"/> / <see cref="PiPhoneApi.SetChannelVolume"/>,
+    /// and plays at that volume times <see cref="PiPhoneApi.MasterVolume"/>.
+    /// Media = <see cref="PiPhoneApi.PlayMedia"/>, <see cref="PiPhoneApi.PlayMediaStream"/>,
+    /// <see cref="PiPhoneApi.PlayClip(byte[])"/>, the Music app and the built-in games' effects;
+    /// lowered while an alert sounds or a call rings in, and silent during a call, see
+    /// <see cref="PiPhoneApi.PrioritizeCallAudio"/>.
+    /// Call = other scouts' voices while on a call with them.
+    /// Ringtone = incoming calls. Notification = text and app alerts.
+    /// System = interface cues, button presses and icon hovers.
+    /// A mod's own audio plays into <see cref="Media"/> only. Vibrate is on no channel and ignores the master.
+    /// </summary>
+    public enum PiPhoneAudioChannel
+    {
+        Media,
+        Call,
+        Ringtone,
+        Notification,
+        System
+    }
+
+    /// <summary>
+    /// How an app's screen reaches players watching a shared cast, see <see cref="PiPhoneApp.CastVideo"/>.
+    /// This is about picture quality. To keep an app off casts, use <see cref="PiPhoneApp.CastHidden"/>.
+    /// </summary>
+    public enum PiPhoneCastVideo
+    {
+        /// <summary>
+        /// The phone chooses. It describes the screen, sends each still picture once, and uses
+        /// moving pictures only for a picture that keeps being repainted or a screen it cannot describe in full.
+        /// </summary>
+        Auto,
+        /// <summary>Always send the whole app area as moving pictures.</summary>
+        On,
+        /// <summary>Never send moving pictures. For an app built to be described. A repainted picture shows as a plain block.</summary>
+        Off
+    }
+
+    /// <summary>
     /// Saved contact. <see cref="Id"/> is Photon UserId (Steam id on PEAK).
     /// <see cref="CustomName"/> is what the player typed; <see cref="RealName"/> is the last seen nick.
     /// </summary>
@@ -1733,8 +1940,9 @@ namespace Crispberry_PiPhone
         public bool AllowPlayThrough = true;
 
         /// <summary>
-        /// Built-in sound when the pointer hovers this app's icon. Null uses the phone's App hover.
-        /// A library key such as "click" uses that phone sound.
+        /// Interface cue when the pointer hovers this app's icon. Null uses the phone's App hover.
+        /// A key such as "click" uses that phone sound; see <see cref="PiPhoneApi.PlayInterfaceSound"/> for the keys.
+        /// Any other name falls back to the phone's App hover. The player's App hover switch and slider still apply.
         /// For your own recording, call <see cref="PiPhoneApi.SetAppHoverClip"/>.
         /// Buttons you build can use <see cref="PiPhoneApi.BindButton"/> or <see cref="PiPhoneApi.BindButtonClip"/>,
         /// and <see cref="PiPhoneApi.PlayInterfaceSound"/> or <see cref="PiPhoneApi.PlayClip"/> for anything else.
@@ -1760,6 +1968,25 @@ namespace Crispberry_PiPhone
 
         /// <summary>Cast picture height, in ratio units (9 in 16:9). Zero uses the phone's shape.</summary>
         public float CastAspectHeight;
+
+        /// <summary>
+        /// On a shared cast, watchers see a rebuilt copy of the phone, which is the sharpest they can get.
+        /// Text and the phone's own shapes are described. A still picture of your own is sent to each
+        /// watcher once and kept, so they see it whether or not they have this app. Moving pictures are
+        /// the fallback: with <see cref="PiPhoneCastVideo.Auto"/> the phone uses them when a picture keeps
+        /// being repainted, or when it cannot describe the whole screen. Put a repainted picture inside
+        /// <see cref="PhoneUi.CreateVideoCastContainer"/> and only that box is sent as moving pictures
+        /// while the rest of your screen stays described. <see cref="PiPhoneCastVideo.On"/> and
+        /// <see cref="PiPhoneCastVideo.Off"/> decide for yourself. Video costs the caster upload.
+        /// This does not hide anything. See <see cref="CastHidden"/>.
+        /// </summary>
+        public PiPhoneCastVideo CastVideo;
+
+        /// <summary>
+        /// When true, this app's screen is never shown, heard, or streamed to players watching a cast.
+        /// They see a padlock in its place.
+        /// </summary>
+        public bool CastHidden;
 
         /// <summary>
         /// If true (default), this app covers the wallpaper so the GIF can pause.

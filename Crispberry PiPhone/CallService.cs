@@ -590,7 +590,14 @@ namespace Crispberry_PiPhone
             src.spatialize = false;
             src.minDistance = 500f;
             src.maxDistance = 10000f;
-            src.volume = handler.audioLevel;
+        }
+
+        private static void ApplyCallVolume(CharacterVoiceHandler handler)
+        {
+            AudioSource src = VoiceSource(handler);
+            if (src == null)
+                return;
+            src.volume = handler.audioLevel * PhoneAudio.EffectiveVolume(PhoneAudioChannel.Call);
         }
 
         private static void RestoreSpatial(CharacterVoiceHandler handler)
@@ -676,6 +683,7 @@ namespace Crispberry_PiPhone
                             RestoreSpatial(__instance);
                             Flattened.Remove(__instance);
                         }
+                        ApplyCallVolume(__instance);
                     }
                     else if (Flattened.ContainsKey(__instance) || VoiceFx.HasCallLayer(__instance))
                     {

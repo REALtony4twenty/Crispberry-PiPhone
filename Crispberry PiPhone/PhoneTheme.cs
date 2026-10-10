@@ -12,8 +12,16 @@ namespace Crispberry_PiPhone
         public const float MinBrightness = 0.10f;
 
         public static float Brightness = 1f;
-        public static float RingVolume = 0.7f;
-        public static float MusicVolume = 0.7f;
+        public static float MasterVolume
+        {
+            get { return PhoneAudio.MasterVolume; }
+            set { PhoneAudio.MasterVolume = value; }
+        }
+        public static float MusicVolume
+        {
+            get { return PhoneAudio.MusicVolume; }
+            set { PhoneAudio.MusicVolume = value; }
+        }
         public static float UiSfxVolume = 0.7f;
         public static string UiSndCsv = string.Empty;
         public static string GameSfxCsv = string.Empty;
@@ -30,6 +38,7 @@ namespace Crispberry_PiPhone
         public static int RingerMode;
         public static bool DoNotDisturb;
         public static bool AutoAnswer;
+        public static bool PrioritizeCallAudio = true;
         public static bool Clock24Hour;
         public static bool UsePeakTime;
         public static bool HideDate;
@@ -118,6 +127,11 @@ namespace Crispberry_PiPhone
             }
             bool sawBattery = false;
             bool sawSignal = false;
+            bool masterClaimed = false;
+            bool musicClaimed = false;
+            bool uiClaimed = false;
+            bool uiCuesClaimed = false;
+            bool appsClaimed = false;
             try
             {
                 string[] lines = File.ReadAllLines(path);
@@ -135,13 +149,23 @@ namespace Crispberry_PiPhone
                     float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out f);
                     if (key == "brightness") Brightness = ClampBright(f);
                     else if (key == "bright" && val.IndexOf('.') >= 0) Brightness = Mathf.Clamp01(f);
-                    else if (key == "ringf") RingVolume = Mathf.Clamp01(f);
-                    else if (key == "ring" && val.IndexOf('.') >= 0) RingVolume = Mathf.Clamp01(f);
-                    else if (key == "ring") RingVolume = Mathf.Clamp01(n / 10f);
-                    else if (key == "musicvol") MusicVolume = Mathf.Clamp01(f);
-                    else if (key == "uisfx") UiSfxVolume = Mathf.Clamp01(f);
-                    else if (key == "uisnd") UiSndCsv = val ?? string.Empty;
-                    else if (key == "gsfx") GameSfxCsv = val ?? string.Empty;
+                    else if (key == "vol_master") { MasterVolume = f; masterClaimed = true; }
+                    else if (key == "vol_ch_media") PhoneAudio.SetVolume(PhoneAudioChannel.Media, f);
+                    else if (key == "vol_ch_call") PhoneAudio.SetVolume(PhoneAudioChannel.Call, f);
+                    else if (key == "vol_ch_ringtone") PhoneAudio.SetVolume(PhoneAudioChannel.Ringtone, f);
+                    else if (key == "vol_ch_notification") PhoneAudio.SetVolume(PhoneAudioChannel.Notification, f);
+                    else if (key == "vol_ch_system") PhoneAudio.SetVolume(PhoneAudioChannel.System, f);
+                    else if (key == "vol_music") { MusicVolume = f; musicClaimed = true; }
+                    else if (key == "vol_ui") { UiSfxVolume = Mathf.Clamp01(f); uiClaimed = true; }
+                    else if (key == "vol_ui_cues") { UiSndCsv = val ?? string.Empty; uiCuesClaimed = true; }
+                    else if (key == "vol_apps") { GameSfxCsv = val ?? string.Empty; appsClaimed = true; }
+                    else if (key == "ringf") { if (!masterClaimed) MasterVolume = f; }
+                    else if (key == "ring" && val.IndexOf('.') >= 0) { if (!masterClaimed) MasterVolume = f; }
+                    else if (key == "ring") { if (!masterClaimed) MasterVolume = n / 10f; }
+                    else if (key == "musicvol") { if (!musicClaimed) MusicVolume = f; }
+                    else if (key == "uisfx") { if (!uiClaimed) UiSfxVolume = Mathf.Clamp01(f); }
+                    else if (key == "uisnd") { if (!uiCuesClaimed) UiSndCsv = val ?? string.Empty; }
+                    else if (key == "gsfx") { if (!appsClaimed) GameSfxCsv = val ?? string.Empty; }
                     else if (key == "hidedock") HideDock = n != 0 || val == "true";
                     else if (key == "clock24") Clock24Hour = n != 0 || val == "true";
                     else if (key == "peak") UsePeakTime = n != 0 || val == "true";
@@ -181,6 +205,7 @@ namespace Crispberry_PiPhone
                     else if (key == "ringer") RingerMode = Clamp(n, 0, 2);
                     else if (key == "dnd") DoNotDisturb = n != 0 || val == "true";
                     else if (key == "autoanswer") AutoAnswer = n != 0 || val == "true";
+                    else if (key == "callpriority") PrioritizeCallAudio = n != 0 || val == "true";
                     else if (key == "snakehigh") SnakeHigh = n < 0 ? 0 : n;
                     else if (key == "high2048") High2048 = n < 0 ? 0 : n;
                     else if (key == "highmines") HighMines = n < 0 ? 0 : n;
@@ -254,11 +279,16 @@ namespace Crispberry_PiPhone
                 PhoneStore.EnsureDir();
                 File.WriteAllText(Path.Combine(PhoneStore.RootDir, "theme.txt"),
                     "brightness=" + Brightness.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
-                    + "ringf=" + RingVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
-                    + "musicvol=" + MusicVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
-                    + "uisfx=" + UiSfxVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
-                    + "uisnd=" + (UiSndCsv ?? string.Empty) + "\n"
-                    + "gsfx=" + (GameSfxCsv ?? string.Empty) + "\n"
+                    + "vol_master=" + MasterVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_ch_media=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Media).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_ch_call=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Call).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_ch_ringtone=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Ringtone).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_ch_notification=" + PhoneAudio.VolumeOf(PhoneAudioChannel.Notification).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_ch_system=" + PhoneAudio.VolumeOf(PhoneAudioChannel.System).ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_music=" + MusicVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_ui=" + UiSfxVolume.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "vol_ui_cues=" + (UiSndCsv ?? string.Empty) + "\n"
+                    + "vol_apps=" + (GameSfxCsv ?? string.Empty) + "\n"
                     + "hidedock=" + (HideDock ? "1" : "0") + "\n"
                     + "clock24=" + (Clock24Hour ? "1" : "0") + "\n"
                     + "peak=" + (UsePeakTime ? "1" : "0") + "\n"
@@ -295,6 +325,7 @@ namespace Crispberry_PiPhone
                     + "ringer=" + RingerMode + "\n"
                     + "dnd=" + (DoNotDisturb ? "1" : "0") + "\n"
                     + "autoanswer=" + (AutoAnswer ? "1" : "0") + "\n"
+                    + "callpriority=" + (PrioritizeCallAudio ? "1" : "0") + "\n"
                     + "snakehigh=" + SnakeHigh + "\n"
                     + "high2048=" + High2048 + "\n"
                     + "highmines=" + HighMines + "\n"
@@ -373,6 +404,12 @@ namespace Crispberry_PiPhone
         public static void SetAutoAnswer(bool on)
         {
             AutoAnswer = on;
+            Commit();
+        }
+
+        public static void SetPrioritizeCallAudio(bool on)
+        {
+            PrioritizeCallAudio = on;
             Commit();
         }
 
@@ -468,18 +505,24 @@ namespace Crispberry_PiPhone
             return value;
         }
 
-        public static void SetRingVolume(float value)
+        public static void SetMasterVolume(float value)
         {
-            RingVolume = Mathf.Clamp01(value);
-            VoiceIo.ApplyVolume();
-            MusicPlayer.ApplyVolume();
+            MasterVolume = Mathf.Clamp01(value);
+            PhoneAudio.ApplyVolume();
             Save();
         }
 
         public static void SetMusicVolume(float value)
         {
             MusicVolume = Mathf.Clamp01(value);
-            MusicPlayer.ApplyVolume();
+            PhoneAudio.ApplyVolume();
+            Save();
+        }
+
+        public static void SetChannelVolume(PhoneAudioChannel channel, float value)
+        {
+            PhoneAudio.SetVolume(channel, Mathf.Clamp01(value));
+            PhoneAudio.ApplyVolume();
             Save();
         }
 

@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using UnityEngine;
 
 namespace Crispberry_PiPhone
@@ -70,9 +69,6 @@ namespace Crispberry_PiPhone
             }
         }
 
-        private static readonly Type SourceType = Type.GetType("UnityEngine.AudioSource, UnityEngine.AudioModule");
-
-        private Component _source;
         private readonly List<string> _queue = new List<string>();
         private int _index;
         private string _id = string.Empty;
@@ -80,11 +76,8 @@ namespace Crispberry_PiPhone
         private bool _playing;
         private bool _paused;
         private bool _loading;
-        private float _duck = 1f;
-        private float _duckUntil;
-        private float _duckTarget = 1f;
+        private bool _callPaused;
         private Coroutine _load;
-        private float _lastVol = -1f;
 
         public static void Ensure()
         {
@@ -93,18 +86,19 @@ namespace Crispberry_PiPhone
             var go = new GameObject("PiP_Music");
             DontDestroyOnLoad(go);
             Instance = go.AddComponent<MusicPlayer>();
-            Instance.BuildSource();
         }
 
         public static void PlayLibrary(string startId)
         {
             Ensure();
+            Instance._callPaused = false;
             Instance.PlayQueue(PhoneStore.MusicIds(), startId);
         }
 
         public static void PlayPlaylist(PlaylistItem list, string startId)
         {
             Ensure();
+            Instance._callPaused = false;
             var ids = new List<string>();
             if (list != null && list.TrackIds != null)
             {
@@ -120,6 +114,7 @@ namespace Crispberry_PiPhone
         public static void Toggle()
         {
             Ensure();
+            Instance._callPaused = false;
             if (!Instance._playing && string.IsNullOrEmpty(Instance._id))
             {
                 List<string> ids = PhoneStore.MusicIds();
@@ -140,45 +135,32 @@ namespace Crispberry_PiPhone
         public static void Next()
         {
             Ensure();
+            Instance._callPaused = false;
             Instance.Skip(1);
         }
 
         public static void Prev()
         {
             Ensure();
+            Instance._callPaused = false;
             Instance.Skip(-1);
         }
 
-        public static void DuckFor(float seconds)
+        public static void PauseForCall()
         {
-            if (!PhoneTones.DuckMusic)
+            if (Instance == null || !Playing)
                 return;
-            Ensure();
-            if (!Instance._playing || Instance._paused)
-                return;
-            Instance._duckUntil = Time.unscaledTime + Mathf.Max(0.4f, seconds);
-            Instance._duckTarget = 0.08f;
+            Instance.Pause();
+            Instance._callPaused = true;
         }
 
-        public static void ApplyVolume()
+        public static void ResumeAfterCall()
         {
-            if (Instance != null)
-                Instance.WriteVolume();
-        }
-
-        private void BuildSource()
-        {
-            if (SourceType == null)
+            if (Instance == null || !Instance._callPaused)
                 return;
-            _source = gameObject.AddComponent(SourceType);
-            TrySet("playOnAwake", false);
-            TrySet("loop", false);
-            TrySet("spatialBlend", 0f);
-            TrySet("ignoreListenerPause", true);
-            TrySet("ignoreListenerVolume", true);
-            TrySet("bypassEffects", true);
-            TrySet("bypassListenerEffects", true);
-            WriteVolume();
+            Instance._callPaused = false;
+            if (Instance._paused)
+                Instance.Resume();
         }
 
         private void PlayQueue(List<string> ids, string startId)
@@ -256,39 +238,25 @@ namespace Crispberry_PiPhone
 
         private void PlayClip(object clip)
         {
-            if (_source == null || clip == null)
+            if (!PhoneAudio.PlayMusic(clip))
                 return;
-            try
-            {
-                SourceType.GetMethod("Stop", Type.EmptyTypes).Invoke(_source, null);
-                SourceType.GetProperty("clip").SetValue(_source, clip, null);
-                SourceType.GetProperty("time").SetValue(_source, 0f, null);
-                WriteVolume();
-                SourceType.GetMethod("Play", Type.EmptyTypes).Invoke(_source, null);
-                _playing = true;
-                _paused = false;
-                Raise();
-            }
-            catch (Exception ex)
-            {
-                Plugin.LogError("Music play failed: " + ex.Message);
-            }
+            _playing = true;
+            _paused = false;
+            Raise();
         }
 
         private void Pause()
         {
-            if (_source == null || !_playing)
+            if (!_playing)
                 return;
-            try { SourceType.GetMethod("Pause", Type.EmptyTypes).Invoke(_source, null); } catch { }
+            PhoneAudio.PauseMusic();
             _paused = true;
             Raise();
         }
 
         private void Resume()
         {
-            if (_source == null)
-                return;
-            try { SourceType.GetMethod("UnPause", Type.EmptyTypes).Invoke(_source, null); } catch { }
+            PhoneAudio.ResumeMusic();
             _paused = false;
             _playing = true;
             Raise();
@@ -309,54 +277,10 @@ namespace Crispberry_PiPhone
 
         private void Update()
         {
-            float dt = Time.unscaledDeltaTime;
-            if (Time.unscaledTime < _duckUntil)
-                _duckTarget = 0.08f;
-            else
-                _duckTarget = 1f;
-            if (_playing || Mathf.Abs(_duck - _duckTarget) > 0.001f)
-            {
-                _duck = Mathf.MoveTowards(_duck, _duckTarget, dt / 0.28f);
-                WriteVolume();
-            }
-
-            if (!_playing || _paused || _loading || _source == null)
+            if (!_playing || _paused || _loading || !PhoneAudio.MusicReady)
                 return;
-            bool on = false;
-            try
-            {
-                object v = SourceType.GetProperty("isPlaying").GetValue(_source, null);
-                on = v is bool && (bool)v;
-            }
-            catch
-            {
-            }
-            if (!on && _duckTarget > 0.9f)
+            if (!PhoneAudio.MusicSounding && !PhoneAudio.MusicHeld)
                 Skip(1);
-        }
-
-        private void WriteVolume()
-        {
-            if (_source == null)
-                return;
-            float v = PhoneTheme.MusicVolume * PhoneTheme.RingVolume * _duck;
-            if (Mathf.Abs(v - _lastVol) < 0.002f)
-                return;
-            _lastVol = v;
-            TrySet("volume", v);
-        }
-
-        private void TrySet(string name, object value)
-        {
-            try
-            {
-                PropertyInfo p = SourceType.GetProperty(name);
-                if (p != null)
-                    p.SetValue(_source, value, null);
-            }
-            catch
-            {
-            }
         }
 
         private static void Raise()

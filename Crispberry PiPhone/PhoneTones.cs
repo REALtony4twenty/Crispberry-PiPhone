@@ -144,7 +144,7 @@ namespace Crispberry_PiPhone
             return current ? (name ?? string.Empty) + "  ·  In use" : (name ?? string.Empty);
         }
 
-        public static void FillPicker(UnityEngine.Transform parent, System.Action redraw, System.Action<SoundItem> pick, string currentId)
+        public static void FillPicker(UnityEngine.Transform parent, System.Action redraw, System.Action<SoundItem> pick, string currentId, PhoneAudioChannel channel)
         {
             PhoneSfx.Cue[] clips = PhoneSfx.Library();
             for (int i = 0; i < clips.Length; i++)
@@ -168,7 +168,7 @@ namespace Crispberry_PiPhone
                 PhoneUi.CreateIconChip(row.transform, "Play", PhoneIcons.Material("play"), () =>
                 {
                     PhoneSfx.HoldClick();
-                    PhoneSfx.PlayRaw(key, PhoneTheme.RingVolume);
+                    PhoneSfx.PlayRaw(channel, key, 1f);
                 }, false, new UnityEngine.Vector2(40f, 36f));
             }
             System.Collections.Generic.List<SoundItem> tones = PhoneStore.AlertTones();
@@ -196,7 +196,7 @@ namespace Crispberry_PiPhone
                 bool on = PhoneSounds.IsPreviewing(path);
                 PhoneUi.CreateIconChip(row.transform, on ? "Stop" : "Play", PhoneIcons.Material(on ? "stop" : "play"), () =>
                 {
-                    PhoneSounds.TogglePreview(path);
+                    PhoneSounds.TogglePreview(path, channel);
                     if (redraw != null)
                         redraw();
                 }, false, new UnityEngine.Vector2(40f, 36f));

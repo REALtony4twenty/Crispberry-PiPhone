@@ -20,7 +20,7 @@ namespace Crispberry_PiPhone
                 SortOrder = 20,
                 ShowOnDock = true,
                 OnOpen = host => { _live = new Session(host); _live.Build(); },
-                OnClose = () => { VoiceIo.StopPlay(); _live = null; },
+                OnClose = () => { PhoneAudio.Stop(PhoneAudioChannel.Media); _live = null; },
                 OnOrientation = () => { if (_live != null) _live.Build(); }
             });
         }
@@ -79,10 +79,10 @@ namespace Crispberry_PiPhone
                         PhoneUi.Size(row, 44f);
                         PhoneUi.AddHorizontal(row, 6f);
                         PhoneUi.CreateButton(row.transform, captured.FromName ?? "Scout", () => TogglePlay(captured.AudioFile), new Vector2(160f, 40f));
-                        PhoneUi.CreateIconChip(row.transform, "Stop", PhoneIcons.Material("stop"), VoiceIo.StopPlay, false, new Vector2(40f, 40f));
+                        PhoneUi.CreateIconChip(row.transform, "Stop", PhoneIcons.Material("stop"), StopPlayback, false, new Vector2(40f, 40f));
                         PhoneUi.CreateIconChip(row.transform, "Delete", PhoneIcons.Material("delete"), () =>
                         {
-                            VoiceIo.StopPlay();
+                            StopPlayback();
                             PhoneStore.DeleteVoicemail(captured.Id);
                             _host.ShowToast("Moved to Trash.");
                             Build();
@@ -92,10 +92,15 @@ namespace Crispberry_PiPhone
 
             }
 
+            private static void StopPlayback()
+            {
+                PhoneAudio.Stop(PhoneAudioChannel.Media);
+            }
+
             private static void TogglePlay(string file)
             {
-                if (VoiceIo.IsPlaying())
-                    VoiceIo.StopPlay();
+                if (PhoneAudio.IsPlaying(PhoneAudioChannel.Media))
+                    StopPlayback();
                 else
                     VoiceIo.PlayFile(file);
             }

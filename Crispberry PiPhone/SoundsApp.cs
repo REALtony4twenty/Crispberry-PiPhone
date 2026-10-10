@@ -133,7 +133,6 @@ namespace Crispberry_PiPhone
                 PhoneUi.CreateSliderRow(infoParent, "Music", 0f, 1f, PhoneTheme.MusicVolume, v =>
                 {
                     PhoneTheme.SetMusicVolume(v);
-                    MusicPlayer.ApplyVolume();
                 }, null, "music_cast");
 
                 if (wide)

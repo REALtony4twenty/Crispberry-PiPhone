@@ -207,12 +207,11 @@ namespace Crispberry_PiPhone
                     title = "Sound";
                 RectTransform content = BeginPage(title, ShowSounds);
                 string current = PhoneTheme.UiCueFile(key);
-                float vol = PhoneTheme.UiCueVolume(key);
                 SoundChoice(content, "Default", string.IsNullOrEmpty(current), () =>
                 {
                     PhoneTheme.SetUiCueFile(key, string.Empty);
                     ShowSounds();
-                }, () => PhoneSfx.PlayRaw(key, vol * PhoneTheme.RingVolume));
+                }, () => PhoneSfx.PreviewFile(key, key));
                 PhoneSfx.Cue[] clips = PhoneSfx.Library();
                 for (int i = 0; i < clips.Length; i++)
                 {
@@ -224,7 +223,7 @@ namespace Crispberry_PiPhone
                     {
                         PhoneTheme.SetUiCueFile(key, clipKey);
                         ShowSounds();
-                    }, () => PhoneSfx.PlayRaw(clipKey, vol * PhoneTheme.RingVolume));
+                    }, () => PhoneSfx.PreviewFile(key, clipKey));
                 }
                 System.Collections.Generic.List<SoundItem> tones = PhoneStore.AlertTones();
                 for (int i = 0; i < tones.Count; i++)
@@ -242,6 +241,11 @@ namespace Crispberry_PiPhone
                         ShowSounds();
                     }, () =>
                     {
+                        if (key == "vibrate")
+                        {
+                            PhoneSfx.PreviewFile(key, id);
+                            return;
+                        }
                         PhoneSounds.TogglePreview(path);
                         ShowUiFiles(key);
                     });
@@ -293,6 +297,11 @@ namespace Crispberry_PiPhone
                 IconToggle(content, "music_cast", "Fade music on alerts", PhoneTones.DuckMusic, () =>
                 {
                     PhoneTones.SetDuckMusic(!PhoneTones.DuckMusic);
+                    ShowNotifications();
+                });
+                IconToggle(content, "call", "Prioritize call audio", PhoneTheme.PrioritizeCallAudio, () =>
+                {
+                    PhoneTheme.SetPrioritizeCallAudio(!PhoneTheme.PrioritizeCallAudio);
                     ShowNotifications();
                 });
 
@@ -372,7 +381,19 @@ namespace Crispberry_PiPhone
                 {
                     ApplyTone(captured.Id);
                     ShowNotifications();
-                }, stored);
+                }, stored, ToneChannel());
+            }
+
+            private PhoneAudioChannel ToneChannel()
+            {
+                bool ring;
+                if (!string.IsNullOrEmpty(_toneContactId))
+                    ring = _toneContactRing;
+                else if (!string.IsNullOrEmpty(_toneAppId))
+                    ring = _toneAppId == BuiltinApps.PhoneId;
+                else
+                    ring = _toneKind == "ringtone";
+                return ring ? PhoneAudioChannel.Ringtone : PhoneAudioChannel.Notification;
             }
 
             private void ToneSelection(out string stored, out string effective)

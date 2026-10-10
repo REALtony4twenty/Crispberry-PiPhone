@@ -27,6 +27,7 @@ namespace Crispberry_PiPhone
         internal const float MediaChip = 32f;
 
         internal static bool SizeOpen;
+        internal static bool VolumesOpen;
 
         private static readonly List<PiPhoneShadeButton> Buttons = new List<PiPhoneShadeButton>(12);
         private static Sprite _lockOn;

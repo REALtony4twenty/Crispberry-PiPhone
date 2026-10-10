@@ -304,6 +304,11 @@ namespace Crispberry_PiPhone
                 PhoneMenu.Toast(PhoneLang.T("cast_in_use", "That screen is in use"));
                 return;
             }
+            if (OtherCaster(Actor()))
+            {
+                PhoneMenu.Toast(PhoneLang.T("cast_one", "Only one screencast is allowed at a time"));
+                return;
+            }
             if (_casting && _deviceId == id)
             {
                 Release();
@@ -404,7 +409,10 @@ namespace Crispberry_PiPhone
             if (_waiting && (string.IsNullOrEmpty(id) || id == _waitId))
             {
                 _waiting = false;
-                PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
+                if (OtherCaster(Actor()))
+                    PhoneMenu.Toast(PhoneLang.T("cast_one", "Only one screencast is allowed at a time"));
+                else
+                    PhoneMenu.Toast(PhoneLang.T("cannot_cast", "Cannot cast to this device"));
             }
         }
 
@@ -501,6 +509,8 @@ namespace Crispberry_PiPhone
         private void LateUpdate()
         {
             PublishWatch();
+            PhoneCastVideo.Tick();
+            PhoneCastPictures.Tick();
         }
 
         private static int _pictureHides;
@@ -560,8 +570,21 @@ namespace Crispberry_PiPhone
             int owner;
             if (Owners.TryGetValue(id, out owner) && owner != actor && owner > 0 && PlayerHere(owner))
                 return false;
+            if (OtherCaster(actor))
+                return false;
             Owners[id] = actor;
             return true;
+        }
+
+        private static bool OtherCaster(int actor)
+        {
+            ForgetMissingOwners();
+            foreach (KeyValuePair<string, int> kv in Owners)
+            {
+                if (kv.Value > 0 && kv.Value != actor)
+                    return true;
+            }
+            return false;
         }
 
         public static void SetAspect(float width, float height)
@@ -654,6 +677,150 @@ namespace Crispberry_PiPhone
             get { return _parked; }
         }
 
+        public static bool TrySpeakerPoint(out Vector3 point)
+        {
+            Display show;
+            if (_casting && Shows.TryGetValue(_deviceId, out show) && show != null && show.Host != null)
+            {
+                point = show.Host.transform.position;
+                return true;
+            }
+            point = Vector3.zero;
+            return false;
+        }
+
+        internal static bool TryPhoneRender(out RenderTexture rt)
+        {
+            rt = null;
+            if (!_casting)
+                return false;
+            rt = _parked ? RenderLive() : _grabRt;
+            return rt != null;
+        }
+
+        public static bool AudienceOpen
+        {
+            get { return _casting && _share && _watcherIds.Count > 0 && PhotonNetwork.InRoom && !CastIsPrivate(); }
+        }
+
+        private static bool _video;
+
+        public static bool VideoOpen
+        {
+            get { return _video && AudienceOpen && PhoneMenu.OpenApp() != null; }
+        }
+
+        internal static bool Casting
+        {
+            get { return _casting; }
+        }
+
+        internal static bool Sharing
+        {
+            get { return _casting && _share && _watcherIds.Count > 0 && PhotonNetwork.InRoom; }
+        }
+
+        internal static string DeviceId
+        {
+            get { return _deviceId; }
+        }
+
+        internal static bool IsWatcher(int actor)
+        {
+            return _casting && _watcherIds.Contains(actor);
+        }
+
+        public static string CopyAudience(List<int> into)
+        {
+            into.Clear();
+            foreach (int actor in _watcherIds)
+                into.Add(actor);
+            return _deviceId;
+        }
+
+        public static bool TryWatchPoint(out Vector3 point, out string id, out int owner)
+        {
+            Display show;
+            id = _watchId;
+            owner = 0;
+            if (!string.IsNullOrEmpty(id) && Shows.TryGetValue(id, out show) && show != null && show.Host != null && Owners.TryGetValue(id, out owner))
+            {
+                point = show.Host.transform.position;
+                return true;
+            }
+            point = Vector3.zero;
+            return false;
+        }
+
+        public static void OnAudio(int actor, object[] data)
+        {
+            if (data == null || data.Length < 9)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _watchId)
+                return;
+            int owner;
+            if (!Owners.TryGetValue(id, out owner) || owner != actor)
+                return;
+            PhoneAudio.HearCast(Convert.ToInt32(data[4]), Convert.ToInt32(data[5]), Convert.ToInt32(data[6]), Convert.ToInt32(data[7]), data[8] as byte[]);
+        }
+
+        public static void OnVideo(int actor, object[] data)
+        {
+            if (data == null || data.Length < 8)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _watchId)
+                return;
+            int owner;
+            if (!Owners.TryGetValue(id, out owner) || owner != actor)
+                return;
+            PhoneCastVideo.Receive(Convert.ToInt32(data[4]), Convert.ToInt32(data[5]), Convert.ToInt32(data[6]), data[7] as byte[]);
+        }
+
+        public static void OnHear(int actor, object[] data)
+        {
+            if (data == null || data.Length < 6 || !_casting)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _deviceId || !_watcherIds.Contains(actor))
+                return;
+            PhoneAudio.CastHeard(actor, Convert.ToInt32(data[4]), Convert.ToInt32(data[5]));
+        }
+
+        public static void OnSee(int actor, object[] data)
+        {
+            if (data == null || data.Length < 6 || !_casting)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _deviceId || !_watcherIds.Contains(actor))
+                return;
+            PhoneCastVideo.CastSeen(actor, Convert.ToInt32(data[4]), Convert.ToInt32(data[5]));
+        }
+
+        public static void OnWant(int actor, object[] data)
+        {
+            if (data == null || data.Length < 5 || !_casting)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _deviceId || !_watcherIds.Contains(actor))
+                return;
+            PhoneCastPictures.OnWant(actor, data[4] as string);
+        }
+
+        public static void OnPicture(int actor, object[] data)
+        {
+            if (data == null || data.Length < 9)
+                return;
+            string id = data[3] as string;
+            if (string.IsNullOrEmpty(id) || id != _watchId)
+                return;
+            int owner;
+            if (!Owners.TryGetValue(id, out owner) || owner != actor)
+                return;
+            PhoneCastPictures.OnPicture(data[4] as string, data[5] as string, Convert.ToInt32(data[6]), Convert.ToInt32(data[7]), data[8] as byte[]);
+        }
+
         public static bool UseBoard(bool on)
         {
             if (!on)
@@ -716,6 +883,8 @@ namespace Crispberry_PiPhone
             PiPhoneApp app = PhoneMenu.OpenApp();
             if (app == null || string.IsNullOrEmpty(app.Id))
                 return false;
+            if (app.CastHidden)
+                return true;
             string id = app.Id;
             return id == BuiltinApps.MessagesId
                 || id == BuiltinApps.PhoneId
@@ -2245,6 +2414,8 @@ namespace Crispberry_PiPhone
             if (!pictureDue && !poseDue)
                 return;
             string blob = pictureDue ? PhoneCastMirror.Capture(CastIsPrivate()) : _stateSig;
+            if (pictureDue)
+                _video = PhoneCastMirror.VideoMode != 0;
             bool pictureChanged = pictureDue && blob != _stateSig;
             if (!pictureChanged && (!poseDue || pose == _statePose))
             {

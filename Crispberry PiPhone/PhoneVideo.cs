@@ -1040,7 +1040,7 @@ namespace Crispberry_PiPhone
                 object clip = VoiceIo.BoostPlayback(VoiceIo.FromPcm16(pcm, 44100, 1));
                 if (clip != null)
                 {
-                    VoiceIo.Play(clip);
+                    PhoneAudio.Play(PhoneAudioChannel.Media, clip, false);
                     return;
                 }
             }
@@ -1092,8 +1092,8 @@ namespace Crispberry_PiPhone
             string wav = Path.ChangeExtension(videoPath, ".wav");
             if (!File.Exists(wav))
                 return;
-            if (VoiceIo.Run(PhoneSounds.LoadAndPlay(wav)) == null && PhoneMenu.InstanceHost != null)
-                PhoneMenu.InstanceHost.StartHostCoroutine(PhoneSounds.LoadAndPlay(wav));
+            if (VoiceIo.Run(PhoneSounds.LoadAndPlay(PhoneAudioChannel.Media, wav)) == null && PhoneMenu.InstanceHost != null)
+                PhoneMenu.InstanceHost.StartHostCoroutine(PhoneSounds.LoadAndPlay(PhoneAudioChannel.Media, wav));
         }
 
         private sealed class GameAudioTap : MonoBehaviour
@@ -1298,12 +1298,12 @@ namespace Crispberry_PiPhone
 
         public static void StopAll()
         {
-            VoiceIo.StopPlay();
+            PhoneAudio.Stop(PhoneAudioChannel.Media);
         }
 
         public static void Stop(GameObject host)
         {
-            VoiceIo.StopPlay();
+            PhoneAudio.Stop(PhoneAudioChannel.Media);
             if (host == null || PlayerType == null)
                 return;
             try
