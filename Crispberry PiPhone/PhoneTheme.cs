@@ -22,7 +22,6 @@ namespace Crispberry_PiPhone
             get { return PhoneAudio.MusicVolume; }
             set { PhoneAudio.MusicVolume = value; }
         }
-        private static readonly bool[] VolumeClaimed = new bool[PhoneAudio.ChannelCount];
         public static float UiSfxVolume = 0.7f;
         public static string UiSndCsv = string.Empty;
         public static string GameSfxCsv = string.Empty;
@@ -133,7 +132,6 @@ namespace Crispberry_PiPhone
             bool uiClaimed = false;
             bool uiCuesClaimed = false;
             bool appsClaimed = false;
-            Array.Clear(VolumeClaimed, 0, VolumeClaimed.Length);
             try
             {
                 string[] lines = File.ReadAllLines(path);
@@ -152,11 +150,11 @@ namespace Crispberry_PiPhone
                     if (key == "brightness") Brightness = ClampBright(f);
                     else if (key == "bright" && val.IndexOf('.') >= 0) Brightness = Mathf.Clamp01(f);
                     else if (key == "vol_master") { MasterVolume = f; masterClaimed = true; }
-                    else if (key == "vol_ch_media") LoadVolume(PhoneAudioChannel.Media, f, true);
-                    else if (key == "vol_ch_call") LoadVolume(PhoneAudioChannel.Call, f, true);
-                    else if (key == "vol_ch_ringtone") LoadVolume(PhoneAudioChannel.Ringtone, f, true);
-                    else if (key == "vol_ch_notification") LoadVolume(PhoneAudioChannel.Notification, f, true);
-                    else if (key == "vol_ch_system") LoadVolume(PhoneAudioChannel.System, f, true);
+                    else if (key == "vol_ch_media") PhoneAudio.SetVolume(PhoneAudioChannel.Media, f);
+                    else if (key == "vol_ch_call") PhoneAudio.SetVolume(PhoneAudioChannel.Call, f);
+                    else if (key == "vol_ch_ringtone") PhoneAudio.SetVolume(PhoneAudioChannel.Ringtone, f);
+                    else if (key == "vol_ch_notification") PhoneAudio.SetVolume(PhoneAudioChannel.Notification, f);
+                    else if (key == "vol_ch_system") PhoneAudio.SetVolume(PhoneAudioChannel.System, f);
                     else if (key == "vol_music") { MusicVolume = f; musicClaimed = true; }
                     else if (key == "vol_ui") { UiSfxVolume = Mathf.Clamp01(f); uiClaimed = true; }
                     else if (key == "vol_ui_cues") { UiSndCsv = val ?? string.Empty; uiCuesClaimed = true; }
@@ -247,16 +245,6 @@ namespace Crispberry_PiPhone
             if (!sawSignal)
                 SignalColor = ClockColor;
             Apply();
-        }
-
-        private static void LoadVolume(PhoneAudioChannel channel, float value, bool modern)
-        {
-            int index = (int)channel;
-            if (!modern && VolumeClaimed[index])
-                return;
-            if (modern)
-                VolumeClaimed[index] = true;
-            PhoneAudio.SetVolume(channel, value);
         }
 
         private static bool _saveDirty;

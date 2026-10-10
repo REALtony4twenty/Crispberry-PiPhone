@@ -36,7 +36,6 @@ namespace Crispberry_PiPhone
         private static float _faceH;
         private static string _key = string.Empty;
         private static string _blob = string.Empty;
-        internal static string OpenApp = string.Empty;
         private static Snap _snap;
         private static Camera _cam;
         private static RenderTexture _rt;
@@ -76,7 +75,6 @@ namespace Crispberry_PiPhone
             Canvas canvas = _root.GetComponent<Canvas>();
             if (canvas != null && canvas.worldCamera == null)
                 canvas.worldCamera = Camera.main;
-            OpenApp = snap.App ?? string.Empty;
             string blob = snap.Blob ?? string.Empty;
             bool mirror = blob.StartsWith("M1|");
             if (!mirror)
