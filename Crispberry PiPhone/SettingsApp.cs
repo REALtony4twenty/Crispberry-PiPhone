@@ -96,7 +96,7 @@ namespace Crispberry_PiPhone
                     ShowSounds();
                     return true;
                 }
-                if (_page == "sounds")
+                if (_page == "sounds" || _page == "emojis")
                 {
                     ShowCustomize();
                     return true;
@@ -129,6 +129,7 @@ namespace Crispberry_PiPhone
                     case "display": ShowDisplay(); break;
                     case "controls": ShowControls(); break;
                     case "sounds": ShowSounds(); break;
+                    case "emojis": ShowEmojis(); break;
                     case "uifile": ShowUiFiles(_uiFileKey); break;
                     case "tones": ShowNotifications(); break;
                     default: ShowHome(); break;
@@ -142,7 +143,7 @@ namespace Crispberry_PiPhone
                 OsRow(content);
                 Row(content, "You are", _host.IsMasterClient ? "Expedition leader" : "Scout");
                 Link(content, "keyboard", "Controls", "Keys, calls, and the pause menu", ShowControls);
-                Link(content, "palette", "Personalize", "Style, display, home screen, alerts, and sounds", ShowCustomize);
+                Link(content, "palette", "Personalize", "Style, display, home screen, alerts, sounds, and emojis", ShowCustomize);
                 var keys = PhoneUi.CreateLabel(content, "OpenKey", "Open phone  " + Plugin.FormatHotkey(), 13f, FontStyles.Normal, TextAlignmentOptions.Center);
                 keys.color = PhoneUi.TextDim;
                 PhoneUi.Wrap(keys);
@@ -150,6 +151,80 @@ namespace Crispberry_PiPhone
             }
 
             private float _uiPreviewAt;
+
+            private void ShowEmojis()
+            {
+                _page = "emojis";
+                PhoneEmoji.Ensure();
+                RectTransform content = BeginPage("Emojis", ShowCustomize);
+                var hint = PhoneUi.CreateLabel(content, "Hint", "Each pack has an emoji switch and a sticker switch. PEAK is the game's own pictures, and both switches use them at full size. A mod picture bigger than 128 is skipped. Exactly 128 by 128 is both. Anything smaller is an emoji only.", 13f, FontStyles.Normal, TextAlignmentOptions.Center);
+                hint.color = PhoneUi.TextDim;
+                PhoneUi.Wrap(hint);
+                PhoneUi.Size(hint.gameObject, 88f);
+                NameToggle(content, "Crispberry", PhoneTheme.EmojiBuiltIn, () =>
+                {
+                    PhoneTheme.SetEmojiBuiltIn(!PhoneTheme.EmojiBuiltIn);
+                    PhoneEmoji.Reload();
+                    ShowEmojis();
+                });
+                int count = PhoneEmoji.PackCount;
+                for (int i = 0; i < count; i++)
+                {
+                    string id = PhoneEmoji.PackIdAt(i);
+                    string label = PhoneEmoji.PackLabelAt(i);
+                    string captured = id;
+                    PackToggles(content, label, PhoneTheme.EmojiPackOn(id), PhoneTheme.StickerPackOn(id), () =>
+                    {
+                        PhoneTheme.SetEmojiPackOn(captured, !PhoneTheme.EmojiPackOn(captured));
+                        PhoneEmoji.Reload();
+                        ShowEmojis();
+                    }, () =>
+                    {
+                        PhoneTheme.SetStickerPackOn(captured, !PhoneTheme.StickerPackOn(captured));
+                        PhoneEmoji.Reload();
+                        ShowEmojis();
+                    });
+                }
+            }
+
+            private void PackToggles(Transform parent, string title, bool emojiOn, bool stickerOn, UnityEngine.Events.UnityAction emojiClick, UnityEngine.Events.UnityAction stickerClick)
+            {
+                var row = PhoneUi.CreateImage(parent, "Pack_" + PhoneUi.Sanitize(title), PhoneUi.Rounded(14), PhoneUi.Surface);
+                PhoneUi.Size(row.gameObject, 56f);
+                var layout = PhoneUi.AddHorizontal(row.gameObject, 6f);
+                layout.padding = new RectOffset(12, 8, 6, 6);
+                layout.childAlignment = TextAnchor.MiddleLeft;
+                layout.childForceExpandWidth = false;
+                layout.childForceExpandHeight = false;
+                var label = PhoneUi.CreateLabel(row, "Name", title, 15f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+                PhoneUi.Wrap(label);
+                var le = label.gameObject.AddComponent<LayoutElement>();
+                le.flexibleWidth = 1f;
+                le.minWidth = 72f;
+                var emojiWord = PhoneUi.CreateLabel(row, "Emoji", "Emoji", 12f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
+                PhoneUi.Size(emojiWord.gameObject, 18f, 44f);
+                PhoneUi.CreateToggleChip(row, emojiOn, emojiClick);
+                var stickerWord = PhoneUi.CreateLabel(row, "Sticker", "Sticker", 12f, FontStyles.Normal, TextAlignmentOptions.MidlineRight);
+                PhoneUi.Size(stickerWord.gameObject, 18f, 52f);
+                PhoneUi.CreateToggleChip(row, stickerOn, stickerClick);
+            }
+
+            private void NameToggle(Transform parent, string title, bool on, UnityEngine.Events.UnityAction click)
+            {
+                var row = PhoneUi.CreateImage(parent, "Emo_" + PhoneUi.Sanitize(title), PhoneUi.Rounded(14), PhoneUi.Surface);
+                PhoneUi.Size(row.gameObject, 48f);
+                var layout = PhoneUi.AddHorizontal(row.gameObject, 8f);
+                layout.padding = new RectOffset(12, 8, 6, 6);
+                layout.childAlignment = TextAnchor.MiddleLeft;
+                layout.childForceExpandWidth = false;
+                layout.childForceExpandHeight = false;
+                var label = PhoneUi.CreateLabel(row, "Name", title, 15f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+                PhoneUi.Wrap(label);
+                var le = label.gameObject.AddComponent<LayoutElement>();
+                le.flexibleWidth = 1f;
+                le.minWidth = 80f;
+                PhoneUi.CreateToggleChip(row, on, click);
+            }
 
             private void ShowSounds()
             {
@@ -286,6 +361,7 @@ namespace Crispberry_PiPhone
                 Link(content, "display_settings", "Display", "Size, position, and brightness", ShowDisplay);
                 Link(content, "home", "Home screen", "Dock, navigation, and wallpaper", ShowHomeScreen);
                 Link(content, "instant_mix", "Sounds", "Typing and backspace", ShowSounds);
+                Link(content, "face", "Emojis", "Built-in pictures and emoji packs", ShowEmojis);
                 Link(content, "notifications", "Notifications", "Alerts and ringtones", ShowNotifications);
             }
 

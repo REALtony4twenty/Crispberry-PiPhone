@@ -49,8 +49,14 @@ namespace Crispberry_PiPhone
         private static Camera _cam;
         private static RenderTexture _rt;
         private static RawImage _preview;
+        private static Image _screenFlash;
+        private static float _screenFlashUntil;
         private static TextMeshProUGUI _videoLabel;
         private static bool _front;
+        internal static bool FacingFront
+        {
+            get { return _front; }
+        }
         private static bool _videoMode;
         private static bool _recording;
         private static Button _orientBtn;
@@ -58,6 +64,8 @@ namespace Crispberry_PiPhone
         private static Button _shutterBtn;
         private static Button _squareBtn;
         private static Button _flipBtn;
+        private static Button _flashBtn;
+        private static bool _flash;
         private static bool _square;
         private static Button _emoteBtn;
         private static GameObject _emotePanel;
@@ -102,6 +110,15 @@ namespace Crispberry_PiPhone
             _preview.raycastTarget = true;
             previewGo.AddComponent<ZoomGesture>();
 
+            var flashGo = new GameObject("ScreenFlash", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            flashGo.transform.SetParent(root.transform, false);
+            PhoneUi.Stretch(flashGo.GetComponent<RectTransform>(), 0f, 0f);
+            _screenFlash = flashGo.GetComponent<Image>();
+            _screenFlash.sprite = PhoneUi.White();
+            _screenFlash.color = Color.white;
+            _screenFlash.raycastTarget = false;
+            flashGo.SetActive(false);
+
             var bar = new GameObject("Bar", typeof(RectTransform));
             bar.transform.SetParent(root.transform, false);
             PhoneUi.StretchBottom(bar.GetComponent<RectTransform>(), 56f);
@@ -113,6 +130,7 @@ namespace Crispberry_PiPhone
             _orientBtn = PhoneUi.CreateIconChip(bar.transform, "Wide", PhoneIcons.Material("screen_rotation"), ToggleLandscape, false, new Vector2(40f, 40f));
             _modeBtn = PhoneUi.CreateIconChip(bar.transform, "Photo", PhoneIcons.Material("photo_camera"), ToggleMode, false, new Vector2(40f, 40f));
             _squareBtn = PhoneUi.CreateIconChip(bar.transform, "Square", PhoneIcons.Material("aspect_ratio"), ToggleSquare, false, new Vector2(40f, 40f));
+            _flashBtn = PhoneUi.CreateIconChip(bar.transform, "Flash", PhoneIcons.Material("flash_off"), ToggleFlash, false, new Vector2(40f, 40f));
             _shutterBtn = PhoneUi.CreateIconChip(bar.transform, "Snap", PhoneIcons.Material("shutter"), PressShutter, false, new Vector2(40f, 40f));
 
             _videoLabel = PhoneUi.CreateLabel(root.transform, "Rec", string.Empty, 14f, FontStyles.Normal, TextAlignmentOptions.Top);
@@ -175,6 +193,12 @@ namespace Crispberry_PiPhone
             RefreshBar();
         }
 
+        private static void ToggleFlash()
+        {
+            _flash = !_flash;
+            RefreshBar();
+        }
+
         private static void ToggleSquare()
         {
             if (_recording)
@@ -217,6 +241,13 @@ namespace Crispberry_PiPhone
                 PhoneUi.SetChipIcon(_shutterBtn, PhoneIcons.Material("record"), "Rec");
             else
                 PhoneUi.SetChipIcon(_shutterBtn, PhoneIcons.Material("shutter"), "Snap");
+            if (_flashBtn != null)
+            {
+                PhoneUi.SetChipIcon(_flashBtn, PhoneIcons.Material(_flash ? "flash_on" : "flash_off"), _flash ? "Flash on" : "Flash off");
+                Image chip = _flashBtn.GetComponent<Image>();
+                if (chip != null)
+                    chip.color = _flash ? PhoneUi.CallGreen : PhoneUi.SurfaceAlt;
+            }
             ApplyEmoteIcon();
             PlaceEmoteUi();
             PlaceOrbitHud();
@@ -376,6 +407,12 @@ namespace Crispberry_PiPhone
             }
             try
             {
+                if (_flash)
+                {
+                    PhoneFlash.Burst(_front);
+                    if (_front)
+                        ShowScreenFlash();
+                }
                 _cam.Render();
                 byte[] png = GrabPng();
                 if (png == null || png.Length == 0)
@@ -422,6 +459,8 @@ namespace Crispberry_PiPhone
                 return;
             }
             _recording = true;
+            if (_flash)
+                PhoneFlash.HoldVideo(true);
             PhoneSfx.HoldClick();
             PhoneSfx.PlayUi("rec-start");
             RefreshBar();
@@ -433,6 +472,7 @@ namespace Crispberry_PiPhone
 
         private static void StopVideo()
         {
+            PhoneFlash.HoldVideo(false);
             PhoneSfx.HoldClick();
             PhoneSfx.PlayUi("rec-stop");
             _recording = false;
@@ -833,6 +873,7 @@ namespace Crispberry_PiPhone
             PhoneMenu.SetCameraFill(false);
             PhoneMenu.SetLandscape(false);
             _preview = null;
+            _screenFlash = null;
             _videoLabel = null;
             _orientBtn = null;
             _modeBtn = null;
@@ -936,6 +977,23 @@ namespace Crispberry_PiPhone
             return data[index].emoteSprite;
         }
 
+        private static void ShowScreenFlash()
+        {
+            if (_screenFlash == null)
+                return;
+            _screenFlash.gameObject.SetActive(true);
+            _screenFlash.transform.SetAsLastSibling();
+            _screenFlashUntil = Time.unscaledTime + 0.22f;
+        }
+
+        private static void TickScreenFlash()
+        {
+            if (_screenFlash == null || !_screenFlash.gameObject.activeSelf)
+                return;
+            if (Time.unscaledTime >= _screenFlashUntil)
+                _screenFlash.gameObject.SetActive(false);
+        }
+
         private sealed class CamFollow : MonoBehaviour
         {
             private bool _logged;
@@ -975,6 +1033,8 @@ namespace Crispberry_PiPhone
                     _logged = true;
                     Plugin.LogError("Camera follow failed: " + ex.Message);
                 }
+                PhoneFlash.FollowFrame();
+                TickScreenFlash();
             }
 
             private static void PlaceBack(Camera cam)

@@ -37,6 +37,7 @@ namespace Crispberry_PiPhone
         private Coroutine _ring;
         private Coroutine _vm;
         private static readonly Dictionary<CharacterVoiceHandler, SavedVoice> Flattened = new Dictionary<CharacterVoiceHandler, SavedVoice>();
+        private static float[] _speakerScratch;
         private static readonly HashSet<int> MutedActors = new HashSet<int>();
 
         private struct SavedVoice
@@ -68,6 +69,21 @@ namespace Crispberry_PiPhone
             var go = new GameObject("PiP_Calls");
             DontDestroyOnLoad(go);
             Instance = go.AddComponent<CallService>();
+        }
+
+        public static Coroutine Run(IEnumerator routine)
+        {
+            if (routine == null)
+                return null;
+            Ensure();
+            return Instance.StartCoroutine(routine);
+        }
+
+        public static void StopRun(Coroutine routine)
+        {
+            if (Instance == null || routine == null)
+                return;
+            Instance.StopCoroutine(routine);
         }
 
         public static void Dial(int[] actors, bool group)
@@ -115,6 +131,7 @@ namespace Crispberry_PiPhone
             RemoteId = FirstRemoteId();
             State = Phase.Dialing;
             PhoneNet.SendCallInvite(actors, CallId, VoiceGroup, Group, Members.ToArray());
+            PhoneSounds.StartRingback();
             PhoneStore.AddCall(new CallLogItem
             {
                 Id = PhoneStore.NewId(),
@@ -158,9 +175,13 @@ namespace Crispberry_PiPhone
         public static void HangUp()
         {
             bool chase = CallVideo.Chasing;
+            bool ringing = CallVideo.Ringing;
+            PhoneNumbers.CancelRescueCall();
             if (chase)
                 CallVideo.StopChase();
-            if (chase)
+            if (ringing)
+                CallVideo.EndRinging();
+            if (chase || ringing)
                 PhoneNumbers.RequestDismiss();
             if (State == Phase.Idle)
                 return;
@@ -390,6 +411,7 @@ namespace Crispberry_PiPhone
         {
             RestoreFlattened();
             MutedActors.Clear();
+            PhoneAudio.ClearSpeaker();
         }
 
         private static void HangUpSilent()
@@ -566,24 +588,28 @@ namespace Crispberry_PiPhone
                 return;
             if (!Flattened.ContainsKey(handler))
             {
-                SavedVoice saved = new SavedVoice
+                SavedVoice saved = new SavedVoice();
+                saved.SpatialBlend = src.spatialBlend;
+                saved.Doppler = src.dopplerLevel;
+                saved.Spatialize = src.spatialize;
+                saved.MinDistance = src.minDistance;
+                saved.MaxDistance = src.maxDistance;
+                saved.Rolloff = src.rolloffMode;
+                try
                 {
-                    SpatialBlend = src.spatialBlend,
-                    Doppler = src.dopplerLevel,
-                    Spatialize = src.spatialize,
-                    MinDistance = src.minDistance,
-                    MaxDistance = src.maxDistance,
-                    Rolloff = src.rolloffMode
-                };
-                Speaker speaker = handler.GetComponentInChildren<Speaker>(true);
-                if (speaker != null)
-                {
-                    saved.HadSpeaker = true;
-                    saved.PlayDelay = speaker.PlayDelay;
-                    if (speaker.PlayDelay > 120)
-                        speaker.PlayDelay = 80;
+                    Speaker speaker = handler.GetComponentInChildren<Speaker>(true);
+                    if (speaker != null)
+                    {
+                        saved.HadSpeaker = true;
+                        saved.PlayDelay = speaker.PlayDelay;
+                        if (speaker.PlayDelay > 120)
+                            speaker.PlayDelay = 80;
+                    }
                 }
-                Flattened.Add(handler, saved);
+                catch
+                {
+                }
+                Flattened[handler] = saved;
             }
             src.spatialBlend = 0f;
             src.dopplerLevel = 0f;
@@ -592,12 +618,43 @@ namespace Crispberry_PiPhone
             src.maxDistance = 10000f;
         }
 
-        private static void ApplyCallVolume(CharacterVoiceHandler handler)
+        internal static void MixSpeaker(float[] dst)
         {
-            AudioSource src = VoiceSource(handler);
-            if (src == null)
+            if (!PhoneAudio.Speaker || dst == null || dst.Length == 0 || State != Phase.Active)
                 return;
-            src.volume = handler.audioLevel * PhoneAudio.EffectiveVolume(PhoneAudioChannel.Call);
+            if (_speakerScratch == null || _speakerScratch.Length != dst.Length)
+                _speakerScratch = new float[dst.Length];
+            Character[] all;
+            try
+            {
+                all = UnityEngine.Object.FindObjectsByType<Character>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            }
+            catch
+            {
+                return;
+            }
+            if (all == null)
+                return;
+            for (int c = 0; c < all.Length; c++)
+            {
+                if (!IsCallMember(all[c]))
+                    continue;
+                CharacterVoiceHandler handler;
+                try
+                {
+                    handler = all[c].GetComponentInChildren<CharacterVoiceHandler>(true);
+                }
+                catch
+                {
+                    continue;
+                }
+                AudioSource src = VoiceSource(handler);
+                if (src == null || !src.isPlaying)
+                    continue;
+                src.GetOutputData(_speakerScratch, 0);
+                for (int i = 0; i < dst.Length; i++)
+                    dst[i] = Mathf.Clamp(dst[i] + _speakerScratch[i], -1f, 1f);
+            }
         }
 
         private static void RestoreSpatial(CharacterVoiceHandler handler)
@@ -621,6 +678,14 @@ namespace Crispberry_PiPhone
                 if (speaker != null)
                     speaker.PlayDelay = saved.PlayDelay;
             }
+        }
+
+        private static void ApplyCallVolume(CharacterVoiceHandler handler)
+        {
+            AudioSource src = VoiceSource(handler);
+            if (src == null)
+                return;
+            src.volume = handler.audioLevel * PhoneAudio.EffectiveVolume(PhoneAudioChannel.Call);
         }
 
         private static void RestoreFlattened()

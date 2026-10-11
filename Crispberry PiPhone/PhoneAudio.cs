@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Photon.Pun;
 using UnityEngine;
 
 namespace Crispberry_PiPhone
@@ -185,6 +186,7 @@ namespace Crispberry_PiPhone
             WriteMusicVolume();
             FollowCast();
             FollowWatch();
+            PlaceNear();
             MixTick();
         }
 
@@ -453,21 +455,29 @@ namespace Crispberry_PiPhone
             }
         }
 
+        private static bool _castMix;
+
         private static void MixTick()
         {
-            bool open = PhoneCast.AudienceOpen;
+            bool cast = PhoneCast.AudienceOpen;
+            bool open = cast || NearRoom();
+            if (cast != _castMix)
+            {
+                if (!cast && _castMix)
+                {
+                    Plugin.LogInfo("Cast shared. Audio fell " + _mixFalls + " times, lowest rung " + _mixLow + ". " + PhoneCastVideo.Summary() + " " + PhoneCastPictures.Summary());
+                    _mixFalls = 0;
+                    _mixLow = 3;
+                }
+                _castMix = cast;
+            }
             if (open != _mixOpen)
             {
                 if (open)
                     OpenTap();
                 _mixOpen = open;
                 if (!open)
-                {
-                    Plugin.LogInfo("Cast shared. Audio fell " + _mixFalls + " times, lowest rung " + _mixLow + ". " + PhoneCastVideo.Summary() + " " + PhoneCastPictures.Summary());
-                    _mixFalls = 0;
-                    _mixLow = 3;
                     ForgetMix();
-                }
             }
             if (!open)
                 return;
@@ -523,7 +533,284 @@ namespace Crispberry_PiPhone
             MixSource(ChannelCount + 1, _vibrateSource);
             MixShotVoices();
             MixTap();
+            if (Speaker)
+                CallService.MixSpeaker(MixOut);
             SendMix();
+            SendNear();
+        }
+
+        private static bool NearRoom()
+        {
+            try
+            {
+                return PhotonNetwork.InRoom && PhotonNetwork.PlayerListOthers != null && PhotonNetwork.PlayerListOthers.Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool Speaker;
+
+        public static void ToggleSpeaker()
+        {
+            Speaker = !Speaker;
+            PhoneMenu.RefreshCallUi();
+        }
+
+        public static void ClearSpeaker()
+        {
+            if (!Speaker)
+                return;
+            Speaker = false;
+            PhoneMenu.RefreshCallUi();
+        }
+
+        private static int _nearSeq;
+        private static readonly Dictionary<int, NearTap> NearByActor = new Dictionary<int, NearTap>();
+
+        private static void SendNear()
+        {
+            if (!NearRoom())
+                return;
+            float peak = 0f;
+            for (int i = 0; i < MixBlock; i++)
+            {
+                float level = Mathf.Abs(MixOut[i]);
+                if (level > peak)
+                    peak = level;
+            }
+            if (peak < 0.0005f)
+                return;
+            byte[] data = EncodePcm();
+            _nearSeq++;
+            PhoneNet.SendNear(_nearSeq, 0, 0, data);
+        }
+
+        public static void HearNear(int actor, int seq, int predictor, int index, byte[] data)
+        {
+            if (actor <= 0 || data == null || data.Length < 2 || (data.Length & 1) != 0)
+                return;
+            NearTap ear;
+            if (!NearByActor.TryGetValue(actor, out ear) || ear == null)
+            {
+                ear = MakeNear(actor);
+                if (ear == null)
+                    return;
+                NearByActor[actor] = ear;
+            }
+            if (seq <= ear.Seq && ear.Seq - seq < 64)
+                return;
+            int samples = data.Length / 2;
+            if (samples < 1 || samples > MixBlock)
+                return;
+            ear.Seq = seq;
+            ear.Heard = Time.unscaledTime;
+            float[] pcm = ear.Pcm;
+            if (pcm == null || pcm.Length < samples)
+            {
+                pcm = new float[MixBlock];
+                ear.Pcm = pcm;
+            }
+            for (int i = 0; i < samples; i++)
+            {
+                short sample = (short)(data[i * 2] | (data[i * 2 + 1] << 8));
+                pcm[i] = sample / 32768f;
+            }
+            ear.Push(pcm, samples);
+        }
+
+        private static NearTap MakeNear(int actor)
+        {
+            Type type = VoiceIo.AudioSourceType;
+            object carrier = NewCarrier();
+            if (type == null || carrier == null)
+                return null;
+            var go = new GameObject("PiP_Near");
+            UnityEngine.Object.DontDestroyOnLoad(go);
+            go.hideFlags = HideFlags.HideAndDontSave;
+            Component source = go.AddComponent(type);
+            VoiceIo.TrySet(source, "playOnAwake", false);
+            VoiceIo.TrySet(source, "loop", true);
+            VoiceIo.TrySet(source, "spatialBlend", 1f);
+            VoiceIo.TrySet(source, "dopplerLevel", 0f);
+            VoiceIo.TrySet(source, "minDistance", 1.2f);
+            VoiceIo.TrySet(source, "maxDistance", 14f);
+            VoiceIo.TrySet(source, "rolloffMode", AudioRolloffMode.Linear);
+            VoiceIo.TrySet(source, "ignoreListenerPause", true);
+            VoiceIo.TrySet(source, "ignoreListenerVolume", true);
+            VoiceIo.TrySet(source, "bypassEffects", false);
+            VoiceIo.TrySet(source, "bypassListenerEffects", true);
+            VoiceIo.TrySet(source, "mute", false);
+            VoiceIo.TrySet(source, "volume", 1f);
+            VoiceIo.TrySet(source, "pitch", 1f);
+            VoiceIo.TrySet(source, "outputAudioMixerGroup", null);
+            VoiceIo.TrySet(source, "clip", carrier);
+            try
+            {
+                type.GetMethod("Play", Type.EmptyTypes).Invoke(source, null);
+            }
+            catch
+            {
+            }
+            NearTap tap = go.AddComponent<NearTap>();
+            tap.Actor = actor;
+            tap.Rate = VoiceIo.DspRate();
+            return tap;
+        }
+
+        private static void PlaceNear()
+        {
+            if (NearByActor.Count == 0)
+                return;
+            Character[] all = null;
+            try
+            {
+                all = UnityEngine.Object.FindObjectsByType<Character>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            }
+            catch
+            {
+            }
+            var gone = new List<int>();
+            foreach (KeyValuePair<int, NearTap> pair in NearByActor)
+            {
+                NearTap ear = pair.Value;
+                if (ear == null || Time.unscaledTime - ear.Heard > 0.45f)
+                {
+                    gone.Add(pair.Key);
+                    continue;
+                }
+                Transform anchor = NearAnchor(all, pair.Key);
+                if (anchor != null)
+                    ear.transform.position = anchor.position;
+            }
+            for (int i = 0; i < gone.Count; i++)
+            {
+                NearTap ear;
+                if (!NearByActor.TryGetValue(gone[i], out ear))
+                    continue;
+                NearByActor.Remove(gone[i]);
+                if (ear != null)
+                    UnityEngine.Object.Destroy(ear.gameObject);
+            }
+        }
+
+        private static Transform NearAnchor(Character[] all, int actor)
+        {
+            if (all == null)
+                return null;
+            for (int i = 0; i < all.Length; i++)
+            {
+                Character character = all[i];
+                if (character == null)
+                    continue;
+                int owner = 0;
+                try
+                {
+                    if (character.photonView != null && character.photonView.Owner != null)
+                        owner = character.photonView.Owner.ActorNumber;
+                }
+                catch
+                {
+                    continue;
+                }
+                if (owner != actor)
+                    continue;
+                try
+                {
+                    if (character.refs != null && character.refs.head != null)
+                        return character.refs.head.transform;
+                }
+                catch
+                {
+                }
+                return character.transform;
+            }
+            return null;
+        }
+
+        private sealed class NearTap : MonoBehaviour
+        {
+            public int Actor;
+            public int Seq;
+            public float Heard;
+            public float[] Pcm;
+            public int Rate = MixRate;
+            private float[] _ring;
+            private float[] _place;
+            private int _head;
+            private int _count;
+            private bool _filling = true;
+            private double _frac;
+            private readonly object _gate = new object();
+
+            public void Push(float[] pcm, int count)
+            {
+                lock (_gate)
+                {
+                    if (_ring == null)
+                        _ring = new float[MixRate];
+                    int size = _ring.Length;
+                    for (int i = 0; i < count; i++)
+                    {
+                        _ring[(_head + _count) % size] = pcm[i];
+                        if (_count < size)
+                            _count++;
+                        else
+                            _head = (_head + 1) % size;
+                    }
+                    if (_count > ListenMost)
+                    {
+                        _head = (_head + _count - ListenStart) % size;
+                        _count = ListenStart;
+                    }
+                }
+            }
+
+            private void OnAudioFilterRead(float[] data, int channels)
+            {
+                if (data == null || channels < 1)
+                    return;
+                if (_place == null || _place.Length < data.Length)
+                    _place = new float[data.Length];
+                Array.Copy(data, _place, data.Length);
+                Array.Clear(data, 0, data.Length);
+                int frames = data.Length / channels;
+                double step = MixRate / (double)(Rate > 0 ? Rate : MixRate);
+                lock (_gate)
+                {
+                    if (_ring == null)
+                        return;
+                    if (_filling && _count >= ListenStart)
+                        _filling = false;
+                    if (_filling)
+                        return;
+                    int size = _ring.Length;
+                    for (int i = 0; i < frames; i++)
+                    {
+                        if (_count < 2)
+                        {
+                            _filling = true;
+                            _frac = 0.0;
+                            return;
+                        }
+                        float a = _ring[_head];
+                        float b = _ring[(_head + 1) % size];
+                        float sample = a + (b - a) * (float)_frac;
+                        int at = i * channels;
+                        for (int c = 0; c < channels; c++)
+                            data[at + c] = sample * _place[at + c];
+                        _frac += step;
+                        while (_frac >= 1.0 && _count > 0)
+                        {
+                            _frac -= 1.0;
+                            _head = (_head + 1) % size;
+                            _count--;
+                        }
+                    }
+                }
+            }
         }
 
         private static bool SourceProps()

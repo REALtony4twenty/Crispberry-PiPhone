@@ -33,6 +33,24 @@ namespace Crispberry_PiPhone
             PhoneAudio.PlayOneShot(PhoneAudioChannel.Media, MakeBeep(hz, seconds), vol);
         }
 
+        public static void PlayDtmf(char key)
+        {
+            int low;
+            int high;
+            if (!DtmfPair(key, out low, out high))
+                return;
+            PhoneAudio.PlayOneShot(PhoneAudioChannel.System, MakeDual(low, high, 0.11f, "PiP_Dtmf"), 0.8f);
+        }
+
+        public static void StartRingback()
+        {
+            if (_ringback == null)
+                _ringback = MakeRingback();
+            PhoneAudio.Play(PhoneAudioChannel.Ringtone, _ringback, true);
+        }
+
+        private static object _ringback;
+
         public static void PlayPower(bool on)
         {
             PhoneAudio.Play(PhoneAudioChannel.System, on ? MakeChord(523, 784, 0.16f, "PiP_On") : MakeChord(659, 392, 0.18f, "PiP_Off"), false);
@@ -600,6 +618,68 @@ namespace Crispberry_PiPhone
                 data[i] = Mathf.Sin(2f * Mathf.PI * hz * t) * 0.35f * env;
             }
             return ClipFromSamples("PiP_Beep", data, rate);
+        }
+
+        private static bool DtmfPair(char key, out int low, out int high)
+        {
+            low = 0;
+            high = 0;
+            switch (key)
+            {
+                case '1': low = 697; high = 1209; return true;
+                case '2': low = 697; high = 1336; return true;
+                case '3': low = 697; high = 1477; return true;
+                case '4': low = 770; high = 1209; return true;
+                case '5': low = 770; high = 1336; return true;
+                case '6': low = 770; high = 1477; return true;
+                case '7': low = 852; high = 1209; return true;
+                case '8': low = 852; high = 1336; return true;
+                case '9': low = 852; high = 1477; return true;
+                case '*': low = 941; high = 1209; return true;
+                case '0': low = 941; high = 1336; return true;
+                case '#': low = 941; high = 1477; return true;
+                default: return false;
+            }
+        }
+
+        private static object MakeDual(int low, int high, float seconds, string name)
+        {
+            int rate = 22050;
+            int n = Mathf.Max(64, (int)(rate * seconds));
+            var data = new float[n];
+            int fade = Mathf.Max(1, (int)(rate * 0.008f));
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)rate;
+                float env = 1f;
+                if (i < fade)
+                    env = i / (float)fade;
+                else if (i > n - fade)
+                    env = (n - i) / (float)fade;
+                float s = Mathf.Sin(2f * Mathf.PI * low * t) * 0.22f + Mathf.Sin(2f * Mathf.PI * high * t) * 0.18f;
+                data[i] = s * env;
+            }
+            return ClipFromSamples(name, data, rate);
+        }
+
+        private static object MakeRingback()
+        {
+            int rate = 22050;
+            int n = rate * 6;
+            var data = new float[n];
+            int tone = rate * 2;
+            int fade = (int)(rate * 0.02f);
+            for (int i = 0; i < tone; i++)
+            {
+                float t = i / (float)rate;
+                float env = 1f;
+                if (i < fade)
+                    env = i / (float)fade;
+                else if (i > tone - fade)
+                    env = (tone - i) / (float)fade;
+                data[i] = (Mathf.Sin(2f * Mathf.PI * 440f * t) + Mathf.Sin(2f * Mathf.PI * 480f * t)) * 0.16f * env;
+            }
+            return ClipFromSamples("PiP_Ringback", data, rate);
         }
 
         private static object MakeChord(int first, int second, float each, string name)

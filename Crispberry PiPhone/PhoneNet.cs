@@ -48,6 +48,8 @@ namespace Crispberry_PiPhone
         internal const byte KindCastSee = 31;
         internal const byte KindCastWant = 32;
         internal const byte KindCastPicture = 33;
+        internal const byte KindNear = 34;
+        internal const byte KindFlash = 35;
         public const int MaxMediaBytes = 8388608;
 
         public static PhoneNet Instance;
@@ -221,7 +223,8 @@ namespace Crispberry_PiPhone
                 PhoneMenu.Toast("Too large to send (" + SizeLabel(data.Length) + ", max " + SizeLabel(MaxMediaBytes) + ").");
                 return;
             }
-            PhoneMenu.Toast("Sending…");
+            if (kind != "stk")
+                PhoneMenu.Toast("Sending…");
             if (Instance != null)
                 Instance.StartCoroutine(SendMediaRoutine(actor, msg, data, kind));
             else
@@ -412,6 +415,20 @@ namespace Crispberry_PiPhone
                         if (data.Length >= 9)
                             PhoneCast.OnPicture(photonEvent.Sender, data);
                         break;
+                    case KindNear:
+                        if (data.Length >= 7)
+                            PhoneAudio.HearNear(photonEvent.Sender, ToInt(data[3]), ToInt(data[4]), ToInt(data[5]), data[6] as byte[]);
+                        break;
+                    case KindFlash:
+                        if (data.Length >= 8)
+                        {
+                            bool cam = data.Length >= 9 && data[8] is bool && (bool)data[8];
+                            float camPower = data.Length >= 10 ? ToFloat(data[9]) : 0f;
+                            float focus = data.Length >= 11 ? ToFloat(data[10]) : 0.7f;
+                            float camRange = data.Length >= 12 ? ToFloat(data[11]) : 8f;
+                            PhoneFlash.Hear(photonEvent.Sender, data[3] is bool && (bool)data[3], ToFloat(data[4]), ToByte(data[5]), ToByte(data[6]), ToByte(data[7]), cam, camPower, focus, camRange);
+                        }
+                        break;
                 }
             }
             catch (Exception ex)
@@ -572,7 +589,7 @@ namespace Crispberry_PiPhone
             }
             string ext = PhoneImages.GuessExtFromBytes(bytes, pending.Kind);
             string mediaFile;
-            if (pending.Kind == "gif" || pending.Kind == "aud")
+            if (pending.Kind == "gif" || pending.Kind == "aud" || pending.Kind == "stk")
             {
                 mediaFile = PhoneStore.SaveChatMedia(bytes, ext);
                 if (pending.Kind == "aud")
@@ -656,6 +673,30 @@ namespace Crispberry_PiPhone
             if (data == null)
                 return;
             SendToList(actors, new object[] { Magic, Protocol, KindCastVideo, deviceId ?? string.Empty, seq, index, count, data }, false);
+        }
+
+        public static void SendNear(int seq, int predictor, int index, byte[] data)
+        {
+            if (data == null || !PhotonNetwork.InRoom)
+                return;
+            PhotonPlayer[] others = PhotonNetwork.PlayerListOthers;
+            if (others == null || others.Length == 0)
+                return;
+            var actors = new List<int>();
+            for (int i = 0; i < others.Length; i++)
+            {
+                if (others[i] == null || PhoneCast.IsWatcher(others[i].ActorNumber))
+                    continue;
+                actors.Add(others[i].ActorNumber);
+            }
+            if (actors.Count == 0)
+                return;
+            SendToList(actors.ToArray(), new object[] { Magic, Protocol, KindNear, seq, predictor, index, data }, false);
+        }
+
+        public static void SendFlash(bool on, float bright, byte r, byte g, byte b, bool cam, float camPower, float focus, float camRange, bool reliable)
+        {
+            SendOthers(new object[] { Magic, Protocol, KindFlash, on, bright, r, g, b, cam, camPower, focus, camRange }, reliable);
         }
 
         public static void SendCastSee(int actor, string deviceId, int received, int lost)
@@ -832,6 +873,13 @@ namespace Crispberry_PiPhone
             if (value is long l)
                 return l;
             return Convert.ToInt64(value);
+        }
+
+        private static float ToFloat(object value)
+        {
+            if (value is float f)
+                return f;
+            return Convert.ToSingle(value);
         }
     }
 }

@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Crispberry_PiPhone
@@ -21,6 +22,7 @@ namespace Crispberry_PiPhone
         internal const string SettingsId = "pip.shade.settings";
         internal const string CastId = "pip.shade.cast";
         internal const string AlertPlaceId = "pip.shade.alertpos";
+        internal const string FlashId = "pip.shade.flash";
 
         internal const float Chip = 36f;
         internal const float ChipGap = 4f;
@@ -28,6 +30,8 @@ namespace Crispberry_PiPhone
 
         internal static bool SizeOpen;
         internal static bool VolumesOpen;
+        internal static bool FlashMenuOpen;
+        internal static bool FlashPickerOpen;
 
         private static readonly List<PiPhoneShadeButton> Buttons = new List<PiPhoneShadeButton>(12);
         private static Sprite _lockOn;
@@ -231,6 +235,23 @@ namespace Crispberry_PiPhone
             Button chip = PhoneUi.CreateIconChip(parent, glyph, icon, () => Click(id), lit, size);
             string tip = string.IsNullOrEmpty(button.Tooltip) ? button.Label : button.Tooltip;
             PhoneUi.SetTooltip(chip.gameObject, tip);
+            if (button.OnRightClick != null)
+            {
+                ShadeClick right = chip.gameObject.AddComponent<ShadeClick>();
+                right.Action = button.OnRightClick;
+            }
+        }
+
+        private sealed class ShadeClick : MonoBehaviour, IPointerClickHandler
+        {
+            public Action Action;
+
+            public void OnPointerClick(PointerEventData eventData)
+            {
+                if (eventData.button != PointerEventData.InputButton.Right || Action == null)
+                    return;
+                Action();
+            }
         }
 
         private static void Click(string id)

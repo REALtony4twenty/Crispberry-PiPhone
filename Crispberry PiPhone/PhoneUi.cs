@@ -373,7 +373,7 @@ namespace Crispberry_PiPhone
 
         public static Slider CreateSlider(Transform parent, float min, float max, float value, bool wholeNumbers, UnityAction<float> onChanged)
         {
-            var root = new GameObject("Slider", typeof(RectTransform), typeof(Slider));
+            var root = new GameObject("Slider", typeof(RectTransform), typeof(QuietSlider));
             root.transform.SetParent(parent, false);
             var rootLe = root.AddComponent<LayoutElement>();
             rootLe.flexibleWidth = 1f;
@@ -439,6 +439,13 @@ namespace Crispberry_PiPhone
             var drag = root.AddComponent<FillDrag>();
             drag.Slider = slider;
             return slider;
+        }
+
+        internal sealed class QuietSlider : Slider
+        {
+            public override void OnMove(AxisEventData eventData)
+            {
+            }
         }
 
         private sealed class FillDrag : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler

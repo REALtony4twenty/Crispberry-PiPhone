@@ -84,15 +84,23 @@ namespace Crispberry_PiPhone
             private RectTransform _composeRt;
             private GameObject _mediaBar;
             private GameObject _emojiPanel;
+            private GameObject _stickerPanel;
+            private GameObject _stickerBtn;
             private RectTransform _emojiGrid;
+            private RectTransform _stickerGrid;
             private TextMeshProUGUI _emojiPageLabel;
             private TMP_InputField _emojiSearch;
             private GameObject _suggestRow;
             private GameObject _draftFace;
             private int _emojiPage;
+            private int _stickerPage;
+            private int _stickerPack;
             private int _emojiCat = 2;
+            private int _emojiRev = -1;
             private string _emojiQuery = string.Empty;
             private bool _emojiOpen;
+            private bool _stickerOpen;
+            private TextMeshProUGUI _stickerPageLabel;
             private int _orientGen;
             private TMP_InputField _composer;
             private string _draft = string.Empty;
@@ -126,6 +134,13 @@ namespace Crispberry_PiPhone
                     _emojiOpen = false;
                     if (_emojiPanel != null)
                         _emojiPanel.SetActive(false);
+                    return true;
+                }
+                if (_stickerOpen)
+                {
+                    _stickerOpen = false;
+                    if (_stickerPanel != null)
+                        _stickerPanel.SetActive(false);
                     return true;
                 }
                 if (_mediaBar != null && _mediaBar.activeSelf)
@@ -248,12 +263,14 @@ namespace Crispberry_PiPhone
                 mh.childForceExpandWidth = false;
                 mh.childForceExpandHeight = false;
                 PhoneUi.CreateIconChip(_mediaBar.transform, "Emoji", null, ToggleEmoji, false, new Vector2(32f, 32f));
+                _stickerBtn = PhoneUi.CreateIconChip(_mediaBar.transform, "Sticker", null, ToggleStickers, false, new Vector2(32f, 32f)).gameObject;
                 PhoneUi.CreateIconChip(_mediaBar.transform, "Photos", PhoneIcons.Material("photo_library"), ShowAttach, false, new Vector2(32f, 32f));
                 PhoneUi.CreateIconChip(_mediaBar.transform, "GIF", PhoneIcons.Material("gif"), ShowGifSearch, false, new Vector2(32f, 32f));
                 var mic = PhoneUi.CreateIconChip(_mediaBar.transform, "Mic", PhoneIcons.Material("mic"), ToggleVoice, false, new Vector2(32f, 32f));
                 _micBtn = mic;
                 _mediaBar.SetActive(false);
                 PaintEmojiButton();
+                PaintStickerButton();
 
                 _pickPage = Page("Pick");
                 _pickPage.SetActive(false);
@@ -289,6 +306,7 @@ namespace Crispberry_PiPhone
                 bool selecting = _selecting;
                 bool media = _mediaBar != null && _mediaBar.activeSelf;
                 bool emoji = _emojiOpen;
+                bool stickers = _stickerOpen;
                 var picked = new List<string>(_picked);
 
                 Canvas.willRenderCanvases -= PinComposer;
@@ -301,6 +319,8 @@ namespace Crispberry_PiPhone
                 _threadPage = null;
                 _pickPage = null;
                 _emojiPanel = null;
+                _stickerPanel = null;
+                _stickerBtn = null;
                 _composer = null;
                 _mediaBar = null;
                 Build();
@@ -323,6 +343,11 @@ namespace Crispberry_PiPhone
                 {
                     _emojiOpen = false;
                     ToggleEmoji();
+                }
+                if (stickers)
+                {
+                    _stickerOpen = false;
+                    ToggleStickers();
                 }
             }
 
@@ -449,6 +474,14 @@ namespace Crispberry_PiPhone
                     if (_emojiPanel != null)
                         _emojiPanel.SetActive(false);
                 }
+                if (!open && _stickerOpen)
+                {
+                    _stickerOpen = false;
+                    if (_stickerPanel != null)
+                        _stickerPanel.SetActive(false);
+                }
+                if (open)
+                    PaintStickerButton();
             }
 
             private void ShowContactTones()
@@ -981,11 +1014,196 @@ namespace Crispberry_PiPhone
                 FillThread();
             }
 
+            private void PaintStickerButton()
+            {
+                if (_stickerBtn == null)
+                    return;
+                Sprite sprite = PhoneEmoji.StickerSprite(0, 0);
+                bool show = PhoneEmoji.StickerCount > 0 && sprite != null;
+                _stickerBtn.SetActive(show);
+                if (!show)
+                    return;
+                var btn = _stickerBtn.GetComponent<Button>();
+                if (btn != null)
+                    PhoneUi.SetChipIcon(btn, sprite, "Sticker", false);
+            }
+
+            private void ToggleStickers()
+            {
+                PhoneEmoji.Ensure();
+                if (PhoneEmoji.StickerCount < 1)
+                    return;
+                _stickerOpen = !_stickerOpen;
+                if (_emojiOpen)
+                {
+                    _emojiOpen = false;
+                    if (_emojiPanel != null)
+                        _emojiPanel.SetActive(false);
+                }
+                if (_stickerPanel == null || _emojiRev != PhoneEmoji.Revision)
+                {
+                    if (_stickerPanel != null)
+                        UnityEngine.Object.Destroy(_stickerPanel);
+                    _stickerPanel = null;
+                    BuildStickerPanel();
+                }
+                if (_stickerPanel != null)
+                {
+                    _stickerPanel.SetActive(_stickerOpen);
+                    if (_stickerOpen)
+                        _stickerPanel.transform.SetAsLastSibling();
+                }
+            }
+
+            private void BuildStickerPanel()
+            {
+                if (_threadPage == null)
+                    return;
+                PhoneEmoji.Ensure();
+                _emojiRev = PhoneEmoji.Revision;
+                _stickerPanel = new GameObject("Stickers", typeof(RectTransform));
+                _stickerPanel.transform.SetParent(_threadPage.transform, false);
+                _stickerPanel.transform.SetAsLastSibling();
+                PhoneUi.Size(_stickerPanel, 248f);
+                PhoneUi.AddVertical(_stickerPanel, 4f, new RectOffset(0, 0, 0, 0));
+
+                var cats = PhoneUi.CreateHorizontalScroll(_stickerPanel.transform, out var catStrip);
+                PhoneUi.Size(cats.gameObject, 36f);
+                var catRow = PhoneUi.AddHorizontal(catStrip.gameObject, 6f);
+                catRow.childForceExpandWidth = false;
+                catRow.childAlignment = TextAnchor.MiddleLeft;
+                catRow.padding = new RectOffset(2, 8, 2, 2);
+                int packs = PhoneEmoji.StickerPackCount;
+                if (_stickerPack >= packs)
+                    _stickerPack = 0;
+                for (int i = 0; i < packs; i++)
+                {
+                    int captured = i;
+                    string label = PhoneEmoji.StickerPackLabel(i);
+                    PhoneUi.CreateButton(catStrip, label, () =>
+                    {
+                        _stickerPack = captured;
+                        _stickerPage = 0;
+                        ShowStickerPage();
+                    }, new Vector2(Mathf.Max(72f, label.Length * 8f + 16f), 28f));
+                }
+
+                var pages = new GameObject("Pages", typeof(RectTransform));
+                pages.transform.SetParent(_stickerPanel.transform, false);
+                PhoneUi.Size(pages, 28f);
+                var pageRow = PhoneUi.AddHorizontal(pages, 8f);
+                pageRow.childForceExpandWidth = false;
+                pageRow.childAlignment = TextAnchor.MiddleCenter;
+                PhoneUi.CreateButton(pages.transform, "<", () => StepStickerPage(-1), new Vector2(36f, 26f));
+                _stickerPageLabel = PhoneUi.CreateLabel(pages.transform, "Page", "1 / 1", 14f, FontStyles.Normal, TextAlignmentOptions.Center);
+                PhoneUi.Size(_stickerPageLabel.gameObject, 26f, 72f);
+                PhoneUi.CreateButton(pages.transform, ">", () => StepStickerPage(1), new Vector2(36f, 26f));
+
+                var gridGo = new GameObject("Grid", typeof(RectTransform));
+                gridGo.transform.SetParent(_stickerPanel.transform, false);
+                var gridLe = gridGo.AddComponent<LayoutElement>();
+                gridLe.flexibleWidth = 1f;
+                gridLe.preferredHeight = 168f;
+                gridLe.minHeight = 168f;
+                _stickerGrid = gridGo.GetComponent<RectTransform>();
+                ShowStickerPage();
+            }
+
+            private void StepStickerPage(int delta)
+            {
+                int pages = StickerPageCount();
+                if (pages < 1)
+                    pages = 1;
+                _stickerPage += delta;
+                if (_stickerPage < 0)
+                    _stickerPage = pages - 1;
+                if (_stickerPage >= pages)
+                    _stickerPage = 0;
+                ShowStickerPage();
+            }
+
+            private int StickerPageCount()
+            {
+                int pageSize = 8;
+                int count = PhoneEmoji.StickerCountIn(_stickerPack);
+                if (pageSize < 1)
+                    return 1;
+                return Mathf.Max(1, (count + pageSize - 1) / pageSize);
+            }
+
+            private void ShowStickerPage()
+            {
+                if (_stickerGrid == null)
+                    return;
+                for (int i = _stickerGrid.childCount - 1; i >= 0; i--)
+                    UnityEngine.Object.Destroy(_stickerGrid.GetChild(i).gameObject);
+                int pageSize = 8;
+                int pages = StickerPageCount();
+                if (_stickerPage >= pages)
+                    _stickerPage = pages - 1;
+                if (_stickerPage < 0)
+                    _stickerPage = 0;
+                if (_stickerPageLabel != null)
+                    _stickerPageLabel.text = (_stickerPage + 1) + " / " + pages;
+                var grid = _stickerGrid.gameObject.GetComponent<GridLayoutGroup>();
+                if (grid == null)
+                    grid = _stickerGrid.gameObject.AddComponent<GridLayoutGroup>();
+                grid.cellSize = new Vector2(72f, 72f);
+                grid.spacing = new Vector2(8f, 8f);
+                grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+                grid.constraintCount = 4;
+                grid.padding = new RectOffset(4, 4, 2, 2);
+                grid.childAlignment = TextAnchor.UpperLeft;
+                int count = PhoneEmoji.StickerCountIn(_stickerPack);
+                int start = _stickerPage * pageSize;
+                int end = start + pageSize;
+                if (end > count)
+                    end = count;
+                int pack = _stickerPack;
+                for (int i = start; i < end; i++)
+                {
+                    Sprite sprite = PhoneEmoji.StickerSprite(pack, i);
+                    if (sprite == null)
+                        continue;
+                    int index = i;
+                    var cell = new GameObject("Sticker", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+                    cell.transform.SetParent(_stickerGrid, false);
+                    var img = cell.GetComponent<Image>();
+                    img.sprite = sprite;
+                    img.preserveAspect = true;
+                    img.color = Color.white;
+                    var btn = cell.GetComponent<Button>();
+                    btn.targetGraphic = img;
+                    btn.transition = Selectable.Transition.None;
+                    PhoneSfx.BindPress(btn, () => SendSticker(pack, index));
+                }
+            }
+
+            private void SendSticker(int pack, int index)
+            {
+                byte[] png = PhoneEmoji.StickerPng(pack, index);
+                if (png == null || png.Length < 16)
+                {
+                    _host.ShowToast("Couldn't send that.");
+                    return;
+                }
+                SendMediaBytes(png, ".png", "stk", "Sticker");
+                _stickerOpen = false;
+                if (_stickerPanel != null)
+                    _stickerPanel.SetActive(false);
+            }
+
             private void ToggleEmoji()
             {
+                PhoneEmoji.Ensure();
                 _emojiOpen = !_emojiOpen;
-                if (_emojiPanel == null)
+                if (_emojiPanel == null || _emojiRev != PhoneEmoji.Revision)
+                {
+                    if (_emojiPanel != null)
+                        UnityEngine.Object.Destroy(_emojiPanel);
+                    _emojiPanel = null;
                     BuildEmojiPanel();
+                }
                 if (_emojiPanel != null)
                 {
                     _emojiPanel.SetActive(_emojiOpen);
@@ -1016,10 +1234,15 @@ namespace Crispberry_PiPhone
                 if (_threadPage == null)
                     return;
                 PhoneEmoji.Ensure();
+                EnsureEmojiCat();
+                _emojiRev = PhoneEmoji.Revision;
                 _emojiPanel = new GameObject("Emoji", typeof(RectTransform));
                 _emojiPanel.transform.SetParent(_threadPage.transform, false);
                 _emojiPanel.transform.SetAsLastSibling();
-                PhoneUi.Size(_emojiPanel, 292f);
+                float panelH = 292f * PhoneTheme.FontScale;
+                if (panelH < 292f)
+                    panelH = 292f;
+                PhoneUi.Size(_emojiPanel, panelH);
                 PhoneUi.AddVertical(_emojiPanel, 4f, new RectOffset(0, 0, 0, 0));
 
                 _emojiSearch = PhoneUi.CreateInput(_emojiPanel.transform, PhoneLang.T("search", "Search"), 24);
@@ -1042,10 +1265,13 @@ namespace Crispberry_PiPhone
                     "emoji_recent", "emoji_fav", "emoji_smile", "emoji_people", "emoji_nature",
                     "emoji_food", "emoji_travel", "emoji_play", "emoji_things", "emoji_signs", "emoji_flags"
                 };
-                for (int i = 0; i < keys.Length; i++)
+                int catCount = PhoneEmoji.CategoryCount;
+                for (int i = 0; i < catCount; i++)
                 {
+                    if (!PhoneEmoji.CategoryVisible(i))
+                        continue;
                     int captured = i;
-                    string label = PhoneLang.T(keys[i], keys[i]);
+                    string label = i < keys.Length ? PhoneLang.T(keys[i], keys[i]) : PhoneEmoji.CategoryTitle(i);
                     Button btn = PhoneUi.CreateButton(catStrip, label, () =>
                     {
                         _emojiCat = captured;
@@ -1097,14 +1323,15 @@ namespace Crispberry_PiPhone
                     width = 120f;
                 const float gap = 6f;
                 const float pad = 8f;
-                int cols = Mathf.FloorToInt((width - pad + gap) / (36f + gap));
-                if (cols < 4)
-                    cols = 4;
+                float unit = 36f * PhoneTheme.FontScale;
+                int cols = Mathf.FloorToInt((width - pad + gap) / (unit + gap));
+                if (cols < 3)
+                    cols = 3;
                 cell = Mathf.Floor((width - pad - gap * (cols - 1)) / cols);
-                if (cell < 28f)
-                    cell = 28f;
-                if (cell > 48f)
-                    cell = 48f;
+                if (cell < 28f * PhoneTheme.FontScale)
+                    cell = 28f * PhoneTheme.FontScale;
+                if (cell > 48f * PhoneTheme.FontScale)
+                    cell = 48f * PhoneTheme.FontScale;
                 return cols;
             }
 
@@ -1137,10 +1364,27 @@ namespace Crispberry_PiPhone
                 return list;
             }
 
+            private void EnsureEmojiCat()
+            {
+                if (PhoneEmoji.CategoryVisible(_emojiCat))
+                    return;
+                int count = PhoneEmoji.CategoryCount;
+                for (int i = 0; i < count; i++)
+                {
+                    if (!PhoneEmoji.CategoryVisible(i))
+                        continue;
+                    _emojiCat = i;
+                    _emojiPage = 0;
+                    return;
+                }
+                _emojiCat = 0;
+            }
+
             private void ShowEmojiPage()
             {
                 if (_emojiGrid == null)
                     return;
+                EnsureEmojiCat();
                 for (int i = _emojiGrid.childCount - 1; i >= 0; i--)
                     UnityEngine.Object.Destroy(_emojiGrid.GetChild(i).gameObject);
                 float cell;
@@ -1157,6 +1401,13 @@ namespace Crispberry_PiPhone
                 if (grid == null)
                     grid = _emojiGrid.gameObject.AddComponent<GridLayoutGroup>();
                 grid.cellSize = new Vector2(cell, cell);
+                var gridLe = _emojiGrid.GetComponent<LayoutElement>();
+                if (gridLe != null)
+                {
+                    float rowsH = cell * 4f + 6f * 3f + 8f;
+                    gridLe.preferredHeight = rowsH;
+                    gridLe.minHeight = rowsH;
+                }
                 grid.spacing = new Vector2(6f, 6f);
                 grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
                 grid.constraintCount = cols;
@@ -1192,7 +1443,10 @@ namespace Crispberry_PiPhone
                         PhoneEmoji.ToggleFavorite(captured);
                         ShowEmojiPage();
                     };
-                    PhoneUi.SetTooltip(chip.gameObject, PhoneLang.T("emoji_hold", "Hold an emoji to favorite it"));
+                    string tip = PhoneEmoji.IsPack(names[i])
+                        ? PhoneEmoji.Sequence(names[i])
+                        : PhoneLang.T("emoji_hold", "Hold an emoji to favorite it");
+                    PhoneUi.SetTooltip(chip.gameObject, tip);
                 }
             }
 
@@ -1313,12 +1567,12 @@ namespace Crispberry_PiPhone
 
             private static bool ShortTokenOk(string token)
             {
-                if (string.IsNullOrEmpty(token) || token.Length > 24)
+                if (string.IsNullOrEmpty(token) || token.Length > 48)
                     return false;
                 for (int i = 0; i < token.Length; i++)
                 {
                     char c = token[i];
-                    bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '+';
+                    bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '+' || c == '-';
                     if (!ok)
                         return false;
                 }
@@ -1920,7 +2174,7 @@ namespace Crispberry_PiPhone
                     return;
                 }
                 string mediaFile;
-                if (kind == "gif" || kind == "aud")
+                if (kind == "gif" || kind == "aud" || kind == "stk")
                 {
                     mediaFile = PhoneStore.SaveChatMedia(data, ext);
                     if (kind == "aud")
@@ -2103,6 +2357,7 @@ namespace Crispberry_PiPhone
                     return false;
                 if (string.Equals(t, "Photo", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(t, "Video", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(t, "Sticker", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(t, "GIF", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(t, "Audio", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(t, "Video (preview)", StringComparison.OrdinalIgnoreCase))
@@ -2122,9 +2377,22 @@ namespace Crispberry_PiPhone
                 Texture2D tex = gif != null && gif.Frames != null && gif.Frames.Length > 0
                     ? gif.Frames[0]
                     : PhoneImages.LoadFile(path);
+                bool sticker = msg.MediaKind == "stk";
                 float w = width;
                 float h = 180f;
-                if (tex != null)
+                if (tex != null && sticker)
+                {
+                    w = tex.width;
+                    h = tex.height;
+                    float fit = 1f;
+                    if (w > width)
+                        fit = width / w;
+                    if (h * fit > 320f)
+                        fit = 320f / h;
+                    w = Mathf.Max(48f, w * fit);
+                    h = Mathf.Max(48f, h * fit);
+                }
+                else if (tex != null)
                 {
                     float aspect = tex.height > 0 ? tex.width / (float)tex.height : 1f;
                     h = w / aspect;

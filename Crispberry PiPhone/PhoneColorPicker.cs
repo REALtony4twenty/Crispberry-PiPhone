@@ -35,13 +35,19 @@ namespace Crispberry_PiPhone
         private float _s = 1f;
         private float _v = 1f;
         private bool _suppress;
+        private bool _sliders = true;
 
         internal static PhoneColorPicker Create(Transform parent, Color start, Action<Color> onChanged)
+        {
+            return Create(parent, start, onChanged, true);
+        }
+
+        internal static PhoneColorPicker Create(Transform parent, Color start, Action<Color> onChanged, bool sliders)
         {
             var go = new GameObject("ColorPicker", typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var le = go.AddComponent<LayoutElement>();
-            le.minHeight = 280f;
+            le.minHeight = sliders ? 280f : 200f;
             le.preferredHeight = -1f;
             le.flexibleWidth = 1f;
             le.flexibleHeight = 0f;
@@ -52,6 +58,7 @@ namespace Crispberry_PiPhone
 
             var picker = go.AddComponent<PhoneColorPicker>();
             picker.OnChanged = onChanged;
+            picker._sliders = sliders;
             picker.Build();
             picker.SetColor(start, false);
             return picker;
@@ -128,6 +135,8 @@ namespace Crispberry_PiPhone
             PhoneUi.Size(previewRt.gameObject, 22f);
             _preview = previewRt.GetComponent<Image>();
             _preview.raycastTarget = false;
+            if (!_sliders)
+                return;
 
             _brightness = PhoneUi.CreateSliderRow(transform, "Brightness", 0f, 1f, _v, v =>
             {

@@ -16,6 +16,7 @@ namespace Crispberry_PiPhone
 
         public static bool Sending;
         public static bool Chasing;
+        public static bool Ringing;
         public static Texture RemoteTexture;
 
         private static Camera _remoteCam;
@@ -27,6 +28,9 @@ namespace Crispberry_PiPhone
         private static Button _videoBtn;
         private static Character _chaseHunter;
         private static Character _chasePrey;
+        private static bool _showPrey;
+        private static float _nextCut;
+        private static float _fleeAt;
 
         public static void Bind(RawImage remote, RawImage local, Button videoBtn)
         {
@@ -81,9 +85,28 @@ namespace Crispberry_PiPhone
             _chaseHunter = hunter;
             _chasePrey = prey;
             Chasing = true;
+            Ringing = false;
+            _showPrey = false;
+            _fleeAt = Time.time + (seconds > 1f ? seconds : 60f);
+            _nextCut = Time.unscaledTime + UnityEngine.Random.Range(2.4f, 4.2f);
             EnsureCams();
             PhoneMenu.Open();
             PhoneMenu.SetPlayThrough(PiPhonePlayThrough.Walk);
+            PhoneMenu.RefreshCallUi();
+        }
+
+        public static void BeginRinging()
+        {
+            Ringing = true;
+            PhoneMenu.Open();
+            PhoneMenu.RefreshCallUi();
+        }
+
+        public static void EndRinging()
+        {
+            if (!Ringing)
+                return;
+            Ringing = false;
             PhoneMenu.RefreshCallUi();
         }
 
@@ -92,6 +115,7 @@ namespace Crispberry_PiPhone
             if (!Chasing)
                 return;
             Chasing = false;
+            _fleeAt = 0f;
             _chaseHunter = null;
             _chasePrey = null;
             if (!Sending)
@@ -108,10 +132,16 @@ namespace Crispberry_PiPhone
 
         public static void Tick()
         {
+            if (Chasing && _fleeAt > 0f && Time.time >= _fleeAt)
+            {
+                CallService.HangUp();
+                return;
+            }
             if (Chasing && ScoutmasterGrabbedPrey())
             {
                 StopChase();
-                PhoneNumbers.RequestDismiss();
+                PhoneNumbers.NoteGrabbed();
+                PhoneMenu.Close();
                 return;
             }
             if ((!Sending && !Chasing) || (!CallService.IsOnCall && !Chasing))
@@ -121,11 +151,15 @@ namespace Crispberry_PiPhone
             Character remote = FindRemote();
             if (Chasing)
             {
+                PhoneNumbers.NudgeRescue();
                 Character hunter = _chaseHunter != null ? _chaseHunter : FindScoutmasterBody();
                 Character prey = _chasePrey != null ? _chasePrey : local;
                 if (_remoteCam != null)
                 {
-                    PlaceChaseCam(_remoteCam, hunter, prey);
+                    if (ShowBackCam())
+                        PlaceBack(_remoteCam, hunter, prey);
+                    else
+                        PlaceFace(_remoteCam, hunter);
                     _remoteCam.Render();
                     if (_remote != null)
                         _remote.texture = _remoteRt;
@@ -134,7 +168,7 @@ namespace Crispberry_PiPhone
                 if (_localCam != null)
                 {
                     PlaceCam(_localCam, prey != null ? prey : local);
-                    _localCam.Render();
+                    RenderLocal(_localCam);
                     if (_local != null)
                         _local.texture = _localRt;
                 }
@@ -143,7 +177,7 @@ namespace Crispberry_PiPhone
             if (_localCam != null)
             {
                 PlaceCam(_localCam, local);
-                _localCam.Render();
+                RenderLocal(_localCam);
                 if (_local != null)
                     _local.texture = _localRt;
             }
@@ -386,6 +420,85 @@ namespace Crispberry_PiPhone
             cam.cullingMask = MaskFor(main, target);
         }
 
+        private static void RenderLocal(Camera cam)
+        {
+            if (cam == null)
+                return;
+            PlayerGhost ghost = OwnGhost();
+            Renderer[] hide = null;
+            GameObject third = null;
+            if (ghost != null)
+                hide = RevealGhost(ghost, out third);
+            cam.Render();
+            if (hide != null)
+            {
+                for (int i = 0; i < hide.Length; i++)
+                {
+                    if (hide[i] != null)
+                        hide[i].enabled = false;
+                }
+            }
+            if (third != null)
+                third.SetActive(false);
+        }
+
+        private static PlayerGhost OwnGhost()
+        {
+            try
+            {
+                Character local = Character.localCharacter;
+                if (local == null || local.Ghost == null)
+                    return null;
+                if (local.photonView != null && !local.photonView.IsMine)
+                    return null;
+                return local.Ghost;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Renderer[] RevealGhost(PlayerGhost ghost, out GameObject third)
+        {
+            third = null;
+            var found = new Renderer[24];
+            int n = 0;
+            n = TakeRenderers(ghost.PlayerRenderers, found, n);
+            n = TakeRenderers(ghost.EyeRenderers, found, n);
+            n = TakeRenderer(ghost.mouthRenderer, found, n);
+            n = TakeRenderer(ghost.accessoryRenderer, found, n);
+            if (ghost.thirdEye != null && !ghost.thirdEye.activeSelf)
+            {
+                ghost.thirdEye.SetActive(true);
+                third = ghost.thirdEye;
+            }
+            if (n == 0)
+                return null;
+            var trim = new Renderer[n];
+            for (int i = 0; i < n; i++)
+                trim[i] = found[i];
+            return trim;
+        }
+
+        private static int TakeRenderers(Renderer[] source, Renderer[] dest, int n)
+        {
+            if (source == null)
+                return n;
+            for (int i = 0; i < source.Length; i++)
+                n = TakeRenderer(source[i], dest, n);
+            return n;
+        }
+
+        private static int TakeRenderer(Renderer renderer, Renderer[] dest, int n)
+        {
+            if (renderer == null || renderer.enabled || n >= dest.Length)
+                return n;
+            renderer.enabled = true;
+            dest[n] = renderer;
+            return n + 1;
+        }
+
         private static int MaskFor(Camera main, Character target)
         {
             int mask = main != null ? main.cullingMask : ~0;
@@ -421,26 +534,138 @@ namespace Crispberry_PiPhone
             return mask;
         }
 
-        private static void PlaceChaseCam(Camera cam, Character hunter, Character prey)
+        private static bool ShowBackCam()
         {
-            Transform from = LookTransform(hunter);
-            Transform at = LookTransform(prey);
-            Camera main = Camera.main;
-            if (from != null && at != null)
+            if (Time.unscaledTime >= _nextCut)
             {
-                Vector3 face = from.position + Vector3.up * 0.12f;
-                Vector3 aim = at.position + Vector3.up * 0.2f;
-                Vector3 toPrey = aim - face;
-                if (toPrey.sqrMagnitude < 0.04f)
-                    toPrey = from.forward;
-                toPrey.Normalize();
-                cam.transform.position = face + toPrey * 1.25f + Vector3.up * 0.15f;
-                cam.transform.LookAt(aim);
-                cam.fieldOfView = 52f;
-                cam.cullingMask = MaskFor(main, hunter) | BodyLayers(prey);
+                _showPrey = !_showPrey;
+                _nextCut = Time.unscaledTime + UnityEngine.Random.Range(1.8f, 3.6f);
+            }
+            return _showPrey;
+        }
+
+        private static void PlaceBack(Camera cam, Character hunter, Character prey)
+        {
+            Transform phone = HeadTransform(hunter);
+            Transform at = HeadTransform(prey);
+            Camera main = Camera.main;
+            if (phone == null || at == null)
+            {
+                PlaceFace(cam, hunter != null ? hunter : prey);
                 return;
             }
-            PlaceCam(cam, prey != null ? prey : hunter);
+            Vector3 aim = at.position + Vector3.up * 0.2f;
+            Vector3 from = phone.position;
+            Vector3 dir = aim - from;
+            if (dir.sqrMagnitude < 0.04f)
+                dir = FaceDirection(hunter, phone);
+            dir.Normalize();
+            float clearance = Clearance(hunter, from, dir, 1.25f);
+            cam.transform.position = from + dir * clearance + Vector3.up * 0.35f;
+            cam.transform.LookAt(aim);
+            cam.fieldOfView = 58f;
+            cam.cullingMask = MaskFor(main, hunter) | BodyLayers(prey);
+        }
+
+        private static void PlaceFace(Camera cam, Character hunter)
+        {
+            Transform face = HeadTransform(hunter);
+            Camera main = Camera.main;
+            if (face == null)
+            {
+                PlaceCam(cam, hunter);
+                return;
+            }
+            Vector3 flat = face.forward;
+            flat.y = 0f;
+            if (flat.sqrMagnitude < 0.0001f)
+                flat = Vector3.forward;
+            flat.Normalize();
+            Vector3 look = face.position;
+            cam.transform.position = look + flat * 1.55f;
+            cam.transform.LookAt(look);
+            cam.fieldOfView = SelfieWideFov();
+            cam.nearClipPlane = 0.12f;
+            cam.cullingMask = MaskFor(main, hunter);
+        }
+
+        private static float _wideFov = 96f;
+        private static float _wideFovAt = -10f;
+
+        private static float SelfieWideFov()
+        {
+            if (Time.unscaledTime - _wideFovAt < 2f)
+                return _wideFov;
+            _wideFovAt = Time.unscaledTime;
+            float maxFov = 60f;
+            try
+            {
+                CameraOverride_Binoculars binoc = UnityEngine.Object.FindAnyObjectByType<CameraOverride_Binoculars>();
+                if (binoc != null && binoc.maxFov > 8f)
+                    maxFov = binoc.maxFov;
+            }
+            catch
+            {
+            }
+            _wideFov = maxFov * 1.6f;
+            return _wideFov;
+        }
+
+        private static Vector3 FaceDirection(Character hunter, Transform face)
+        {
+            if (face != null)
+            {
+                Vector3 localUp = face.TransformDirection(Vector3.up);
+                if (localUp.sqrMagnitude > 0.01f)
+                    return localUp.normalized;
+            }
+            try
+            {
+                if (hunter != null && hunter.data != null && hunter.data.lookDirection.sqrMagnitude > 0.01f)
+                    return hunter.data.lookDirection.normalized;
+            }
+            catch
+            {
+            }
+            return face != null ? face.forward : Vector3.forward;
+        }
+
+        private static float Clearance(Character body, Vector3 origin, Vector3 dir, float minimum)
+        {
+            float clearance = minimum;
+            if (body == null)
+                return clearance;
+            try
+            {
+                Renderer[] renderers = body.GetComponentsInChildren<Renderer>(true);
+                Vector3 probe = origin + dir * 6f;
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    Renderer renderer = renderers[i];
+                    if (renderer == null || renderer.bounds.size.sqrMagnitude > 6f)
+                        continue;
+                    float along = Vector3.Dot(renderer.bounds.ClosestPoint(probe) - origin, dir);
+                    if (along + 0.55f > clearance)
+                        clearance = along + 0.55f;
+                }
+            }
+            catch
+            {
+            }
+            return Mathf.Clamp(clearance, minimum, 2.8f);
+        }
+
+        private static Transform HeadTransform(Character hunter)
+        {
+            try
+            {
+                if (hunter != null && hunter.refs != null && hunter.refs.head != null)
+                    return hunter.refs.head.transform;
+            }
+            catch
+            {
+            }
+            return LookTransform(hunter);
         }
 
         private static bool ScoutmasterGrabbedPrey()

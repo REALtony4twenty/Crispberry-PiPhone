@@ -113,6 +113,7 @@ namespace Crispberry_PiPhone
         private GameObject _incomingBtns;
         private GameObject _activeBtns;
         private Button _muteBtn;
+        private Button _speakerBtn;
         private GameObject _vmBtn;
         private RawImage _callRemote;
         private RawImage _callLocal;
@@ -563,7 +564,7 @@ namespace Crispberry_PiPhone
             _instance.ApplyChrome(_instance._wpApplied != wp);
             _instance.RebuildHome();
             if (_instance._shadeRoot != null && _instance._shadeRoot.activeSelf)
-                _instance.RebuildShade();
+            if (_instance._shadeRoot != null && _instance._shadeRoot.activeSelf && !PhoneShade.FlashPickerOpen)
             if (_instance._recentsRoot != null && _instance._recentsRoot.activeSelf)
                 _instance.RebuildDrawer();
             PhoneUi.ApplyFontSizes(_instance.transform);
@@ -804,8 +805,8 @@ namespace Crispberry_PiPhone
             _lastLand = !_landscape;
             ApplyPresentation();
             ShowHome();
-            if (CallService.IsOnCall || CallVideo.Chasing)
-                _callScreen = true;
+            if (CallVideo.Chasing || CallService.State == CallService.Phase.Incoming || CallService.State == CallService.Phase.Dialing)
+            if (CallVideo.Chasing || CallVideo.Ringing || CallService.State == CallService.Phase.Incoming || CallService.State == CallService.Phase.Dialing)
             RefreshStatus();
             StartWallpaperPlay();
             SyncMusicBar();
@@ -2363,6 +2364,9 @@ namespace Crispberry_PiPhone
             PhoneUi.SetCircleIcon(end, PhoneIcons.Material("call_end"));
             var mute = PhoneUi.CreateCircleButton(row.transform, "Mute", CallService.ToggleMute, 64f, PhoneUi.SurfaceAlt);
             _muteBtn = mute;
+            PhoneUi.SetCircleIcon(mute, PhoneIcons.Material("mic"));
+            _speakerBtn = PhoneUi.CreateCircleButton(row.transform, "Speaker", PhoneAudio.ToggleSpeaker, 64f, PhoneUi.SurfaceAlt);
+            PhoneUi.SetCircleIcon(_speakerBtn, PhoneIcons.Material("volume_up"));
             Button video = PhoneUi.MaterialChip(_activeBtns.transform, "videocam", "Video", CallVideo.Toggle, new Vector2(40f, 40f));
             PhoneUi.CreateButton(_activeBtns.transform, "Add scout", ShowAddToCall, new Vector2(220f, 40f));
             var vm = PhoneUi.CreateIconChip(_activeBtns.transform, "Voicemail", PhoneIcons.Material("voicemail"), CallService.LeaveVoicemailForCurrent, false, new Vector2(44f, 44f));
@@ -2419,12 +2423,13 @@ namespace Crispberry_PiPhone
             if (_callLayer == null)
                 return;
             bool chasing = CallVideo.Chasing;
-            bool incoming = !chasing && (CallService.State == CallService.Phase.Incoming || CallService.State == CallService.Phase.Dialing);
-            if (!CallService.IsBusy && !chasing)
+            bool ringing = CallVideo.Ringing;
+            bool incoming = !chasing && !ringing && (CallService.State == CallService.Phase.Incoming || CallService.State == CallService.Phase.Dialing);
+            if (!CallService.IsBusy && !chasing && !ringing)
                 _callScreen = true;
-            else if (incoming || chasing)
+            else if (incoming || chasing || ringing)
                 _callScreen = true;
-            bool busy = CallService.IsBusy || chasing;
+            bool busy = CallService.IsBusy || chasing || ringing;
             bool showFull = busy && _callScreen;
             _callLayer.SetActive(showFull);
             if (_callBar != null)
@@ -2438,15 +2443,13 @@ namespace Crispberry_PiPhone
             if (!showFull)
                 return;
             if (_callTitle != null)
-                _callTitle.text = CallVideo.Chasing ? "Scoutmaster" : CallService.RemoteName;
+                _callTitle.text = (CallVideo.Chasing || CallVideo.Ringing) ? "Scoutmaster" : CallService.RemoteName;
             PaintCallFace();
             if (_callSub != null)
             {
                 if (CallVideo.Chasing)
                     _callSub.text = "He's coming for you";
-                else if (CallService.State == CallService.Phase.Incoming)
-                    _callSub.text = CallService.Group ? "Incoming group call" : "Incoming call";
-                else if (CallService.State == CallService.Phase.Dialing)
+                else if (CallVideo.Ringing)
                     _callSub.text = "Calling...";
                 else
                     _callSub.text = CallService.Muted ? "Muted" : (CallService.Group ? "Group call" : "On a call");
@@ -2454,9 +2457,16 @@ namespace Crispberry_PiPhone
             if (_incomingBtns != null)
                 _incomingBtns.SetActive(!CallVideo.Chasing && CallService.State == CallService.Phase.Incoming);
             if (_activeBtns != null)
-                _activeBtns.SetActive(CallVideo.Chasing || CallService.State != CallService.Phase.Incoming);
+                _activeBtns.SetActive(CallService.State != CallService.Phase.Incoming && (CallVideo.Ringing || CallVideo.Chasing || CallService.State != CallService.Phase.Idle));
             if (_muteBtn != null)
                 PhoneUi.SetCircleIcon(_muteBtn, PhoneIcons.Material(CallService.Muted ? "mic_off" : "mic"));
+            if (_speakerBtn != null)
+            {
+                PhoneUi.SetCircleIcon(_speakerBtn, PhoneIcons.Material(PhoneAudio.Speaker ? "volume_up" : "volume_off"));
+                Image speakerImg = _speakerBtn.GetComponent<Image>();
+                if (speakerImg != null)
+                    speakerImg.color = PhoneAudio.Speaker ? PhoneUi.CallGreen : PhoneUi.SurfaceAlt;
+            }
             if (_vmBtn != null)
                 _vmBtn.SetActive(CallService.State == CallService.Phase.Dialing);
             CallVideo.ApplyUi();
@@ -3772,6 +3782,19 @@ namespace Crispberry_PiPhone
                     PhoneUi.CreateSliderRow(_shadeRoot.transform, "Size", 0.55f, 1.35f, PhoneTheme.PhoneScale, v => PhoneTheme.SetPhoneScale(v), null, "aspect_ratio");
             }
             PhoneUi.CreateSliderRow(_shadeRoot.transform, "Brightness", PhoneTheme.MinBrightness, 1f, PhoneTheme.Brightness, v => PhoneTheme.SetBrightness(v), null, "brightness_6");
+            if (PhoneTheme.FlashOn)
+            {
+                PhoneUi.CreateSliderRow(_shadeRoot.transform, "Light", 0.15f, 1f, PhoneTheme.FlashBright, v =>
+                {
+                    PhoneTheme.LivePaint = true;
+                    PhoneTheme.SetFlashBright(v);
+                }, null, "flashlight_on");
+                PhoneUi.CreateSliderRow(_shadeRoot.transform, "Focus", 0f, 1f, PhoneTheme.FlashFocus, v =>
+                {
+                    PhoneTheme.LivePaint = true;
+                    PhoneTheme.SetFlashFocus(v);
+                }, null, "adjust");
+            }
             var masterRow = new GameObject("MasterRow", typeof(RectTransform));
             masterRow.transform.SetParent(_shadeRoot.transform, false);
             PhoneUi.Size(masterRow, 26f);
@@ -3816,6 +3839,10 @@ namespace Crispberry_PiPhone
             }
 
             PhoneShade.DrawTiles(_shadeRoot.transform);
+            if (PhoneShade.FlashMenuOpen)
+                ShadeFlashMenu();
+            if (PhoneShade.FlashPickerOpen)
+                ShadeFlashPicker();
             int tileRows = PhoneShade.LastRows;
             var shadeRt = _shadeRoot.GetComponent<RectTransform>();
             if (shadeRt != null)
@@ -3823,9 +3850,14 @@ namespace Crispberry_PiPhone
                 float extra = Mathf.Max(0, tileRows - 1) * (PhoneShade.Chip + 8f);
                 if (PhoneShade.VolumesOpen)
                     extra += PhoneAudio.ChannelCount * (26f + 8f);
+                if (PhoneTheme.FlashOn)
+                    extra += 68f;
+                if (PhoneShade.FlashMenuOpen)
+                    extra += 188f;
+                if (PhoneShade.FlashPickerOpen)
+                    extra += 250f;
                 shadeRt.sizeDelta = new Vector2(0f, 420f + extra);
             }
-
             int shown = 0;
             for (int i = 0; i < PhoneStore.Notices.Count && shown < 8; i++)
             {
@@ -3922,6 +3954,27 @@ namespace Crispberry_PiPhone
             });
             PhoneShade.Register(new PiPhoneShadeButton
             {
+                Id = PhoneShade.FlashId,
+                Label = "Flashlight",
+                SortOrder = 42,
+                IconFn = () => PhoneIcons.Material(PhoneTheme.FlashOn ? "flashlight_on" : "flashlight_off"),
+                IsActive = () => PhoneTheme.FlashOn,
+                OnClick = () =>
+                {
+                    PhoneFlash.Toggle();
+                    PhoneShade.FlashMenuOpen = false;
+                    RebuildShade();
+                },
+                OnRightClick = () =>
+                {
+                    PhoneShade.FlashMenuOpen = !PhoneShade.FlashMenuOpen;
+                    if (PhoneShade.FlashMenuOpen)
+                        PhoneShade.FlashPickerOpen = false;
+                    RebuildShade();
+                }
+            });
+            PhoneShade.Register(new PiPhoneShadeButton
+            {
                 Id = PhoneShade.RotateId,
                 Label = "Rotate",
                 SortOrder = 50,
@@ -3987,6 +4040,50 @@ namespace Crispberry_PiPhone
                     RebuildShade();
                 }
             });
+        }
+
+        private void ShadeFlashMenu()
+        {
+            var col = new GameObject("FlashMenu", typeof(RectTransform));
+            col.transform.SetParent(_shadeRoot.transform, false);
+            PhoneUi.AddVertical(col, 4f, new RectOffset(0, 0, 0, 0));
+            FlashChoice(col.transform, "White", 0);
+            FlashChoice(col.transform, "Warm", 1);
+            FlashChoice(col.transform, "Cool", 2);
+            FlashChoice(col.transform, "Skin", 3);
+            FlashChoice(col.transform, "Custom", 4);
+            PhoneUi.Size(col, 176f);
+        }
+
+        private void FlashChoice(Transform parent, string label, int mode)
+        {
+            int captured = mode;
+            Button btn = PhoneUi.CreateButton(parent, label, () =>
+            {
+                PhoneTheme.SetFlashMode(captured);
+                PhoneShade.FlashMenuOpen = false;
+                PhoneShade.FlashPickerOpen = captured == 4;
+                RebuildShade();
+            }, new Vector2(240f, 30f));
+            if (PhoneTheme.FlashMode == captured)
+            {
+                Image img = btn.GetComponent<Image>();
+                if (img != null)
+                    img.color = PhoneUi.Accent;
+            }
+        }
+
+        private void ShadeFlashPicker()
+        {
+            PhoneColorPicker.Create(_shadeRoot.transform, PhoneTheme.FlashCustom, c => PhoneTheme.SetFlashCustom(c), false);
+            PhoneUi.CreateButton(_shadeRoot.transform, "Set", () =>
+            {
+                PhoneShade.FlashPickerOpen = false;
+                if (PhoneTheme.LivePaint)
+                    PhoneTheme.EndLivePaint();
+                else
+                    RebuildShade();
+            }, new Vector2(120f, 32f));
         }
 
         private static string CarrierLabel(PiPhoneCarrier carrier)

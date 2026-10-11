@@ -96,6 +96,14 @@ namespace Crispberry_PiPhone
         public static string Language = string.Empty;
         public static string EmojiRecent = string.Empty;
         public static string EmojiFav = string.Empty;
+        public static bool EmojiBuiltIn = true;
+        public static string EmojiOff = string.Empty;
+        public static string StickerOff = string.Empty;
+        public static bool FlashOn;
+        public static float FlashBright = 0.75f;
+        public static float FlashFocus = 0.7f;
+        public static int FlashMode;
+        public static Color FlashCustom = Color.white;
 
         public static readonly Color DefaultCase = new Color(0.07f, 0.07f, 0.08f, 1f);
         public static readonly Color DefaultClock = new Color(0.96f, 0.97f, 0.98f, 1f);
@@ -193,6 +201,14 @@ namespace Crispberry_PiPhone
                     else if (key == "lang") Language = val ?? string.Empty;
                     else if (key == "emojirecent") EmojiRecent = val ?? string.Empty;
                     else if (key == "emojifav") EmojiFav = val ?? string.Empty;
+                    else if (key == "emojibuilt") EmojiBuiltIn = !(n == 0 || val == "false");
+                    else if (key == "emojioff") EmojiOff = val ?? string.Empty;
+                    else if (key == "stickeroff") StickerOff = val ?? string.Empty;
+                    else if (key == "flash") FlashOn = n != 0 || val == "true";
+                    else if (key == "flashb") FlashBright = Mathf.Clamp(f, 0.15f, 1f);
+                    else if (key == "flashf") FlashFocus = Mathf.Clamp01(f);
+                    else if (key == "flashm") FlashMode = Mathf.Clamp(n, 0, 4);
+                    else if (key == "flashc") FlashCustom = ParseColor(val, FlashCustom);
                     else if (key == "case" && val.IndexOf(',') < 0) CaseColor = PaletteColor(n, CaseColor);
                     else if (key == "font" && val.IndexOf(',') < 0) ClockColor = PaletteColor(n, ClockColor);
                     else if (key == "button" && val.IndexOf(',') < 0) ButtonFillColor = PaletteColor(n, ButtonFillColor);
@@ -244,6 +260,7 @@ namespace Crispberry_PiPhone
                 BatteryColor = ClockColor;
             if (!sawSignal)
                 SignalColor = ClockColor;
+            FlashOn = false;
             Apply();
         }
 
@@ -316,6 +333,14 @@ namespace Crispberry_PiPhone
                     + "lang=" + (Language ?? string.Empty) + "\n"
                     + "emojirecent=" + (EmojiRecent ?? string.Empty) + "\n"
                     + "emojifav=" + (EmojiFav ?? string.Empty) + "\n"
+                    + "emojibuilt=" + (EmojiBuiltIn ? "1" : "0") + "\n"
+                    + "emojioff=" + (EmojiOff ?? string.Empty) + "\n"
+                    + "stickeroff=" + (StickerOff ?? string.Empty) + "\n"
+                    + "flash=" + (FlashOn ? "1" : "0") + "\n"
+                    + "flashb=" + FlashBright.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "flashf=" + FlashFocus.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
+                    + "flashm=" + FlashMode + "\n"
+                    + "flashc=" + Fmt(FlashCustom) + "\n"
                     + "scale=" + PhoneScale.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "scaleland=" + PhoneScaleLand.ToString("0.###", CultureInfo.InvariantCulture) + "\n"
                     + "posx=" + PhonePosX.ToString("0.#", CultureInfo.InvariantCulture) + "\n"
@@ -411,6 +436,42 @@ namespace Crispberry_PiPhone
         {
             PrioritizeCallAudio = on;
             Commit();
+        }
+
+        public static void SetFlashOn(bool on)
+        {
+            FlashOn = on;
+            Commit();
+            PhoneFlash.Push();
+        }
+
+        public static void SetFlashBright(float value)
+        {
+            FlashBright = Mathf.Clamp(value, 0.15f, 1f);
+            Commit();
+            PhoneFlash.Push();
+        }
+
+        public static void SetFlashFocus(float value)
+        {
+            FlashFocus = Mathf.Clamp01(value);
+            Commit();
+            PhoneFlash.Push();
+        }
+
+        public static void SetFlashMode(int mode)
+        {
+            FlashMode = Mathf.Clamp(mode, 0, 4);
+            Commit();
+            PhoneFlash.Push();
+        }
+
+        public static void SetFlashCustom(Color color)
+        {
+            color.a = 1f;
+            FlashCustom = color;
+            Commit();
+            PhoneFlash.Push();
         }
 
         public static void CycleRinger()
@@ -509,6 +570,38 @@ namespace Crispberry_PiPhone
         {
             MasterVolume = Mathf.Clamp01(value);
             PhoneAudio.ApplyVolume();
+            Save();
+        }
+
+        public static bool EmojiPackOn(string id)
+        {
+            return string.IsNullOrEmpty(id) || !InCsv(EmojiOff, id);
+        }
+
+        public static void SetEmojiBuiltIn(bool on)
+        {
+            EmojiBuiltIn = on;
+            Save();
+        }
+
+        public static void SetEmojiPackOn(string id, bool on)
+        {
+            if (string.IsNullOrEmpty(id))
+                return;
+            EmojiOff = on ? CsvWithout(EmojiOff, id) : CsvAdd(EmojiOff, id);
+            Save();
+        }
+
+        public static bool StickerPackOn(string id)
+        {
+            return string.IsNullOrEmpty(id) || !InCsv(StickerOff, id);
+        }
+
+        public static void SetStickerPackOn(string id, bool on)
+        {
+            if (string.IsNullOrEmpty(id))
+                return;
+            StickerOff = on ? CsvWithout(StickerOff, id) : CsvAdd(StickerOff, id);
             Save();
         }
 

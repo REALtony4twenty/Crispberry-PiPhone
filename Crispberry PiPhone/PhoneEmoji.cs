@@ -15,7 +15,7 @@ namespace Crispberry_PiPhone
     /// Message emoji as pictures. Text is stored as normal characters.
     /// The picker pictures are Twemoji (CC-BY 4.0), in Icons/emoji.
     /// </summary>
-    internal static class PhoneEmoji
+    internal static partial class PhoneEmoji
     {
         private static readonly Dictionary<string, string> SeqToName = new Dictionary<string, string>();
         private static readonly Dictionary<string, string> NameToSeq = new Dictionary<string, string>();
@@ -30,6 +30,7 @@ namespace Crispberry_PiPhone
         private static int _warmed;
         private static bool _warmDone;
         private static bool _rush;
+        private static int _revision;
 
         public const int WarmPage = 32;
 
@@ -390,7 +391,7 @@ namespace Crispberry_PiPhone
             GameObject line = null;
             float used = 0f;
             var run = new StringBuilder();
-            float icon = fontSize + 8f;
+            float icon = (fontSize + 8f) * PhoneTheme.FontScale;
 
             StartLine();
             int i = 0;
@@ -496,15 +497,54 @@ namespace Crispberry_PiPhone
             return 0;
         }
 
+        public static int Revision
+        {
+            get { return _revision; }
+        }
+
+        public static void Reload()
+        {
+            DropSprites();
+            SeqToName.Clear();
+            NameToSeq.Clear();
+            ResourceByName.Clear();
+            ByPrefix.Clear();
+            Order.Clear();
+            ResetPackTables();
+            _maxLen = 1;
+            _warmed = 0;
+            _warmDone = true;
+            _ready = false;
+            _revision++;
+            Ensure();
+        }
+
+        private static void DropSprites()
+        {
+            foreach (KeyValuePair<string, Sprite> pair in Sprites)
+            {
+                Sprite sprite = pair.Value;
+                if (sprite == null)
+                    continue;
+                DestroySprite(sprite);
+            }
+            Sprites.Clear();
+        }
+
         public static void Ensure()
         {
             if (_ready)
+            {
+                TryPeakScene();
                 return;
+            }
             _ready = true;
             try
             {
-                IndexEmbedded();
-                if (Order.Count == 0)
+                if (PhoneTheme.EmojiBuiltIn)
+                    IndexEmbedded();
+                LoadPacks();
+                if (Order.Count == 0 && PhoneTheme.EmojiBuiltIn)
                     BakeFont();
                 SortCatalog();
             }
@@ -868,13 +908,16 @@ namespace Crispberry_PiPhone
 
         public static int CategoryCount
         {
-            get { return 11; }
+            get { return 11 + ExtraTabCount; }
         }
 
         public static bool InCategory(string name, int category)
         {
             if (category < 2)
                 return true;
+            int pack = PackInCategory(name, category);
+            if (pack >= 0)
+                return pack == 1;
             return Bucket(FirstCode(name)) == category;
         }
 
@@ -1181,6 +1224,9 @@ namespace Crispberry_PiPhone
             EnsureWords();
             if (string.IsNullOrEmpty(name))
                 return string.Empty;
+            string packWords = PackWords(name);
+            if (packWords != null)
+                return packWords;
             string cached;
             if (_nameWords != null && _nameWords.TryGetValue(name, out cached))
                 return cached;

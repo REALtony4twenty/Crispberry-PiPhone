@@ -88,8 +88,16 @@
       <HintPath>$(GameManaged)\UnityEngine.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(GameManaged)\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="UnityEngine.AudioModule">
       <HintPath>$(GameManaged)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GameManaged)\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
@@ -122,6 +130,10 @@
     </Reference>
     <Reference Include="UnityEngine.UIModule">
       <HintPath>$(GameManaged)\UnityEngine.UIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Sirenix.Serialization">
+      <HintPath>$(GameManaged)\Sirenix.Serialization.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Zorro.Core.Runtime">
@@ -181,11 +193,14 @@
     <Compile Include="PhoneNotify.cs" />
     <Compile Include="PhoneSounds.cs" />
     <Compile Include="PhoneAudio.cs" />
+    <Compile Include="PhoneFlash.cs" />
     <Compile Include="SoundsApp.cs" />
     <Compile Include="MakeNotiApp.cs" />
     <Compile Include="MusicPlayer.cs" />
     <Compile Include="PhoneGiphy.cs" />
     <Compile Include="PhoneEmoji.cs" />
+    <Compile Include="PhoneEmojiPacks.cs" />
+    <Compile Include="PhoneEmojiPeak.cs" />
     <Compile Include="PhoneColorPicker.cs" />
     <Compile Include="SnakeApp.cs" />
     <Compile Include="PhoneGames.cs" />

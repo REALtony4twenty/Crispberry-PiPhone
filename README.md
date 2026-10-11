@@ -1,15 +1,117 @@
 # Crispberry PiPhone
 
-An in-game phone for PEAK. Version 0.17.124.
+An in-game phone for PEAK. Version 0.17.149.
+
+## Install
+
+1. Install BepInEx for PEAK.
+2. Download `CrispberryPiphone.dll` from the latest GitHub release.
+3. Put it anywhere under `PEAK/BepInEx/plugins`. Remove older copies of the PiPhone DLL so only one loads.
+4. Restart PEAK. Everyone using calls, messages, shared casts, nearby phone audio, or synchronized flashlights should use the same version.
+
+Press **Alt+P** to open or close the phone, or use the PiPhone button in PEAK's pause menu. Hold the phone's side power button to turn it on or off; tap that button while it is off to check the battery.
+
+## Main controls
+
+- **Alt+P:** open or close the phone.
+- **F1 / F2:** answer or decline a call; open or dismiss a text alert.
+- **F3:** rotate the open phone.
+- **F4:** move the open phone onto the selected cast screen or return it to your hand.
+- **Left Alt while open:** switch between looking around, walking with the cursor, and phone-only control.
+- **Right-click outside the phone:** close it. Left-clicking outside does not close it.
+- Pull down the shade for brightness, master/channel volume, ringer, flashlight, music controls, screen cast, and other quick settings. Right-click the flashlight for its color menu.
+- Open **Settings → Controls** to change phone, alert, camera, music, and game keys.
+
+## Apps and features
+
+### Communication
+
+- **Phone:** call scouts in the current lobby, manage contacts and recents, set per-contact tones, and use video calls. The speaker button lets nearby players hear the other caller. Dialing 911, 112, 999, or 4357 calls the Scoutmaster.
+- **Messages:** send text, photos, GIFs, voice messages, emojis, and stickers to scouts in the lobby. Type an emoji shortcut such as `:backpack:` or use the emoji and sticker menus. Stickers remain in the conversation instead of being copied into Gallery Files.
+- **Voicemail:** missed callers can leave recordings that can be played later.
+- Calls and messages show actionable alerts even when the phone is closed. Alert placement and app notification permissions are configurable.
+
+### Camera, photos, and appearance
+
+- **Camera:** take photos or record videos with front/back cameras, portrait/wide framing, zoom, emotes, and a white camera flash. Selfie photos also flash the phone screen.
+- **Photos:** browse camera photos, videos, GIFs, and downloaded files; view or delete media and use a photo or GIF as wallpaper.
+- **Closet:** change the scout's appearance from the phone. It also supports compatible More Customizations outfits and SkinColorSliders.
+- The shade flashlight is visible to everyone, follows where the scout looks, and has brightness, focus, white, warm, cool, skin-color, and custom-color options.
+
+### Audio and tools
+
+- **Audio:** import songs, build playlists, and control music from the app or shade. Master, Media, Call, Ringtone, Notification, and System volumes are separate.
+- **Voice Memos:** record, save, play, and delete recordings.
+- **MakeNoti:** import or trim audio into ringtone, text-tone, or notification clips.
+- **Notes:** keep local notes and lists.
+- **Apps:** install or remove the optional built-in apps and discover apps registered by other mods.
+- **Settings:** customize colors, filled/outline icons, language, clock, side buttons, ringer, phone size and position, brightness, dock, navigation bar, wallpaper, interface sounds, emoji/sticker packs, alerts, and controls. English, Spanish, and French are built in; mods can add more languages.
+
+### Games
+
+Snake, 2048, Mines, Echo, Stacker, Brick Break, Four Across, Sudoku, and draw-1 Solitaire are included. Optional games are installed from **Apps**. Every game has its own controls and effect-volume menu. Four Across supports another player or the CPU.
+
+### Screen cast and nearby sound
+
+- Use the cast chip to select an airport flight board or a screen registered by another mod. Only one player can cast in a room at a time.
+- F4 can leave the real open phone on the screen as a touch screen. Other players still receive the shared cast.
+- Shared casts rebuild normal phone UI sharply, send still pictures once, and automatically use adaptive video for changing or undescribable areas. Weak connections step down in quality.
+- Private apps show a padlock to watchers. Phone sound comes from the cast screen while casting; otherwise nearby players hear it from the scout with distance falloff.
 
 Earlier releases stay up:
 
+- [v0.17.124](https://github.com/REALtony4twenty/Crispberry-PiPhone/releases/tag/v0.17.124)
 - [v0.17.81](https://github.com/REALtony4twenty/Crispberry-PiPhone/releases/tag/v0.17.81)
 - [v0.17.69](https://github.com/REALtony4twenty/Crispberry-PiPhone/releases/tag/v0.17.69)
 
+## Emoji packs
+
+A folder named `Emojis` anywhere under `BepInEx/plugins` adds its pictures to Messages. `emojis` and `EmOjiS` count too. `.png`, `.jpg`, and `.jpeg` files count. A picture bigger than 128 on either side is skipped. A picture that is exactly 128 by 128 is an emoji and a sticker. Anything smaller is an emoji only. The file name is the shortcut, so `PEAK_Point.png` is typed `:PEAK_Point:` and also shows in the emoji menu. Stickers are grouped by the mod that added them. Personalize, then Emojis, has an emoji switch and a sticker switch for each pack. Message emoji pictures grow with the font size. Stickers have their own menu in Messages, and tapping one sends it immediately as its own message at its own shape. A sticker stays in the message and is not added to Files. One `Emojis` folder can hold both. Hold a picture in that menu to favorite it. Restart PEAK after adding or changing pictures.
+
+Personalize, then Emojis, lists Crispberry, PEAK, and every pack. Turn a set off and its pictures stay out of the menu. Turn Crispberry off when a pack should replace the built-in set. PEAK is the game's own pictures: item icons, badges, hats, outfits, status icons, emotes, and a few interface icons. They are read from the game's files, the same hats and outfits the closet uses and the same emotes the camera uses, so they show up without starting a climb. Items stay on the PEAK tab. Badges, hats, outfits, emotes, status marks, and interface icons each have their own tab. The shortcut is the picture name in lowercase, so the backpack is `:backpack:`. The 128 size rule is for mod folders. PEAK pictures keep their real size.
+
+The phone makes one menu tab per pack, named from the mod folder. A Thunderstore folder `AtomicStudio-PEAK_Chat_Emojis` shows as **PEAK Chat Emojis** and holds every picture from that pack. A loose `BepInEx/plugins/Emojis` folder shows as **Custom**. Pack authors do not need a plugin or a phone API. PeakTextChat reads the same pictures and ignores the json below, so one folder can feed both.
+
+To also file pictures into Smileys, Food, and the other built-in tabs, put a `.json` file in that same `Emojis` folder. One category per object. Use a list when you need more than one. The shortcut stays the file name.
+
+```json
+[
+  { "category": "food", "emojis": "apple, burger" },
+  { "category": "smile", "emojis": "Scout" }
+]
+```
+
+`emojis` can be that comma-separated text, or a list of names. Category words: `smile`, `people`, `nature`, `food`, `travel`, `play`, `things`, `signs`, `flags`. Any other word becomes its own tab.
+
+## Since 0.17.124
+
+### Audio and screen cast integration by endors-toi
+
+- The audio manager from endors-toi's work is fully integrated. Every built-in sound is routed through Media, Call, Ringtone, Notification, or System, with a saved slider for each channel under Master.
+- Alerts duck Media. Calls can pause or silence Media and restore it at hang-up. The public API can play clips, full media, AudioClips, or live PCM streams and read or set channel volumes.
+- Shared cast was rebuilt around a sharp description of the UI, one-time still-picture transfers, automatic video fallback for moving or undescribable content, per-app video controls, video regions, independent audio, adaptive quality, and protection against bad peers and picture swaps.
+- Shared cast audio comes from the cast screen. With no watcher, nearby players still hear the phone from its owner with distance falloff. Only one cast can own the room at a time.
+
+### Emojis, stickers, and messages
+
+- Messages finds every case-insensitive `Emojis` folder under `BepInEx/plugins` and automatically groups its pictures by mod. Optional json files add category tabs.
+- Mod pictures over 128 pixels on either side are skipped. Exactly 128×128 pictures are both emojis and stickers; smaller pictures are emoji-only. Every pack has separate emoji and sticker switches.
+- PEAK's item, badge, hat, outfit, status, emote, and interface pictures are available as full-size emojis and stickers. Their lowercase picture names are shortcuts, such as `:backpack:`.
+- Emoji pictures in bubbles and the picker scale with the phone font setting. Stickers send at their own shape, display directly in the thread, and no longer get copied into Gallery Files.
+
+### Flashlight, camera, calls, and controls
+
+- The synchronized shade flashlight starts off each launch. It has draggable brightness and focus sliders, a fading visible cone, and white, warm, cool, skin, or custom colors. Closing the phone leaves it on for that session.
+- Camera has a separate always-white flash for rear photos/videos and a dimmer selfie light. A front-camera photo also turns the phone screen white briefly.
+- People standing nearby hear ringtones, notifications, voice memos, voice messages, music, and interface sounds. Speakerphone adds the remote caller to that nearby sound.
+- Emergency numbers 911, 112, 999, and 4357 ring the Scoutmaster. Closing the phone during ringing no longer strands the call. He answers on video, opens the phone, spawns about 80 meters away and 5 meters above terrain, waits 4 seconds, then sprints. The call can be ended while ringing, closes on a grab, and ends after a minute if he has not caught the player.
+- Dial-pad keys play only their DTMF tones, and outgoing calls have ringback. The phone remains usable during an active call.
+- Sliders ignore keyboard movement keys and support normal dragging. Camera zoom remains on the wheel and on-screen controls.
+- English, Spanish, and French phone chrome are built in. Other mods can register a language pack or provide a `lang` key/value file.
+
 ## Since 0.17.81
 
-This is the player-facing list for 0.17.124. Where an older note below disagrees, this section is the current behavior.
+This is the player-facing list. Where an older note below disagrees, this section is the current behavior.
 
 ### Power, closing, and the cursor
 
@@ -69,7 +171,7 @@ Landscape boards sit lower on the phone, closer to the navigation, and they are 
 - The side volume buttons, the ringer key, and the front camera hole are not drawn on the cast.
 - Photos, Messages, the dialer, voicemail, notes, and voice memos stay private on a shared cast. Watchers see a padlock instead.
 - Players watching a shared cast see a rebuilt copy of the phone, so text and shapes stay sharp. A still picture is sent to each watcher once. A picture that keeps changing, such as a game another mod draws, is sent as video. Watchers see another mod's app whether or not they have it installed.
-- While you cast, the phone's sound comes from the cast screen instead of from the phone. Players watching a shared cast hear it from that screen too. Sound and video quality step down for a watcher on a weak connection, and back up when it clears.
+- While you cast, the phone's sound comes from the cast screen instead of from the phone. Players watching a shared cast hear it from that screen too. If nobody is watching, other players still hear the phone from where you are standing, quieter as they get farther away. Sound and video quality step down for a watcher on a weak connection, and back up when it clears.
 - Only one player in the room can cast at a time.
 - You can still cast to airport flight boards that are in the scene, and mods can still register more screens.
 

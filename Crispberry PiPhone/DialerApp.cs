@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.UI;
 using PhotonPlayer = Photon.Realtime.Player;
 
@@ -213,7 +214,7 @@ namespace Crispberry_PiPhone
                 button.targetGraphic = artImg;
                 button.colors = PhoneUi.TintColors();
                 string captured = digit;
-                PhoneSfx.BindPress(button, () => Press(captured));
+                button.onClick.AddListener(() => Press(captured));
                 var artLe = art.gameObject.AddComponent<LayoutElement>();
                 artLe.preferredWidth = d;
                 artLe.preferredHeight = d;
@@ -403,6 +404,8 @@ namespace Crispberry_PiPhone
                 if (_digits.Length >= 16)
                     return;
                 _digits += digit;
+                if (digit != null && digit.Length == 1)
+                    PhoneSounds.PlayDtmf(digit[0]);
                 RefreshNumber();
             }
 

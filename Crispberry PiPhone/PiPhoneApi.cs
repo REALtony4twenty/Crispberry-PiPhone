@@ -597,6 +597,23 @@ namespace Crispberry_PiPhone
             PhoneMenu.PowerOn();
         }
 
+        /// <summary>True while the flashlight switch is on. A camera flash can still light the beam for a photo.</summary>
+        public static bool FlashlightOn
+        {
+            get { return PhoneTheme.FlashOn; }
+        }
+
+        /// <summary>
+        /// Turn the flashlight on or off from another mod. Closing the on-screen phone leaves the light on.
+        /// A phone item should call this with false when that item is put away.
+        /// </summary>
+        public static void SetFlashlight(bool on)
+        {
+            if (PhoneTheme.FlashOn == on)
+                return;
+            PhoneTheme.SetFlashOn(on);
+        }
+
         /// <summary>
         /// Add a screen the cast chip can target. <see cref="PiPhoneCastDevice.Find"/>
         /// should return that object's transform in the current scene, or null.
@@ -2158,6 +2175,9 @@ namespace Crispberry_PiPhone
         public bool DefaultVisible = true;
 
         public Action OnClick;
+
+        /// <summary>Right-click. Left click stays <see cref="OnClick"/>.</summary>
+        public Action OnRightClick;
 
         /// <summary>If set, the chip is highlighted while this returns true.</summary>
         public Func<bool> IsActive;
