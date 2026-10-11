@@ -563,8 +563,8 @@ namespace Crispberry_PiPhone
             _instance.FillNavKeys();
             _instance.ApplyChrome(_instance._wpApplied != wp);
             _instance.RebuildHome();
-            if (_instance._shadeRoot != null && _instance._shadeRoot.activeSelf)
             if (_instance._shadeRoot != null && _instance._shadeRoot.activeSelf && !PhoneShade.FlashPickerOpen)
+                _instance.RebuildShade();
             if (_instance._recentsRoot != null && _instance._recentsRoot.activeSelf)
                 _instance.RebuildDrawer();
             PhoneUi.ApplyFontSizes(_instance.transform);
@@ -805,9 +805,8 @@ namespace Crispberry_PiPhone
             _lastLand = !_landscape;
             ApplyPresentation();
             ShowHome();
-            if (CallVideo.Chasing || CallService.State == CallService.Phase.Incoming || CallService.State == CallService.Phase.Dialing)
             if (CallVideo.Chasing || CallVideo.Ringing || CallService.State == CallService.Phase.Incoming || CallService.State == CallService.Phase.Dialing)
-            RefreshStatus();
+                RefreshStatus();
             StartWallpaperPlay();
             SyncMusicBar();
             if (!PhoneEmoji.WarmLoopStarted)

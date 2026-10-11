@@ -1,6 +1,6 @@
 # Crispberry PiPhone
 
-An in-game phone for PEAK. Version 0.17.149.
+An in-game phone for PEAK. Version 0.17.150.
 
 ## Install
 
@@ -9,7 +9,7 @@ An in-game phone for PEAK. Version 0.17.149.
 3. Put it anywhere under `PEAK/BepInEx/plugins`. Remove older copies of the PiPhone DLL so only one loads.
 4. Restart PEAK. Everyone using calls, messages, shared casts, nearby phone audio, or synchronized flashlights should use the same version.
 
-Press **Alt+P** to open or close the phone, or use the PiPhone button in PEAK's pause menu. Hold the phone's side power button to turn it on or off; tap that button while it is off to check the battery.
+Press **Alt+P** to open or close the phone, or use the PiPhone button in PEAK's pause menu. Hold the **left ringer key** on the phone bezel for about half a second to turn the phone on or off; tap it while the phone is off to check the battery. A tap while it is on cycles Ringer, Vibrate, and Silent.
 
 ## Main controls
 
@@ -19,44 +19,51 @@ Press **Alt+P** to open or close the phone, or use the PiPhone button in PEAK's 
 - **F4:** move the open phone onto the selected cast screen or return it to your hand.
 - **Left Alt while open:** switch between looking around, walking with the cursor, and phone-only control.
 - **Right-click outside the phone:** close it. Left-clicking outside does not close it.
-- Pull down the shade for brightness, master/channel volume, ringer, flashlight, music controls, screen cast, and other quick settings. Right-click the flashlight for its color menu.
+- **Camera:** F flips front/back, R switches tall/wide, V takes a photo or starts/stops video, and the wheel zooms.
+- Pull down the status bar for brightness, master/channel volume, phone-position lock, size, Do Not Disturb, ringer, flashlight, rotation, navigation bar, alert placement, screen cast, Settings, recent notices, and Audio controls while music is playing. Right-click the flashlight for its color menu. **Settings → Personalize → Toolbar** chooses which tiles appear.
 - Open **Settings → Controls** to change phone, alert, camera, music, and game keys.
+- The phone cannot be opened while your scout is unconscious.
 
 ## Apps and features
 
 ### Communication
 
-- **Phone:** call scouts in the current lobby, manage contacts and recents, set per-contact tones, and use video calls. The speaker button lets nearby players hear the other caller. Dialing 911, 112, 999, or 4357 calls the Scoutmaster.
-- **Messages:** send text, photos, GIFs, voice messages, emojis, and stickers to scouts in the lobby. Type an emoji shortcut such as `:backpack:` or use the emoji and sticker menus. Stickers remain in the conversation instead of being copied into Gallery Files.
+- **Phone:** call one scout or a group in the current lobby, manage contacts and recents, set custom contact names/photos/tones, and use video calls. The speaker button lets nearby players hear the other caller. Dialing 911, 112, 999, or 4357 calls the Scoutmaster.
+- **Messages:** send text, photos, GIFs, voice messages, emojis, and stickers to scouts in the lobby. Type an emoji shortcut such as `:backpack:` or use the emoji and sticker menus. Stickers remain in the conversation instead of being copied into Gallery Files. Sending videos and arbitrary files is not supported yet. GIF search works without setup; modpack makers can provide a BepInEx `TenorApiKey`.
 - **Voicemail:** missed callers can leave recordings that can be played later.
-- Calls and messages show actionable alerts even when the phone is closed. Alert placement and app notification permissions are configurable.
+- Calls and messages show actionable alerts even when the phone is closed. The alert can also control music. Alert placement, Do Not Disturb, ringer mode, and app notification permissions are configurable.
 
 ### Camera, photos, and appearance
 
 - **Camera:** take photos or record videos with front/back cameras, portrait/wide framing, zoom, emotes, and a white camera flash. Selfie photos also flash the phone screen.
-- **Photos:** browse camera photos, videos, GIFs, and downloaded files; view or delete media and use a photo or GIF as wallpaper.
+- **Photos:** browse the Photos, Videos, and Files tabs; view or delete media and use a photo, GIF, or WebP as wallpaper. Photos is private on shared casts.
 - **Closet:** change the scout's appearance from the phone. It also supports compatible More Customizations outfits and SkinColorSliders.
 - The shade flashlight is visible to everyone, follows where the scout looks, and has brightness, focus, white, warm, cool, skin-color, and custom-color options.
 
 ### Audio and tools
 
-- **Audio:** import songs, build playlists, and control music from the app or shade. Master, Media, Call, Ringtone, Notification, and System volumes are separate.
+- **Audio:** import songs, build playlists, and control music from the app, shade, or closed-phone alert. Master, Media, Call, Ringtone, Notification, and System volumes are separate.
 - **Voice Memos:** record, save, play, and delete recordings.
-- **MakeNoti:** import or trim audio into ringtone, text-tone, or notification clips.
+- **MakeNoti:** import or trim audio into ringtone, text-tone, or notification clips. Clips can also be placed in `BepInEx/config/CrispberryPiPhone/alerts`.
 - **Notes:** keep local notes and lists.
-- **Apps:** install or remove the optional built-in apps and discover apps registered by other mods.
+- **Apps:** install or remove optional built-in apps and discover apps registered by other mods. Phone, Messages, Settings, and Apps itself are permanent.
 - **Settings:** customize colors, filled/outline icons, language, clock, side buttons, ringer, phone size and position, brightness, dock, navigation bar, wallpaper, interface sounds, emoji/sticker packs, alerts, and controls. English, Spanish, and French are built in; mods can add more languages.
+- Long-press a home icon to move it to or from the dock/home screen or uninstall it when allowed. The navigation bar's apps button opens **All apps**. Up to four apps fit in the dock.
 
 ### Games
 
-Snake, 2048, Mines, Echo, Stacker, Brick Break, Four Across, Sudoku, and draw-1 Solitaire are included. Optional games are installed from **Apps**. Every game has its own controls and effect-volume menu. Four Across supports another player or the CPU.
+Snake, Four Across, Sudoku, and draw-1 Solitaire are preinstalled. Install 2048, Mines, Echo, Stacker, and Brick Break from **Apps**. Every game has its own controls and effect-volume menu; game keys can be changed in **Settings → Controls**. Four Across supports another player or the CPU.
 
 ### Screen cast and nearby sound
 
 - Use the cast chip to select an airport flight board or a screen registered by another mod. Only one player can cast in a room at a time.
 - F4 can leave the real open phone on the screen as a touch screen. Other players still receive the shared cast.
 - Shared casts rebuild normal phone UI sharply, send still pictures once, and automatically use adaptive video for changing or undescribable areas. Weak connections step down in quality.
-- Private apps show a padlock to watchers. Phone sound comes from the cast screen while casting; otherwise nearby players hear it from the scout with distance falloff.
+- Private apps and every screen shown during a call display a padlock to watchers. Phone sound comes from the cast screen while casting; otherwise nearby players hear it from the scout with distance falloff.
+
+## Saved files
+
+Phone data is kept under `BepInEx/config/CrispberryPiPhone`. This includes pictures, videos, downloads, songs, alerts, messages, call history, voice memos, playlists, layout, and theme settings. Back up that folder to preserve the phone's local content.
 
 Earlier releases stay up:
 
@@ -104,10 +111,11 @@ To also file pictures into Smileys, Food, and the other built-in tabs, put a `.j
 - The synchronized shade flashlight starts off each launch. It has draggable brightness and focus sliders, a fading visible cone, and white, warm, cool, skin, or custom colors. Closing the phone leaves it on for that session.
 - Camera has a separate always-white flash for rear photos/videos and a dimmer selfie light. A front-camera photo also turns the phone screen white briefly.
 - People standing nearby hear ringtones, notifications, voice memos, voice messages, music, and interface sounds. Speakerphone adds the remote caller to that nearby sound.
-- Emergency numbers 911, 112, 999, and 4357 ring the Scoutmaster. Closing the phone during ringing no longer strands the call. He answers on video, opens the phone, spawns about 80 meters away and 5 meters above terrain, waits 4 seconds, then sprints. The call can be ended while ringing, closes on a grab, and ends after a minute if he has not caught the player.
+- Emergency numbers 911, 112, 999, and 4357 ring the Scoutmaster. Closing the phone during ringing no longer strands the call. He answers on video, opens the phone, spawns about 80 meters away and 5 meters above terrain, waits 4 seconds, then sprints. The call can be ended while ringing, closes on a grab, and ends after a minute if he has not caught the player. Ghosts cannot request rescue; in multiplayer the master client also needs PiPhone.
 - Dial-pad keys play only their DTMF tones, and outgoing calls have ringback. The phone remains usable during an active call.
 - Sliders ignore keyboard movement keys and support normal dragging. Camera zoom remains on the wheel and on-screen controls.
 - English, Spanish, and French phone chrome are built in. Other mods can register a language pack or provide a `lang` key/value file.
+- Theme changes correctly refresh an open shade without interrupting the flashlight color picker.
 
 ## Since 0.17.81
 
@@ -115,7 +123,7 @@ This is the player-facing list. Where an older note below disagrees, this sectio
 
 ### Power, closing, and the cursor
 
-- Hold the side button to turn the phone on. The screen says HELLO and plays a short chime. Hold it again to turn the phone off. The screen says GOODBYE and plays a lower chime. A short press while the phone is off shows the battery for 2 seconds. HELLO and GOODBYE follow the language setting. The screens were in 0.17.81. The chimes are new.
+- Hold the left ringer key to turn the phone on. The screen says HELLO and plays a short chime. Hold it again to turn the phone off. The screen says GOODBYE and plays a lower chime. A short press while the phone is off shows the battery for 2 seconds. HELLO and GOODBYE follow the language setting. The screens were in 0.17.81. The chimes are new.
 - Left-clicking the dark area around the phone does not close it. Right-click that area to close it. The open/close key still works.
 - While a closed-phone alert is on screen, the walk-around key (Left Alt unless you changed it) unlocks the cursor so you can click the alert buttons. You can still move, look, and climb. Press the key again and the game takes the cursor back. That only happens while the alert is up. With the phone open, the same key is the usual walk steps: look around, then walk with the cursor, then phone only.
 - F4 (unless you changed it) puts the open phone on the cast, or brings it back to your hand. The app stays open either way.
@@ -123,14 +131,14 @@ This is the player-facing list. Where an older note below disagrees, this sectio
 ### Volume and sounds
 
 - The side volume buttons, and the shade slider labeled Master, are the phone volume. That level is the master for button clicks, app hover, games, music, the power chimes, and clips a mod plays through the phone. Pressing volume up plays the up sound louder. Pressing volume down plays the down sound quieter.
-- The arrow next to Master opens five more sliders: Media, Call, Ringtone, Notification, and System. Each one sits under the master. Media is music, games, videos, voice memos, and sound from other mods. Call is the other scouts' voices on a call. System is the interface sounds. Music keeps its own slider in the Music app, under Media. Vibrate follows only its own row on the Sounds page.
+- The arrow next to Master opens five more sliders: Media, Call, Ringtone, Notification, and System. Each one sits under the master. Media is music, games, videos, voice memos, and sound from other mods. Call is the other scouts' voices on a call. System is the interface sounds. Music keeps its own slider in the Audio app, under Media. Vibrate follows only its own row on the Sounds page.
 - A ringtone, an alert, or a vibrate buzz lowers Media while it sounds. Fade music on alerts, on the Notifications page, turns that off.
-- Prioritize call audio, on the Notifications page, is on by default. Media is lowered while a call rings in. While a call is connected, the Music app pauses and other media is silent. Both come back at hang-up.
+- Prioritize call audio, on the Notifications page, is on by default. Media is lowered while a call rings in. While a call is connected, the Audio app pauses and other media is silent. Both come back at hang-up.
 - Personalize, then Sounds, has a row for each interface sound. Each row can be turned off, turned down, or pointed at any other phone sound. The rows are Button, Toggle off, Toggle on, Back, App hover, Camera, Record start, Record stop, Slider, Trash, Vibrate, Typing, and Backspace. Volume up and volume down follow the phone volume and are not on that page. The power chimes are not on that page either.
 - The shipped clips were leveled so a quiet tap and a loud beep sit near the same loudness.
 - Notification and ringtone pickers show which sound is in use.
 - Almost every phone clip can also be chosen as an alert, a ringtone, or a button sound.
-- Leaving an app stops its sounds and the work it started. Calls, messages, and the music player can keep going. Games and the other built-in apps do not.
+- Leaving an app stops its sounds and the work it started. Calls, messages, and the Audio player can keep going. Games and the other built-in apps do not.
 
 ### Look, toolbar, and settings
 
@@ -179,6 +187,17 @@ Landscape boards sit lower on the phone, closer to the navigation, and they are 
 
 Phone volume scales every sound below, and `PiPhoneApi.MasterVolume` reads and sets it. Each sound plays on a channel with its own volume under that master. A Sounds-page row, when that cue has one, is a trim under both.
 
+App and phone integration:
+
+- `RegisterApp` adds an app. `Install`, `Uninstall`, `IsInstalled`, `GetInstalledApps`, `AddToHome`, and `RegisterCategory` manage Apps/home integration. `PiPhoneApp` controls preinstallation, store listing, stickiness, background work, play-through, cast privacy, and cast video.
+- `OpenApp(id, payload)`, `GoHome`, `GoBack`, `SetImmersive`, `SetPlayThrough`, and the orientation events control presentation.
+- `RegisterKeybind`, `KeyDown`, `KeyHeld`, `CaptureKeybind`, `GetKeybinds`, and `FormatKey` integrate controls.
+- `RegisterShadeButton`, `RegisterNavButton`, and their visibility/removal helpers extend phone chrome. `RegisterNumber` adds a dialable number.
+- `Notify` posts an in-phone notification. `AlertsFolder`, `ImportAlert`, and app-alert sound accessors integrate custom tones.
+- Contact, scout, and voice-filter helpers expose saved contacts, current scouts, and call voice effects.
+- `RegisterLanguage`, `SetLanguage`, `GetLanguages`, and `T` add translated phone text.
+- Power/stage, battery/carrier, wallpaper, look, flashlight, placement, snapshot/restore, and mount APIs are also public. See the XML documentation in `PiPhoneApi.cs` for signatures.
+
 - `PiPhoneApi.PlayInterfaceSound(cue)` plays an interface cue on the System channel. The cues are `click`, `toggle-on`, `toggle-off`, `back-btn`, `hover`, `tick`, `trash`, `shutter`, `rec-start`, `rec-stop`, `type`, and `back`. Any other name plays nothing: alert tones, `vibrate`, and the game cues cannot be played by name.
 - `PiPhoneApi.PlayClip(bytes)` plays your own short WAV or MP3 on the Media channel, so it follows the Media slider and the phone volume. The second argument is a 0–1 trim.
 - A ringtone, an alert or a vibrate buzz lowers everything on the Media channel while it sounds, your sound included, unless the player turns off Fade music on alerts. With `PiPhoneApi.PrioritizeCallAudio` on, which is the default, Media is also lowered while a call rings in and silent, but still running, while a call is connected.
@@ -191,15 +210,16 @@ Longer audio goes through the phone on the Media channel:
 
 - `PiPhoneApi.PlayMedia(bytes, rate, channels, loop)` plays a whole WAV file, or raw 16-bit PCM at the rate and channel count you pass. `PlayMediaClip(clip, loop)` plays an AudioClip you already hold.
 - `PiPhoneApi.PlayMediaStream(reader)` is for sound your mod makes as it goes, such as a game or an emulator. The phone calls `reader` on the audio thread to fill its output buffer. Write samples at full level. The phone applies the volume.
-- `PiPhoneApi.StopMedia()` stops all three and leaves the Music app alone. `IsMediaPlaying()` is true while anything is on Media, the Music app included.
+- `PiPhoneApi.StopMedia()` stops all three and leaves the Audio app alone. `IsMediaPlaying()` is true while anything is on Media, the Audio app included.
 - `GetChannelVolume` / `SetChannelVolume` read and save one `PiPhoneAudioChannel`. A mod can set every channel, but its own sound only plays on Media.
 - Anything played through the phone is heard from the cast screen while the player casts, with nothing extra to do.
 
-Build buttons, toggles, and sliders with `PhoneUi` so they match this release and play the phone sounds:
+Build buttons, toggles, sliders, images, scroll rows, and icon controls with `PhoneUi` so they match this release and play the phone sounds:
 
 - `CreateButton`, `CreateIconChip`, and `CreateToggleChip`
 - `CreateSlider`, `CreateSliderRow`, and `CreateThinSlider`
 - `CreateDualRange` for a start and end on one track
+- `CreateHorizontalScroll`, `CreateImage`, `FitContained`, `SetClickable`, and `SetTooltip`
 
 `CreateImage` does not take clicks. `SetClickable` or `CreateButton` is what makes a picture a button.
 
@@ -214,7 +234,7 @@ Cast, in addition to `RegisterCastDevice` and `SetCastAspect`:
 
 ## Since 0.17.69
 
-- The phone starts off. Hold the side button to turn it on (HELLO). A short press while it is off shows the battery for 2 seconds. Holding the side button while it is on turns it off (GOODBYE). Those words follow the language setting.
+- The phone starts off. Hold the left ringer key to turn it on (HELLO). A short press while it is off shows the battery for 2 seconds. Holding the ringer key while it is on turns it off (GOODBYE). Those words follow the language setting.
 - Toolbar icons fill the width, then wrap, in portrait and landscape.
 - Alert Place toggles on and off without closing the phone.
 - Screen cast lists airport flight boards that are in the scene. Other players in the room see the cast. Mods can register more screens, and an app can set the cast aspect. 0.17.124 draws built-in game boards instead of a photo of the phone. See the cast section above.
